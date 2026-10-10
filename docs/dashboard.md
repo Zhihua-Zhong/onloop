@@ -44,6 +44,4 @@ project checks in `checks:` are not run, because the demo has no repository to r
 ## Publishing the demo
 
 `.github/workflows/pages.yml` builds the site from `examples/minimal` and deploys it with `actions/deploy-pages`. The
-repository owner enables it once: Settings, Pages, Source "GitHub Actions", then sets the repository variable
-`PAGES_ENABLED` to `true`. Until then the build runs on every push to `main` and the deploy is skipped. The site then
-follows `main`.
+repository owner enables it once: Settings, Pages, Source "GitHub Actions". The site then follows `main`.
