@@ -246,9 +246,10 @@ its own checks become plugins.
 - Silent generated text. Summaries, roadmaps and suggestions are always labelled as generated, and a claim needs
   the human.
 
-## 8. Open questions for the human
+## 8. Decided by the human (2026-10-11)
 
-1. **Tickets.** GitHub Issues (native, sub-issues and dependencies) or a ticket store of onloop's own? This proposal
-   assumes GitHub Issues.
-2. **Hosting.** Local-first only, or also a hosted multi-user server? This proposal assumes local first.
-3. **Name of the UI.** "workbench", or something else?
+1. **Tickets are GitHub Issues**, using sub-issues for the hierarchy and issue dependencies for "blocked by". onloop
+   keeps no ticket store of its own; its event log indexes the issues.
+2. **Deployment is local.** `onloop up` runs the server and the workbench on the loopback interface. A hosted
+   multi-user server is out of scope until 1.0.
+3. **The UI is called the workbench.**
