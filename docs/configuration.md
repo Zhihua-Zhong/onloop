@@ -225,7 +225,7 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop policy check` | `--policy` | 0 valid, 1 problems |
 | `onloop codeowners` | `--file` (default `CODEOWNERS`), `--check` (default) or `--write` | 0 matches or written, 1 differs |
 | `onloop classify` | `--base` (default `origin/main`), `--head` (default `HEAD`), `--paths P...`, `--head-policy FILE`, `--json` | 0 |
-| `onloop gate N` | `--base` (default `main`), `--dry-run`, `--repo` | 0 merged or would merge, 1 refused, 2 merged then reverted or an error |
+| `onloop gate N` | `--base` (default `main`), `--dry-run`, `--repo` | 0 merged or would merge, 1 refused, 2 merged then reverted, 3 merged but the merge could not be fetched or named, so nothing was checked or reverted (look at the branch by hand) |
 | `onloop audit` | `--since`, `--base` (default `main`), `--repo` | 0 history holds, 1 alarms |
 | `onloop as-app` | `--identity agents\|reviewer` (default `agents`), `--repo`, then `-- COMMAND...` | the command's own exit code, 2 for a refused command or missing setup |
 | `onloop ledger check` | `--file`, `--policy`, `--base REF` | 0 valid, 1 problems |

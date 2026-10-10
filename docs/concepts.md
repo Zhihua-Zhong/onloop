@@ -131,7 +131,8 @@ a review withdrawn or a push made meanwhile stops the merge. If everything holds
 `--match-head-commit <sha>`: if anyone pushed in between, GitHub refuses and nothing merges. After the merge it runs
 the `post_merge_checks` (from the base policy, in a clean worktree of the merge commit); if one fails it reverts the
 merge, in a temporary worktree of the fresh branch tip, with a commit carrying a `Gate-Revert: #N <sha>` trailer and
-exits 2.
+exits 2. If GitHub names no merge commit, or the clone cannot fetch it, the gate cannot check or revert anything
+and exits 3 with the reason; it never reverts blind.
 
 Review states are read strictly. `COMMENTED` and `PENDING` reviews assert nothing. A dismissed approval is gone. A
 request for changes that was dismissed by someone other than the reviewer or the human still blocks; only a trusted

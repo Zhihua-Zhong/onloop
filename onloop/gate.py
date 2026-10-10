@@ -288,8 +288,11 @@ def plan(facts: Facts, git, *, base_rev: str, base_branch: str = "main", extra: 
 def revert_merge(git, merge_sha: str, number: int, base_branch: str) -> str:
     """Undo a merge: a new commit that restores the tree before it, carrying the trailer the audit verifies.
 
-    Made in a temporary worktree of the freshly fetched tip, so the operator's own checkout is never touched.
+    Made in a temporary worktree of the freshly fetched tip, so the operator's own checkout is never touched. It
+    refuses, rather than guess, when it is not told which merge to undo.
     """
+    if not merge_sha:
+        raise ValueError("no merge commit to revert")
     git._run("fetch", "origin", base_branch)
     with git.in_worktree(f"origin/{base_branch}") as wt:
         wt._run("revert", "-m", "1", "--no-edit", merge_sha)
@@ -302,7 +305,11 @@ def revert_merge(git, merge_sha: str, number: int, base_branch: str) -> str:
 def run(number: int, client, git, *, base_branch: str = "main", extra: Callable | None = None,
         post_merge: Callable[[pol.Policy, str], list[str]] | None = None,
         dry_run: bool = False) -> tuple[int, list[str]]:
-    """Gate one pull request. (0, notes) merged or would merge; (1, reasons) refused; (2, notes) merged then reverted."""
+    """Gate one pull request.
+
+    (0, notes) merged, or would merge; (1, reasons) refused; (2, notes) merged, then reverted because a post-merge
+    check failed; (3, notes) merged, but the merge could not be fetched or named, so nothing was checked or reverted.
+    """
     facts = client.pr(number)
     problem = fetch_head(git, facts, base_branch)
     if problem:
@@ -322,9 +329,20 @@ def run(number: int, client, git, *, base_branch: str = "main", extra: Callable 
     if again:
         return 1, again
     client.merge(number, facts["head"])
-    merged = client.pr(number)
     notes = [f"merged #{number} at {facts['head'][:7]}"]
-    merge_sha = merged.get("merge_sha") or ""
+    merge_sha = client.pr(number).get("merge_sha") or ""
+    if not merge_sha:
+        return 3, notes + ["GitHub reported no merge commit, so the post-merge checks could not run and nothing "
+                           "was reverted: look at the branch by hand"]
+    # the merge was made by GitHub, not by this clone: fetch it before anything is checked out at it
+    try:
+        git._run("fetch", "origin", base_branch)
+    except Exception as e:
+        return 3, notes + [f"cannot fetch the merge {merge_sha[:7]}, so the post-merge checks could not run and "
+                           f"nothing was reverted: {str(e)[:200]}"]
+    if not git.has_commit(merge_sha):
+        return 3, notes + [f"the merge {merge_sha[:7]} is not available locally after a fetch, so the post-merge "
+                           "checks could not run and nothing was reverted: look at the branch by hand"]
     failed = post_merge(base, merge_sha) if post_merge else []
     if failed:
         sha = revert_merge(git, merge_sha, number, base_branch)

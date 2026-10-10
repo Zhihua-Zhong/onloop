@@ -220,7 +220,9 @@ def loosening(base: Policy, head: Policy) -> list[str]:
         was, now = base.rule_for(key), head.rule_for(key)
         if was.reserved and not now.reserved:
             out.append(f"{key!r} is no longer reserved (was {was.reserved!r})")
-        elif was.reserved and now.reserved != was.reserved and base.approver_of(was.reserved) == "human"                 and head.approver_of(now.reserved) != "human":
+        elif (was.reserved and now.reserved != was.reserved
+              and base.approver_of(was.reserved) == "human"
+              and head.approver_of(now.reserved) != "human"):
             out.append(f"{key!r} moves from {was.reserved!r} to {now.reserved!r}, whose approver is not the human")
         if head.tier_rank(now.tier) < base.tier_rank(was.tier):
             out.append(f"{key!r} lowers its tier from {was.tier!r} to {now.tier!r}")
