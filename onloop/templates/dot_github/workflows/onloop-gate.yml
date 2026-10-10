@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install onloop
+      - run: pip install "__INSTALL_SPEC__"
       - name: The policy is valid
         run: onloop policy check
       - name: CODEOWNERS is generated from the policy

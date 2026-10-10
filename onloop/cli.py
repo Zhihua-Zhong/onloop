@@ -48,7 +48,7 @@ def _policy(args) -> pol.Policy:
 
 def cmd_init(args) -> int:
     written, skipped = init_mod.init(args.dir, human=args.human, reviewer=args.reviewer, agents=args.agents,
-                                     force=args.force)
+                                     force=args.force, install_spec=args.install_spec)
     for w in written:
         _say(f"wrote   {w}")
     for s in skipped:
@@ -261,6 +261,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--human", default="your-login", help="the human's GitHub login")
     sp.add_argument("--reviewer", default="your-reviewer-app", help="the reviewer App's bare login")
     sp.add_argument("--agents", default="your-agents-app", help="the agents App's bare login")
+    sp.add_argument("--install-spec", default=init_mod.DEFAULT_INSTALL_SPEC,
+                    help="what the workflows `pip install` (default: the tagged release on GitHub)")
     sp.add_argument("--force", action="store_true", help="overwrite files that exist")
 
     pp = sub.add_parser("policy", help="work with onloop.yaml")

@@ -18,6 +18,7 @@ First release.
   reserves itself.
 - Six built-in reserved classes (`claims`, `safety_widening`, `authority_widening`, `destructive`,
   `money_accounts`, `leaves_project`), each with an approver of `human` or `reviewer`, and user-defined classes.
+- `onloop init --install-spec`: what the starter workflows `pip install`; the default is the tagged release on GitHub, since there is no PyPI release.
 - `onloop codeowners`: CODEOWNERS generated from the policy, with `--check` and `--write`.
 - `onloop classify`: computes the reserved classes touched, the approvers required, the tier and the owners from a
   change's own diff or from a list of paths. Compares the base policy with the head policy and classes any

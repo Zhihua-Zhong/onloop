@@ -228,3 +228,7 @@ def test_self_test_bites_when_a_pattern_is_removed(monkeypatch: pytest.MonkeyPat
     original = scan.generic_patterns
     monkeypatch.setattr(scan, "generic_patterns", lambda: [p for p in original() if p.kind != "ipv4"])
     assert scan.self_test() >= 1
+
+
+def test_a_git_ref_after_an_at_sign_is_not_an_email():
+    assert "email" not in kinds("pip install git+https://host.example/owner/repo@v0.1.0")

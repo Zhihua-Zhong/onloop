@@ -54,7 +54,7 @@ def generic_patterns() -> list[Pattern]:
     """The always-on patterns."""
     return [
         Pattern("ipv4", re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")),
-        Pattern("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")),
+        Pattern("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")),
         Pattern(
             "windows-user-path",
             re.compile(rf"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s{_QUOTES}]+[\\/]", re.IGNORECASE),

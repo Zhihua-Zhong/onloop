@@ -43,12 +43,15 @@ reviewer is a separate identity, and every approval is bound to one commit.
 You need Python 3.11 or later, git, and the [GitHub CLI](https://cli.github.com/) (`gh`) for the commands that talk
 to GitHub. The offline commands in this section need only Python and git.
 
-Install from a clone of this repository (a PyPI release is not part of 0.1.0):
+Install straight from the tagged release (there is no PyPI release):
 
 ```bash
-git clone <this repository> onloop && cd onloop
-uv venv && uv pip install -e .          # or: python -m venv .venv && pip install -e .
+pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"      # no clone needed (scan:allow)
 onloop --version
+
+# or, to work on it:
+git clone https://github.com/Zhihua-Zhong/onloop.git && cd onloop   # scan:allow
+uv venv && uv pip install -e .          # or: python -m venv .venv && pip install -e .
 ```
 
 Create a repository for the team and generate the starter files:
@@ -114,8 +117,8 @@ Commit the generated files and push them. Then:
   `onloop audit`, which re-judges every merge on `main` against the policy as it read at that merge, and fails the
   workflow on any merge the policy would not have allowed.
 
-The starter workflows run `pip install onloop`. Until onloop is published, change that line to install from the
-location you use.
+The starter workflows install onloop from the tagged GitHub release; pass `--install-spec` to `onloop init` to use a
+fork or another tag.
 
 ### Agent identity
 

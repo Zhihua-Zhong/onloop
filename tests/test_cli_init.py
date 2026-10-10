@@ -154,3 +154,17 @@ def test_the_pull_request_facts_carry_when_the_head_was_pushed():
                                     {"commit": {"message": "b", "committer": {"date": "2026-01-02T00:00:00Z"}}}]))
         return Done("[]")
     assert github.GitHub("org/repo", runner).pr(9)["head_pushed_at"] == "2026-01-02T00:00:00Z"
+
+
+def test_the_starter_workflows_install_the_tagged_release_unless_told_otherwise(tmp_path):
+    init(tmp_path / "a", human="owner-a", reviewer="rev-bot", agents="agent-bot")
+    for name in ("onloop-gate.yml", "onloop-audit.yml"):
+        text = (tmp_path / "a" / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert 'pip install "onloop @ git+https://github.com/' in text and "@v0.1.0" in text
+        assert "__INSTALL_SPEC__" not in text
+    init(tmp_path / "b", human="owner-a", reviewer="rev-bot", agents="agent-bot", install_spec="onloop==9.9.9")
+    text = (tmp_path / "b" / ".github" / "workflows" / "onloop-audit.yml").read_text(encoding="utf-8")
+    assert 'pip install "onloop==9.9.9"' in text
+    assert main(["init", "--dir", str(tmp_path / "c"), "--install-spec", "onloop @ git+https://example.invalid/x@v1"]) == 0
+    assert "example.invalid/x@v1" in (tmp_path / "c" / ".github" / "workflows" / "onloop-gate.yml").read_text(
+        encoding="utf-8")

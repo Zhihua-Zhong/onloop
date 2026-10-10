@@ -7,6 +7,9 @@ from importlib.resources import files
 
 from . import codeowners, policy
 
+# What the starter workflows install. onloop is not on PyPI, so the default is the tagged release on GitHub; pass
+# `--install-spec` for a fork, a different tag, or a package index.
+DEFAULT_INSTALL_SPEC = "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"  # scan:allow
 DOT_DIRS = {"dot_github": ".github"}          # a leading-dot directory cannot ship reliably inside a wheel
 
 
@@ -24,11 +27,12 @@ def _template_files():
 
 
 def init(target: str | pathlib.Path, *, human: str, reviewer: str, agents: str, force: bool = False,
-         today: dt.date | None = None) -> tuple[list[str], list[str]]:
+         today: dt.date | None = None, install_spec: str = DEFAULT_INSTALL_SPEC) -> tuple[list[str], list[str]]:
     """Write the starter files under `target`. Returns (written, skipped). Existing files are kept unless `force`."""
     target = pathlib.Path(target)
     today = today or dt.date.today()
-    subs = {"__HUMAN__": human, "__REVIEWER__": reviewer, "__AGENTS__": agents, "__TODAY__": today.isoformat()}
+    subs = {"__HUMAN__": human, "__REVIEWER__": reviewer, "__AGENTS__": agents, "__TODAY__": today.isoformat(),
+            "__INSTALL_SPEC__": install_spec}
     written: list[str] = []
     skipped: list[str] = []
     for rel, text in _template_files():
