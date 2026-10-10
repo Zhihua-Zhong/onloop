@@ -22,34 +22,56 @@ from .gate import REVERT_TRAILER, decide, plan_policy_change
 from .testing import FakeGit, FakeGitHub
 
 
-def audit(git, client, *, since: str | None, base_branch: str = "main") -> list[tuple[str, str]]:
-    """[(sha, reason)] for every commit that should not be on the branch. Empty means the history holds."""
-    alarms: list[tuple[str, str]] = []
-    accepted: dict[str, str] = {}                      # merge sha -> "gate" | "human"
-    for sha in git.first_parent_commits(since, base_branch):
+def history(git, client, *, since: str | None, base_branch: str = "main", limit: int | None = None) -> list[dict]:
+    """One record per first-parent commit since `since` (the last `limit` of them, when given), in order.
+
+    A record is `{sha, kind, ok, why, pr, title}`: `kind` is "merge", "human merge", "revert" or "direct push";
+    `ok` says whether the policy of its own time would have allowed it, and `why` says why not. The dashboard shows
+    these; `audit()` keeps the ones that are not ok. A revert is checked against the merge it names, which is
+    judged on demand, so a window that starts after that merge still gives the right answer.
+    """
+    shas = git.first_parent_commits(since, base_branch)
+    if limit:
+        shas = shas[-limit:]
+    memo: dict[str, dict] = {}
+
+    def judge(sha: str) -> dict:
+        if sha in memo:
+            return memo[sha]
+        rec = {"sha": sha, "kind": "merge", "ok": False, "why": "", "pr": None, "title": ""}
+        memo[sha] = rec
         parents = git.parents(sha)
         m = REVERT_TRAILER.search(git.message(sha) or "")
         if m:
-            alarms.extend(_revert(git, sha, parents, m, accepted))
-            continue
+            rec["kind"] = "revert"
+            why = _revert(git, sha, parents, m, judge)
+            rec.update(ok=not why, why=why)
+            return rec
         if len(parents) != 2:
-            alarms.append((sha, "a commit pushed straight to the branch, not a merge"))
-            continue
+            rec.update(kind="direct push", why="a commit pushed straight to the branch, not a merge")
+            return rec
         n = client.pr_for_commit(sha)
         if n is None:
-            alarms.append((sha, "a merge commit that no pull request explains"))
-            continue
+            rec.update(why="a merge commit that no pull request explains")
+            return rec
         facts = client.pr(n)
+        rec.update(pr=n, title=facts.get("title") or "")
         if facts["head"] != parents[1]:
-            alarms.append((sha, f"it merged {parents[1][:7]}, not the head of #{n} ({facts['head'][:7]})"))
-            continue
+            rec.update(why=f"it merged {parents[1][:7]}, not the head of #{n} ({facts['head'][:7]})")
+            return rec
         by = facts.get("merged_by") or {}
         why = _judge(git, facts, parents, by, base_branch)
-        if why:
-            alarms.append((sha, why))
-        else:
-            accepted[sha] = by.get("login") or ""
-    return alarms
+        if not why and by.get("type") == "User":
+            rec["kind"] = "human merge"
+        rec.update(ok=not why, why=why or "")
+        return rec
+
+    return [judge(s) for s in shas]
+
+
+def audit(git, client, *, since: str | None, base_branch: str = "main") -> list[tuple[str, str]]:
+    """[(sha, reason)] for every commit that should not be on the branch. Empty means the history holds."""
+    return [(r["sha"], r["why"]) for r in history(git, client, since=since, base_branch=base_branch) if not r["ok"]]
 
 
 def _judge(git, facts, parents, by, base_branch) -> str | None:
@@ -73,17 +95,18 @@ def _judge(git, facts, parents, by, base_branch) -> str | None:
     return None
 
 
-def _revert(git, sha, parents, m, accepted) -> list[tuple[str, str]]:
+def _revert(git, sha, parents, m, judge) -> str:
+    """Why a Gate-Revert is not genuine, or "" when it is. `judge(sha)` returns the record of a commit."""
     num, named = m.group(1), m.group(2)
     if len(parents) != 1 or not (parents[0].startswith(named) or named.startswith(parents[0])):
-        return [(sha, f"Gate-Revert names #{num} {named[:7]}, which is not this commit's parent")]
-    target = next((s for s in accepted if s.startswith(named) or named.startswith(s)), None)
-    if target is None:
-        return [(sha, f"Gate-Revert names {named[:7]}, which is not an accepted merge in this audit")]
-    before = git.parents(target)[0]
+        return f"Gate-Revert names #{num} {named[:7]}, which is not this commit's parent"
+    target = judge(parents[0])
+    if not target["ok"] or target["kind"] not in ("merge", "human merge"):
+        return f"Gate-Revert names {named[:7]}, which is not an accepted merge in this audit"
+    before = git.parents(parents[0])[0]
     if git.tree(sha) != git.tree(before):
-        return [(sha, f"Gate-Revert names {named[:7]} but its tree is not what that merge started from")]
-    return []
+        return f"Gate-Revert names {named[:7]} but its tree is not what that merge started from"
+    return ""
 
 
 # -- self-test ---------------------------------------------------------------------------------------------------
