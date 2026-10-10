@@ -1,0 +1,44 @@
+# A toy policy for a small repository. Copy it, change the three logins, and run `onloop policy check`.
+version: 1
+
+human: owner-a          # the person on the loop
+reviewer: rev-bot       # the reviewer GitHub App
+agents: agent-bot       # the GitHub App the team commits and merges as
+
+roles:
+  lead:
+    charter: docs/charter/roles/lead.md
+    codeowner: "@your-org/leads"
+  operator:
+    charter: docs/charter/roles/operator.md
+  reviewer:
+    charter: docs/charter/roles/reviewer.md
+  builder:
+    charter: docs/charter/roles/builder.md
+    codeowner: "@your-org/builders"
+
+# One class of our own: copy edits are safe enough for the reviewer to approve alone.
+classes:
+  copy_edits: reviewer
+
+tiers: [routine, full]
+defaults:
+  tier: routine
+
+paths:
+  src/:              {owner: builder}
+  tests/:            {owner: builder}
+  docs/:             {owner: lead}
+  docs/copy/:        {owner: lead, reserved: copy_edits}
+  docs/claims/:      {owner: lead, reserved: claims}
+  docs/charter/:     {owner: lead, tier: full, reserved: authority_widening}
+  ledger.yaml:       {owner: lead}
+  .github/:          {owner: lead, tier: full, reserved: authority_widening}
+  CODEOWNERS:        {owner: lead, tier: full, reserved: authority_widening}
+  onloop.yaml:       {owner: lead, tier: full, reserved: authority_widening}
+
+required_checks:
+  - policy
+
+checks:
+  - {name: tests, run: "python -m pytest -q"}

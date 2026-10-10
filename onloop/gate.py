@@ -246,7 +246,8 @@ def plan(facts: Facts, git, *, base_rev: str, base_branch: str = "main", extra: 
 
 def revert_merge(git, merge_sha: str, number: int, base_branch: str) -> str:
     """Undo a merge: a new commit that restores the tree before it, carrying the trailer the audit verifies."""
-    git._run("checkout", base_branch)
+    git._run("fetch", "origin", base_branch)
+    git._run("checkout", "-B", base_branch, f"origin/{base_branch}")
     git._run("revert", "-m", "1", "--no-edit", merge_sha)
     msg = git.message("HEAD").rstrip() + f"\n\nGate-Revert: #{number} {merge_sha}\n"
     git._run("commit", "--amend", "-m", msg)

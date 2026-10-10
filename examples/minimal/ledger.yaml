@@ -1,0 +1,34 @@
+focus: Get the first pull request through the gate.
+
+workstreams:
+  - id: W1
+    title: First change through the gate
+    owner: lead
+    state: active
+    since: 2026-10-01
+    note: Prove the loop end to end before adding more.
+
+decisions:
+  - id: D1
+    title: Let the reviewer approve copy edits without the human
+    size: small
+    status: pending
+    asked: 2026-10-01
+    recommendation: "Yes: copy edits cannot change behaviour."
+
+queues:
+  lead:
+    - {id: Q1, title: Write the first decision record, state: todo}
+  operator:
+    - {id: Q2, title: Run the gate on the first open pull request, state: todo}
+  reviewer:
+    - {id: Q3, title: Review the first pull request, state: todo}
+  builder:
+    - {id: Q4, title: Open the first pull request, state: doing}
+
+changelog:
+  - {date: 2026-10-01, who: lead, summary: Ledger created.}
+
+sla:
+  doing: 3
+  blocked: 2

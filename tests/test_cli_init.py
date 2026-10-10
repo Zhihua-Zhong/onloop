@@ -136,3 +136,21 @@ def test_a_failing_gh_call_raises_with_a_short_reason():
         assert "failed" in str(e)
     else:
         raise AssertionError("expected a GitHubError")
+
+
+def test_a_rest_apps_login_with_the_bot_suffix_matches_the_bare_slug_in_the_policy():
+    assert github.actor({"login": "agent-bot[bot]", "type": "Bot"}) == {"login": "agent-bot", "type": "Bot"}
+    assert github.actor({"login": "agent-bot[bot]", "type": "User"})["login"] == "agent-bot[bot]"   # a User is not the App
+    assert github.actor(None) == {"login": None, "type": None}
+
+
+def test_the_pull_request_facts_carry_when_the_head_was_pushed():
+    def runner(argv):
+        url = argv[-1]
+        if url.endswith("pulls/9"):
+            return Done(json.dumps({"state": "open", "merged": False, "base": {"ref": "main"}, "head": {"sha": "h" * 40}}))
+        if url.endswith("pulls/9/commits"):
+            return Done(json.dumps([{"commit": {"message": "a", "committer": {"date": "2026-01-01T00:00:00Z"}}},
+                                    {"commit": {"message": "b", "committer": {"date": "2026-01-02T00:00:00Z"}}}]))
+        return Done("[]")
+    assert github.GitHub("org/repo", runner).pr(9)["head_pushed_at"] == "2026-01-02T00:00:00Z"

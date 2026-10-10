@@ -76,3 +76,11 @@ def test_a_policy_that_only_tightens_or_holds_is_not_a_loosening(policy, raw):
     tighter = _loosen(raw, lambda r: r["paths"].update({"src/": {"owner": "builder", "tier": "full"}}))
     assert pol.loosening(policy, tighter) == []
     assert pol.loosening(policy, policy) == []
+
+
+def test_roles_and_post_merge_checks_must_have_the_shape_the_code_reads(raw):
+    raw["roles"]["empty"] = None
+    assert any("role `empty`" in p for p in pol.validate(raw))
+    raw["roles"]["empty"] = {}
+    raw["post_merge_checks"] = [{"name": "smoke"}]
+    assert any("post_merge_checks" in p for p in pol.validate(raw))

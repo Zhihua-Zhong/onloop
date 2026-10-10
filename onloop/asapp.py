@@ -26,6 +26,9 @@ from typing import Any
 
 API = "https://api.github.com"
 IDENTITIES = ("agents", "reviewer")
+# The agents identity may also run onloop's own commands that act on GitHub, so the gate merges as the App and not as
+# whoever happens to be logged in to gh.
+AGENTS_ONLOOP_COMMANDS = ("gate", "audit", "watchdog")
 # What the reviewer identity may run, as the first two words after `gh`. Everything else is refused, `git` included.
 REVIEWER_ALLOWED = (("pr", "review"), ("pr", "comment"))
 JWT_LIFETIME = 540                       # seconds; GitHub allows ten minutes
@@ -44,8 +47,12 @@ def check_command(argv: list[str], identity: str) -> list[str]:
     prog = pathlib.Path(argv[0]).name.lower().removesuffix(".exe")
     args = argv[1:]
     low = [a.lower() for a in args]
+    if prog == "onloop":
+        if identity != "agents" or not low or low[0] not in AGENTS_ONLOOP_COMMANDS:
+            raise AppError("onloop runs here only as the agents identity, and only: " + ", ".join(AGENTS_ONLOOP_COMMANDS))
+        return [argv[0], *args]
     if prog not in ("git", "gh"):
-        raise AppError(f"only git and gh run here, not {argv[0]!r}")
+        raise AppError(f"only git, gh and onloop run here, not {argv[0]!r}")
     if identity == "reviewer":
         if prog != "gh" or tuple(low[:2]) not in REVIEWER_ALLOWED:
             raise AppError("the reviewer identity may only run `gh pr review` and `gh pr comment`")
@@ -95,11 +102,12 @@ def mint_jwt(app_id: str, private_key_pem: str, now: float | None = None) -> str
     return f"{header}.{claims}.{b64url(signature)}"
 
 
-Http = Callable[[str, dict[str, str]], dict[str, Any]]
+Http = Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]]
 
 
-def _post(url: str, headers: dict[str, str]) -> dict[str, Any]:                 # pragma: no cover - the network
-    req = urllib.request.Request(url, method="POST", headers=headers, data=b"{}")
+def _post(url: str, headers: dict[str, str], body: dict[str, Any]) -> dict[str, Any]:     # pragma: no cover - network
+    req = urllib.request.Request(url, method="POST", headers={**headers, "Content-Type": "application/json"},
+                                 data=json.dumps(body).encode())
     with urllib.request.urlopen(req, timeout=30) as r:                           # noqa: S310 - fixed https URL
         return json.loads(r.read())
 
@@ -110,7 +118,8 @@ def installation_token(app_id: str, installation_id: str, key_pem: str, repo: st
     token = mint_jwt(app_id, key_pem, now)
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "onloop"}
-    body = (http or _post)(f"{API}/app/installations/{installation_id}/access_tokens", headers)
+    scope = {"repositories": [repo.split("/")[-1]]}                  # the token reaches this repository only
+    body = (http or _post)(f"{API}/app/installations/{installation_id}/access_tokens", headers, scope)
     if "token" not in body:
         raise AppError("GitHub did not return an installation token")
     return str(body["token"])
@@ -179,7 +188,10 @@ def self_test() -> tuple[bool, list[str]]:
         ("agents: gh auth status --show-token is refused", ["gh", "auth", "status", "--show-token"], "agents", True),
         ("agents: git credential is refused", ["git", "credential", "fill"], "agents", True),
         ("agents: git -c swapping the helper is refused", ["git", "-c", "credential.helper=x", "push"], "agents", True),
-        ("agents: a program other than git or gh is refused", ["curl", "https://example.com"], "agents", True),
+        ("agents: onloop gate is allowed", ["onloop", "gate", "7"], "agents", False),
+        ("agents: onloop as-app (a nested identity) is refused", ["onloop", "as-app", "--", "git"], "agents", True),
+        ("reviewer: onloop gate is refused", ["onloop", "gate", "7"], "reviewer", True),
+        ("agents: a program other than git, gh or onloop is refused", ["curl", "https://example.com"], "agents", True),
         ("reviewer: gh pr review is allowed", ["gh", "pr", "review", "1", "--approve"], "reviewer", False),
         ("reviewer: git is refused", ["git", "push"], "reviewer", True),
         ("reviewer: gh pr merge is refused", ["gh", "pr", "merge", "1"], "reviewer", True),

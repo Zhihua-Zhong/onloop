@@ -5,6 +5,7 @@ from onloop import asapp
 
 @pytest.mark.parametrize("argv,identity", [
     (["git", "push", "origin", "b"], "agents"), (["gh", "pr", "create"], "agents"),
+    (["onloop", "gate", "7"], "agents"), (["onloop", "audit"], "agents"),
     (["gh", "pr", "review", "1", "--approve"], "reviewer"), (["gh", "pr", "comment", "1", "-b", "x"], "reviewer"),
 ])
 def test_allowed_commands_pass_through_unchanged(argv, identity):
@@ -15,7 +16,8 @@ def test_allowed_commands_pass_through_unchanged(argv, identity):
     (["gh", "auth", "token"], "agents"), (["gh", "auth", "status", "--show-token"], "agents"),
     (["gh", "auth", "login"], "agents"), (["git", "credential", "fill"], "agents"),
     (["git", "-c", "credential.helper=x", "push"], "agents"), (["git", "--config-env=a=B", "push"], "agents"),
-    (["curl", "x"], "agents"), ([], "agents"), (["git", "status"], "root"),
+    (["curl", "x"], "agents"), ([], "agents"), (["onloop", "as-app", "--", "git"], "agents"),
+    (["onloop", "init"], "agents"), (["onloop", "gate", "7"], "reviewer"), (["onloop"], "agents"), (["git", "status"], "root"),
     (["git", "push"], "reviewer"), (["gh", "pr", "merge", "1"], "reviewer"), (["gh", "api", "x"], "reviewer"),
     (["gh", "pr", "comment", "1", "--edit-last"], "reviewer"),
     (["gh", "pr", "comment", "1", "--delete-last=true"], "reviewer"),
@@ -68,8 +70,8 @@ def test_run_signs_exchanges_and_runs_with_the_token(monkeypatch, tmp_path):
     monkeypatch.setattr(asapp, "mint_jwt", lambda app_id, pem, now=None: f"jwt-for-{app_id}-{pem}")
     seen = {}
 
-    def http(url, headers):
-        seen["url"], seen["auth"] = url, headers["Authorization"]
+    def http(url, headers, body):
+        seen["url"], seen["auth"], seen["body"] = url, headers["Authorization"], body
         return {"token": "installation-token"}
 
     class Done:
@@ -83,6 +85,7 @@ def test_run_signs_exchanges_and_runs_with_the_token(monkeypatch, tmp_path):
     code = asapp.run(["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={"K": str(key)})
     assert code == 0 and seen["token"] == "installation-token" and seen["cmd"] == ["git", "status"]
     assert seen["url"].endswith("/app/installations/22/access_tokens")
+    assert seen["body"] == {"repositories": ["repo"]}                        # scoped to the one repository
     assert seen["auth"] == "Bearer jwt-for-11-PEM-PLACEHOLDER"
     with pytest.raises(asapp.AppError):
         asapp.run(["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={})

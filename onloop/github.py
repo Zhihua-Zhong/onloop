@@ -36,8 +36,14 @@ def json_stream(text: str) -> list[Any]:
 
 
 def actor(user: dict[str, Any] | None) -> dict[str, str | None]:
+    """{login, type} for a REST user. The REST API reports an App as `slug[bot]`; the policy names the bare slug (as
+    GraphQL does), so a Bot's login is returned without the suffix. The type is kept, so a `User` that registered the
+    same bare name is still not the App."""
     user = user or {}
-    return {"login": user.get("login"), "type": user.get("type")}
+    login = user.get("login")
+    if user.get("type") == "Bot" and isinstance(login, str):
+        login = login.removesuffix("[bot]")
+    return {"login": login, "type": user.get("type")}
 
 
 class GitHub:
@@ -86,6 +92,7 @@ class GitHub:
             "title": raw.get("title") or "",
             "body": raw.get("body") or "",
             "commit_messages": [c["commit"]["message"] for c in commits],
+            "head_pushed_at": ((commits[-1]["commit"].get("committer") or {}).get("date") if commits else None),
             "reviews": [{"id": r["id"], "author": actor(r.get("user")), "state": r["state"],
                          "commit": r.get("commit_id"), "submitted_at": r.get("submitted_at")} for r in reviews],
             "dismissals": [{"review_id": (e.get("dismissed_review") or {}).get("review_id"),

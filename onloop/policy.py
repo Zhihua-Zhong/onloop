@@ -100,6 +100,9 @@ def validate(raw: Any) -> list[str]:
     if not isinstance(roles, dict) or not roles:
         problems.append("`roles` must name at least one role")
         roles = {}
+    for role, spec in roles.items():
+        if not isinstance(spec, dict):
+            problems.append(f"role `{role}` must map to a mapping (use `{role}: {{}}` for no settings)")
     classes = dict(BUILTIN_CLASSES)
     extra = raw.get("classes") or {}
     if not isinstance(extra, dict):
@@ -142,6 +145,9 @@ def validate(raw: Any) -> list[str]:
     checks = raw.get("checks") or []
     if not isinstance(checks, list) or not all(isinstance(c, dict) and c.get("name") and c.get("run") for c in checks):
         problems.append("`checks` must be a list of {name, run}")
+    post = raw.get("post_merge_checks") or []
+    if not isinstance(post, list) or not all(isinstance(c, dict) and c.get("name") and c.get("run") for c in post):
+        problems.append("`post_merge_checks` must be a list of {name, run}")
     req = raw.get("required_checks") or []
     if not isinstance(req, list) or not all(isinstance(c, str) for c in req):
         problems.append("`required_checks` must be a list of check names")
