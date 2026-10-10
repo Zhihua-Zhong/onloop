@@ -104,7 +104,7 @@ def test_the_stage_figures_follow_the_inputs(ex):
     assert f["author"]["pull requests seen"] == 10 and f["author"]["still open"] == 4
     assert f["classify"]["reserved: human needed"] == 2                  # #4 and #8 touch docs/claims/
     assert f["human"]["waiting for the human"] == 1 and f["reviewer"]["waiting for a verdict"] == 1
-    assert f["gate"]["merged"] == 6 and f["gate"]["ready to merge now"] == 1
+    assert f["gate"]["merged"] == 6 and f["gate"]["cleared for the gate"] == 1
     assert f["audit"]["alarms"] == 1 and f["audit"]["commits that hold"] == 7
     fewer = demo_model(ex, prs=[p for p in demo._open_prs(ex) if p["number"] != 8])
     assert figures(fewer)["human"]["waiting for the human"] == 0         # remove the input and the figure goes with it

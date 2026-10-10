@@ -364,7 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--github", action="store_true", help="also read pull requests and the audit history via gh")
     sp.add_argument("--base", default="main")
     sp.add_argument("--since", help="first commit of the audit history (default: as `onloop audit`)")
-    sp.add_argument("--limit", type=int, default=15, help="how many recent merges to judge (default 15)")
+    sp.add_argument("--limit", type=int, default=15, help="how many recent commits to judge (default 15)")
     sp.add_argument("--title", default="onloop")
 
     sp = add("demo", cmd_demo, "build the demo site from an example configuration, using the real classifier and "

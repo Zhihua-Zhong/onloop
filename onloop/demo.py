@@ -102,8 +102,8 @@ def _scenarios(ex: Example) -> list[dict]:
                         reviews=[ex.reviewer(stale_head, at="2026-10-10T08:00:00Z")]),
          "files": ["src/parser.py"]},
         {"id": "checks", "heading": "A red check hiding behind a green one",
-         "story": "The required check ran twice on the head: once red, once green after a re-run. One green run does "
-                  "not hide a red one, whatever order GitHub lists them in.",
+         "story": "Two workflows report a check of the same name on the head, one red and one green. One green run "
+                  "does not hide a red one, whatever order GitHub lists them in.",
          "facts": facts(15, "[builder] Cache parsed results", "checks",
                         checks=[{"name": "policy", "conclusion": "FAILURE"}, {"name": "policy",
                                                                                "conclusion": "SUCCESS"}]),
@@ -142,6 +142,7 @@ def _term(cmd: str, lines: list[str], code: int | None = None) -> str:
 
 
 def how_it_works(ex: Example, results: list[dict]) -> str:
+    count = len(results)
     cards = []
     for r in results:
         verdict = dashboard._pill("would merge", "good") if r["merges"] else dashboard._pill("refused", "bad")
@@ -155,7 +156,7 @@ def how_it_works(ex: Example, results: list[dict]) -> str:
                      f'<p>{dashboard._e(r["story"])}</p>{meta}'
                      + _term(f'onloop classify --base origin/main --head {r["head"]}', r["classify"])
                      + _term(f'onloop gate {r["number"]} --dry-run', r["gate"], r["code"]) + "</section>")
-    intro = ('<div class="focus"><b>How it works</b>Six scripted pull requests against '
+    intro = ('<div class="focus"><b>How it works</b>' + f'{count} scripted pull requests against '
              '<span class="mono">examples/minimal</span>. The classifier and the gate below are the real ones; '
              'the page was built by running them. The pull requests are made up, and the project checks in '
              '<span class="mono">checks:</span> are not run here because there is no repository to run them in.</div>')

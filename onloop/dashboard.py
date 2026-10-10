@@ -51,10 +51,12 @@ def pr_row(policy: pol.Policy, p: dict[str, Any]) -> dict[str, Any]:
             row["waiting"] = "reviewer"
         elif c is not None and c.needs_human and not ev.human_approved:
             row["waiting"] = "human"
-        elif gate.check_results(p, policy):
+        elif c is None:
+            row["waiting"] = "unknown"
+        elif gate.decide(p, policy, c):                      # ownership, required checks, anything else the gate says
             row["waiting"] = "checks"
         else:
-            row["waiting"] = "gate" if c is not None else "unknown"
+            row["waiting"] = "gate"
     return row
 
 
@@ -88,7 +90,7 @@ def stage_counts(policy: pol.Policy, prs: list[dict[str, Any]] | None, history: 
                                                                        if r.get("waiting") == "human"))]},
         {"id": "gate", "name": "Gate", "what": "merges only the exact head that was approved",
          "figures": [fig("merged", None if history is None else len(merges)),
-                     fig("ready to merge now", None if none else sum(1 for r in open_rows
+                     fig("cleared for the gate", None if none else sum(1 for r in open_rows
                                                                     if r.get("waiting") == "gate"))]},
         {"id": "audit", "name": "Audit", "what": "re-judges every merge afterwards",
          "figures": [fig("commits that hold", None if history is None else len(history) - len(alarms)),

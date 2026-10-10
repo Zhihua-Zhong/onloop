@@ -1,8 +1,7 @@
 name: pages
 
 # Builds the live demo from examples/minimal with the real classifier, gate and audit, and deploys it to GitHub Pages.
-# Pages must be enabled by the repository owner (Settings > Pages > Source: GitHub Actions); until then the deploy
-# job fails and nothing else is affected.
+# The build always runs; the deploy runs only when the repository variable PAGES_ENABLED is 'true'.
 
 on:
   push:
@@ -40,6 +39,9 @@ jobs:
 
   deploy:
     needs: build
+    # Publishing a site is the project lead's call: set the repository variable PAGES_ENABLED to true, after enabling
+    # Pages (Settings > Pages > Source: GitHub Actions), to turn the deployment on.
+    if: vars.PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write

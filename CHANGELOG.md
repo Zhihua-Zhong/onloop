@@ -19,8 +19,8 @@ All notable changes to this project are recorded here. The format follows
   on made-up pull requests and a made-up history: a dashboard, and a "how it works" page with the exact output for six
   scripted pull requests (routine, claims, claims approved by the human, a policy loosening, a stale-head approval, a
   red check behind a green one).
-- `.github/workflows/pages.yml`: builds the demo and deploys it with `actions/deploy-pages`. The repository owner
-  enables Pages once.
+- `.github/workflows/pages.yml`: builds the demo and deploys it with `actions/deploy-pages` once the repository owner
+  enables Pages and sets the variable `PAGES_ENABLED`.
 - `audit.history()`: one record per commit (`kind`, `ok`, `why`, pull request, title) with an optional window;
   `audit.audit()` is now its failures. A revert is judged against the merge it names even when the window starts after
   that merge.
