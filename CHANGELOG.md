@@ -26,6 +26,8 @@ All notable changes to this project are recorded here. The format follows
   that merge.
 - `GitHub.pr_files()` and `classify.summary_lines()`.
 - `examples/minimal/ledger.yaml` is richer: three workstreams (one blocked), two decisions, two items per queue.
+- The starter workflows' default install spec is now derived from the package version, so a release cannot ship a
+  workflow that installs an older one; a test pins it.
 
 ## [0.1.0] - 2026-10-10
 

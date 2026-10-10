@@ -5,11 +5,11 @@ import datetime as dt
 import pathlib
 from importlib.resources import files
 
-from . import codeowners, policy
+from . import __version__, codeowners, policy
 
 # What the starter workflows install. onloop is not on PyPI, so the default is the tagged release on GitHub; pass
 # `--install-spec` for a fork, a different tag, or a package index.
-DEFAULT_INSTALL_SPEC = "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"
+DEFAULT_INSTALL_SPEC = f"onloop @ git+https://github.com/Zhihua-Zhong/onloop@v{__version__}"
 DOT_DIRS = {"dot_github": ".github"}          # a leading-dot directory cannot ship reliably inside a wheel
 
 

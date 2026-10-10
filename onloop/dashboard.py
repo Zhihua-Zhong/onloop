@@ -258,7 +258,7 @@ def _loop_panel(m: dict[str, Any]) -> str:
             f'{"n/a" if f["value"] is None else f["value"]}</b><span>{_e(f["label"])}</span></div>'
             for f in s["figures"])
         cards.append(f'<li class="stage{" optional" if optional else ""}" data-stage="{_e(s["id"])}">'
-                     f'<span class="step">{i}{" - if reserved" if optional else ""}</span>'
+                     f'<span class="step">{i}</span>'
                      f'<h3>{_e(s["name"])}</h3><p class="what">{_e(s["what"])}</p>{figs}</li>')
     note = ("" if m["has_github"] and m["has_history"] else
             '<p class="legend">n/a: no GitHub data was read for this figure (run with <span class="mono">--github'

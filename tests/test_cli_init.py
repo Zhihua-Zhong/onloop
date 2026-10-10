@@ -160,7 +160,7 @@ def test_the_starter_workflows_install_the_tagged_release_unless_told_otherwise(
     init(tmp_path / "a", human="owner-a", reviewer="rev-bot", agents="agent-bot")
     for name in ("onloop-gate.yml", "onloop-audit.yml"):
         text = (tmp_path / "a" / ".github" / "workflows" / name).read_text(encoding="utf-8")
-        assert 'pip install "onloop @ git+https://github.com/' in text and "@v0.1.0" in text
+        assert 'pip install "onloop @ git+https://github.com/' in text and f"@v{__version__}" in text
         assert "__INSTALL_SPEC__" not in text
     init(tmp_path / "b", human="owner-a", reviewer="rev-bot", agents="agent-bot", install_spec="onloop==9.9.9")
     text = (tmp_path / "b" / ".github" / "workflows" / "onloop-audit.yml").read_text(encoding="utf-8")
@@ -168,3 +168,8 @@ def test_the_starter_workflows_install_the_tagged_release_unless_told_otherwise(
     assert main(["init", "--dir", str(tmp_path / "c"), "--install-spec", "onloop @ git+https://example.invalid/x@v1"]) == 0
     assert "example.invalid/x@v1" in (tmp_path / "c" / ".github" / "workflows" / "onloop-gate.yml").read_text(
         encoding="utf-8")
+
+
+def test_the_default_install_spec_is_the_package_version():
+    from onloop import init
+    assert init.DEFAULT_INSTALL_SPEC.endswith(f"@v{__version__}")

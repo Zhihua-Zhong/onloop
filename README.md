@@ -19,7 +19,7 @@ parts GitHub does not have:
 
 Status: 0.2.0, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
 
-**Live demo: https://zhihua-zhong.github.io/onloop/** (a dashboard and six scripted pull requests, built by the <!-- scan:allow -->
+**Live demo: https://zhihua-zhong.github.io/onloop/** (a dashboard and six scripted pull requests, built by the
 real classifier, gate and audit).
 
 ![The onloop dashboard: the loop with its counts, the policy map, queues, what waits on the human](docs/img/dashboard.jpg)
@@ -51,7 +51,7 @@ to GitHub. The offline commands in this section need only Python and git.
 Install straight from the tagged release (there is no PyPI release):
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"      # no clone needed
+pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.2.0"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -132,7 +132,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.2.0"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
