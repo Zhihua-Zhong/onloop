@@ -80,6 +80,9 @@ class FakeGitHub:
     def pr(self, number: int) -> dict[str, Any]:
         return self.prs[number]
 
+    def pr_files(self, number: int) -> list[str]:
+        return list(self.prs[number].get("files") or [])
+
     def pr_for_commit(self, sha: str) -> int | None:
         return self.commit_pr.get(sha)
 

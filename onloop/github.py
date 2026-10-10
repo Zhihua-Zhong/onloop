@@ -106,6 +106,15 @@ class GitHub:
             "merge_sha": raw.get("merge_commit_sha"),
         }
 
+    def pr_files(self, number: int) -> list[str]:
+        """The paths a pull request changes, as the host lists them. For display only: the gate reads `git diff`."""
+        out: list[str] = []
+        for f in self._api_list(f"pulls/{number}/files"):
+            out.append(f["filename"])
+            if f.get("previous_filename"):
+                out.append(f["previous_filename"])
+        return sorted(set(out))
+
     def pr_for_commit(self, sha: str) -> int | None:
         """The pull request a merge commit on the default branch belongs to, or None."""
         pulls = self._api_list(f"commits/{sha}/pulls")

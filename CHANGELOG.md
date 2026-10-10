@@ -6,6 +6,27 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - unreleased
+
+### Added
+
+- `onloop dashboard --out DIR`: one self-contained HTML page (inline CSS and JS, no CDN, no server, no external
+  request; light and dark theme; fits a phone) with six panels: the loop with a count at each stage, the policy map,
+  queues by role, what waits on the human, the watchdog and recent merges with their audit verdicts. Every figure is
+  computed from the policy, the ledger and, with `--github`, the pull requests and the audit history; with no GitHub
+  data a figure reads `n/a`, never zero.
+- `onloop demo --out DIR`: the demo site, built from `examples/minimal` by running the real classifier, gate and audit
+  on made-up pull requests and a made-up history: a dashboard, and a "how it works" page with the exact output for six
+  scripted pull requests (routine, claims, claims approved by the human, a policy loosening, a stale-head approval, a
+  red check behind a green one).
+- `.github/workflows/pages.yml`: builds the demo and deploys it with `actions/deploy-pages`. The repository owner
+  enables Pages once.
+- `audit.history()`: one record per commit (`kind`, `ok`, `why`, pull request, title) with an optional window;
+  `audit.audit()` is now its failures. A revert is judged against the merge it names even when the window starts after
+  that merge.
+- `GitHub.pr_files()` and `classify.summary_lines()`.
+- `examples/minimal/ledger.yaml` is richer: three workstreams (one blocked), two decisions, two items per queue.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

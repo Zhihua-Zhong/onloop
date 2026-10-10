@@ -7,6 +7,18 @@ workstreams:
     state: active
     since: 2026-10-01
     note: Prove the loop end to end before adding more.
+  - id: W2
+    title: Starter docs for new contributors
+    owner: builder
+    state: active
+    since: 2026-10-07
+    note: A short guide, written once the first change has merged.
+  - id: W3
+    title: Reviewer App registered on the repository
+    owner: operator
+    state: blocked
+    since: 2026-10-06
+    note: Waiting for the repository owner to approve the App installation.
 
 decisions:
   - id: D1
@@ -15,19 +27,36 @@ decisions:
     status: pending
     asked: 2026-10-01
     recommendation: "Yes: copy edits cannot change behaviour."
+  - id: D2
+    title: Make docs/ a full-tier path
+    size: medium
+    status: pending
+    asked: 2026-10-09
+    recommendation: "No: the reviewer already reads every docs change end to end."
+  - id: D0
+    title: Name the three accounts
+    size: small
+    status: decided
+    asked: 2026-09-29
+    recommendation: Use one account per role.
 
 queues:
   lead:
     - {id: Q1, title: Write the first decision record, state: todo}
+    - {id: Q5, title: Review the starter docs outline, state: todo}
   operator:
     - {id: Q2, title: Run the gate on the first open pull request, state: todo}
+    - {id: Q6, title: Install the audit workflow, state: doing, since: 2026-10-05}
   reviewer:
     - {id: Q3, title: Review the first pull request, state: todo}
   builder:
-    - {id: Q4, title: Open the first pull request, state: doing}
+    - {id: Q4, title: Open the first pull request, state: doing, since: 2026-10-10}
+    - {id: Q7, title: Draft the contributor guide, state: todo}
 
 changelog:
   - {date: 2026-10-01, who: lead, summary: Ledger created.}
+  - {date: 2026-10-06, who: operator, summary: Reviewer App registration is blocked on the owner.}
+  - {date: 2026-10-09, who: lead, summary: Asked whether docs should be a full-tier path.}
 
 sla:
   doing: 3

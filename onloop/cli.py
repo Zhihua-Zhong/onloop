@@ -10,7 +10,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
-from . import __version__, asapp, audit, codeowners, gate, ledger, watchdog
+from . import __version__, asapp, audit, codeowners, dashboard, demo, gate, ledger, watchdog
 from . import classify as classify_mod
 from . import init as init_mod
 from . import policy as pol
@@ -111,11 +111,8 @@ def cmd_classify(args) -> int:
     if args.json:
         _say(json.dumps(c.as_dict(), indent=2))
     else:
-        _say(f"approvers needed: {', '.join(c.approvers)}")
-        _say(f"tier: {c.tier}")
-        _say(f"reserved classes: {', '.join(c.classes) or 'none'}")
-        for r in c.reasons:
-            _say(f"  - {r}")
+        for line in classify_mod.summary_lines(c):
+            _say(line)
     return 0
 
 
@@ -224,6 +221,52 @@ def cmd_watchdog(args) -> int:
     return 1 if found else 0
 
 
+def cmd_dashboard(args) -> int:
+    policy = _policy(args)
+    try:
+        data = ledger.load(args.file)
+    except ledger.LedgerError as e:
+        _err(f"ledger: {e}")
+        return 1
+    prs = history = None
+    source = f"{args.policy} and {args.file}"
+    if args.github:
+        repo = _repo(args)
+        client, git = GitHub(repo), Git()
+        prs = []
+        for n in client.open_prs():
+            f = client.pr(n)
+            f["files"] = client.pr_files(n)
+            prs.append(f)
+        history = audit.history(git, client, since=_since(git, policy, args), base_branch=args.base, limit=args.limit)
+        seen = {p["number"] for p in prs}
+        for h in history:
+            if h.get("pr") and h["pr"] not in seen:
+                f = client.pr(h["pr"])
+                f["files"] = client.pr_files(h["pr"])
+                prs.append(f)
+                seen.add(h["pr"])
+        source += f", and {repo} on GitHub"
+    now = dt.datetime.now(dt.UTC)
+    model = dashboard.build_model(policy, data, prs=prs, history=history, now=now, title=args.title, source=source)
+    out = pathlib.Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "index.html").write_text(dashboard.render(model), encoding="utf-8", newline="\n")
+    _say(f"wrote {out / 'index.html'}")
+    return 0
+
+
+def cmd_demo(args) -> int:
+    example = pathlib.Path(args.example)
+    if not (example / pol.POLICY_FILE).exists():
+        _err(f"onloop: {example / pol.POLICY_FILE} does not exist; point --example at a directory such as "
+             "examples/minimal")
+        return 2
+    for path in demo.build(example, args.out):
+        _say(f"wrote {path}")
+    return 0
+
+
 def cmd_selftest(_args) -> int:
     ok = True
     for name, mod in (("policy loosening and approvers", classify_mod), ("merge gate", gate), ("main audit", audit),
@@ -314,6 +357,20 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("watchdog", cmd_watchdog, "flag stuck items, idle roles and pull requests waiting for a verdict", repo=True)
     sp.add_argument("--file", default=ledger.LEDGER_FILE)
     sp.add_argument("--no-github", action="store_true", help="read the ledger only")
+
+    sp = add("dashboard", cmd_dashboard, "write one self-contained HTML page that shows the loop", repo=True)
+    sp.add_argument("--out", required=True, help="directory to write index.html into")
+    sp.add_argument("--file", default=ledger.LEDGER_FILE)
+    sp.add_argument("--github", action="store_true", help="also read pull requests and the audit history via gh")
+    sp.add_argument("--base", default="main")
+    sp.add_argument("--since", help="first commit of the audit history (default: as `onloop audit`)")
+    sp.add_argument("--limit", type=int, default=15, help="how many recent merges to judge (default 15)")
+    sp.add_argument("--title", default="onloop")
+
+    sp = add("demo", cmd_demo, "build the demo site from an example configuration, using the real classifier and "
+             "gate", policy=False)
+    sp.add_argument("--example", default="examples/minimal")
+    sp.add_argument("--out", required=True)
 
     add("selftest", cmd_selftest, "prove every checker still bites", policy=False)
     return ap

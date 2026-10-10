@@ -1,0 +1,52 @@
+name: pages
+
+# Builds the live demo from examples/minimal with the real classifier, gate and audit, and deploys it to GitHub Pages.
+# Pages must be enabled by the repository owner (Settings > Pages > Source: GitHub Actions); until then the deploy
+# job fails and nothing else is affected.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --no-cache-dir -e .
+      - name: Build the demo site
+        run: onloop demo --example examples/minimal --out site
+      - name: Check the site is self-contained
+        run: |
+          test -s site/index.html
+          test -s site/how-it-works.html
+          if grep -E -i 'https?:|@import|<link|<img|src=' site/*.html; then echo "external reference in the demo"; exit 1; fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

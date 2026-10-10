@@ -6,6 +6,7 @@
 - [Configuration reference](configuration.md): every field of `onloop.yaml` and `ledger.yaml`, and every command
 - [Security model](security-model.md): what is trusted, what is bound to the head, and what is not protected
 - [FAQ](faq.md)
+- [Dashboard and demo site](dashboard.md): one static page for the loop, and the live demo
 - [Minimal example](../examples/minimal/README.md): a toy configuration that validates
 - [Changelog](../CHANGELOG.md)
 - [Contributing](../CONTRIBUTING.md) and [Security policy](../SECURITY.md)

@@ -232,6 +232,8 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop ledger render` | `--file`, `--policy`, `--html` | 0 |
 | `onloop ledger next` | `--file`, `--policy`, `--role R` (required) | 0 an item, 1 empty queue |
 | `onloop watchdog` | `--file`, `--no-github`, `--repo` | 0 nothing stuck, 1 findings |
+| `onloop dashboard` | `--out DIR` (required), `--file`, `--github`, `--base`, `--since`, `--limit N` (default 15), `--title`, `--repo` | 0 |
+| `onloop demo` | `--out DIR` (required), `--example DIR` (default `examples/minimal`) | 0, 2 no example |
 | `onloop selftest` | | 0 every checker bites, 1 one does not |
 
 Notes:

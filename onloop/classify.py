@@ -74,6 +74,14 @@ def classify(files: list[str], base: pol.Policy, head: pol.Policy | None = None,
     return c
 
 
+def summary_lines(c: Classification) -> list[str]:
+    """The plain-text account of a classification that `onloop classify` prints."""
+    out = [f"approvers needed: {', '.join(c.approvers)}", f"tier: {c.tier}",
+           f"reserved classes: {', '.join(c.classes) or 'none'}"]
+    out.extend(f"  - {r}" for r in c.reasons)
+    return out
+
+
 def copy_raw(base: pol.Policy, paths: dict) -> pol.Policy:
     """`base` with extra path entries added (a self-test helper)."""
     return pol.from_dict(dict(base.raw, paths=dict(base.raw["paths"], **paths)))

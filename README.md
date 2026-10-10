@@ -17,7 +17,12 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.1.0, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
+Status: 0.2.0, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
+
+**Live demo: https://zhihua-zhong.github.io/onloop/** (a dashboard and six scripted pull requests, built by the <!-- scan:allow -->
+real classifier, gate and audit).
+
+![The onloop dashboard: the loop with its counts, the policy map, queues, what waits on the human](docs/img/dashboard.jpg)
 
 ## Why human-on-the-loop
 
@@ -205,14 +210,14 @@ gate (see the limits in [docs/security-model.md](docs/security-model.md)).
 - [docs/configuration.md](docs/configuration.md): every field of `onloop.yaml` and `ledger.yaml`
 - [docs/security-model.md](docs/security-model.md): what is trusted, what is bound, what is not protected
 - [docs/faq.md](docs/faq.md)
+- [docs/dashboard.md](docs/dashboard.md): the dashboard and the demo site, and how to host your own
 - [examples/minimal/](examples/minimal/): a toy configuration that validates
 
 ## Status and roadmap
 
-0.1.0 is the first release: everything described above exists and has a self-test. Not in 0.1.0:
+0.1.0 was the first release; 0.2.0 adds the dashboard (`onloop dashboard`) and the demo site (`onloop demo`). Everything described above exists and has a self-test. Not yet:
 
 - an event-driven dispatcher, where GitHub events launch headless agents;
-- a team dashboard (`onloop ledger render` prints a plain status page);
 - a PyPI release.
 
 ## Licence

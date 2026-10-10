@@ -43,12 +43,13 @@ def history(git, client, *, since: str | None, base_branch: str = "main", limit:
         parents = git.parents(sha)
         m = REVERT_TRAILER.search(git.message(sha) or "")
         if m:
-            rec["kind"] = "revert"
+            rec.update(kind="revert", pr=int(m.group(1)), title="Gate revert")
             why = _revert(git, sha, parents, m, judge)
             rec.update(ok=not why, why=why)
             return rec
         if len(parents) != 2:
-            rec.update(kind="direct push", why="a commit pushed straight to the branch, not a merge")
+            rec.update(kind="direct push", why="a commit pushed straight to the branch, not a merge",
+                       title=((git.message(sha) or "").splitlines() or [""])[0])
             return rec
         n = client.pr_for_commit(sha)
         if n is None:
