@@ -46,11 +46,11 @@ to GitHub. The offline commands in this section need only Python and git.
 Install straight from the tagged release (there is no PyPI release):
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"      # no clone needed (scan:allow)
+pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"      # no clone needed
 onloop --version
 
 # or, to work on it:
-git clone https://github.com/Zhihua-Zhong/onloop.git && cd onloop   # scan:allow
+git clone https://github.com/Zhihua-Zhong/onloop.git && cd onloop
 uv venv && uv pip install -e .          # or: python -m venv .venv && pip install -e .
 ```
 

@@ -11,13 +11,13 @@ GitHub does not have.
 ## Install
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"   # scan:allow
+pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"
 onloop init --human your-login --reviewer your-reviewer-app --agents your-agents-app
 onloop selftest
 ```
 
 Python 3.11 or later, git, and the GitHub CLI for the commands that talk to GitHub. `as-app` needs
-`pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"`. <!-- scan:allow -->
+`pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"`
 
 ## What is in 0.1.0
 

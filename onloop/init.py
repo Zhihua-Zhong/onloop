@@ -9,7 +9,7 @@ from . import codeowners, policy
 
 # What the starter workflows install. onloop is not on PyPI, so the default is the tagged release on GitHub; pass
 # `--install-spec` for a fork, a different tag, or a package index.
-DEFAULT_INSTALL_SPEC = "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"  # scan:allow
+DEFAULT_INSTALL_SPEC = "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"
 DOT_DIRS = {"dot_github": ".github"}          # a leading-dot directory cannot ship reliably inside a wheel
 
 
