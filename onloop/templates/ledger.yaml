@@ -1,0 +1,42 @@
+# The ledger: what the team is doing, what waits for the human, and what each role pulls next.
+# Check it with `onloop ledger check`; print it with `onloop ledger render`.
+
+focus: Get the team's first pull request through the gate.
+
+workstreams:
+  - id: W1
+    title: First change through the gate
+    owner: lead
+    state: active
+    since: __TODAY__
+    note: Prove the loop end to end before adding more.
+
+# Decisions waiting for the human. Ask for a yes or no with a recommendation, never an open question.
+decisions: []
+# decisions:
+#   - id: D1
+#     title: Allow the reviewer to approve copy edits without the human
+#     size: small            # small | medium | large
+#     status: pending        # pending | decided
+#     asked: 2026-01-01
+#     recommendation: "Yes: copy edits cannot change behaviour."
+
+# Each role pulls its next item from its own queue. An empty queue is reported to the lead.
+queues:
+  lead:
+    - {id: Q1, title: Write the first decision record, state: todo}
+  operator:
+    - {id: Q2, title: Run the gate on the first open pull request, state: todo}
+  reviewer:
+    - {id: Q3, title: Review the first pull request, state: todo}
+  builder:
+    - {id: Q4, title: Open the first pull request, state: todo}
+
+# Append-only: add a line at the end, never edit or remove one.
+changelog:
+  - {date: __TODAY__, who: lead, summary: Ledger created by `onloop init`.}
+
+# Optional: days an item may stay in a state before the watchdog flags it.
+sla:
+  doing: 3
+  blocked: 2

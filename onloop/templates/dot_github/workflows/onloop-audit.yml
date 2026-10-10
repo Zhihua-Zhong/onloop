@@ -1,0 +1,31 @@
+name: onloop main audit
+
+# Re-judges every merge on main against the policy as it read at that merge, and fails on any merge the policy would
+# not have allowed. The default token is enough: the audit only reads.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install onloop
+      - name: Audit the main branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: onloop audit --repo "${{ github.repository }}"

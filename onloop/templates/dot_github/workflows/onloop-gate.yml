@@ -1,0 +1,30 @@
+name: onloop gate checks
+
+# The checks the merge gate requires on every pull request head. The job below is named `policy`, which is the
+# check name `required_checks` lists in onloop.yaml. It needs no secrets.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install onloop
+      - name: The policy is valid
+        run: onloop policy check
+      - name: CODEOWNERS is generated from the policy
+        run: onloop codeowners --check
+      - name: The ledger is valid and its changelog only grew
+        run: onloop ledger check --base origin/${{ github.base_ref }}
+      - name: The checkers still bite
+        run: onloop selftest

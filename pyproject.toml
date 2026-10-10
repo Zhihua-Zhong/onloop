@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "onloop"
+dynamic = ["version"]
+description = "Run a team of AI coding agents on a GitHub repository with a human on the loop, not in it."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "the onloop authors" }]
+keywords = ["ai-agents", "github", "governance", "merge-gate", "codeowners"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = ["PyYAML>=6"]
+
+[project.optional-dependencies]
+app = ["PyJWT>=2.8", "cryptography>=42"]
+dev = ["pytest>=8", "ruff>=0.5", "PyJWT>=2.8", "cryptography>=42"]
+
+[project.scripts]
+onloop = "onloop.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "onloop.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["onloop*"]
+
+[tool.setuptools.package-data]
+onloop = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

@@ -1,0 +1,53 @@
+# onloop policy. This file is the single source of truth for who may change what and who must approve it.
+# CODEOWNERS is generated from it: run `onloop codeowners --write` after editing.
+
+version: 1
+
+# The three GitHub identities. They must be different accounts.
+human: __HUMAN__            # the person on the loop; the only account that approves `human` classes
+reviewer: __REVIEWER__      # the reviewer GitHub App's bare login (no [bot] suffix)
+agents: __AGENTS__          # the GitHub App the team commits, pushes and merges as
+
+roles:
+  lead:
+    charter: docs/charter/roles/lead.md
+  operator:
+    charter: docs/charter/roles/operator.md
+  reviewer:
+    charter: docs/charter/roles/reviewer.md
+  builder:
+    charter: docs/charter/roles/builder.md
+    # codeowner: "@your-org/builders"   # optional: a handle that CODEOWNERS lists for this role's paths
+
+# Reserved classes and who approves each. The six below always exist; `human` approves all of them unless you move one
+# to `reviewer`. Add your own: `classes: {release_notes: reviewer}`.
+classes: {}
+
+tiers: [routine, full]       # review depth, lowest first
+defaults:
+  tier: routine
+
+paths:
+  src/:                    {owner: builder}
+  tests/:                  {owner: builder}
+  docs/:                   {owner: lead}
+  docs/decisions/:         {owner: lead, reserved: claims}
+  docs/charter/:           {owner: lead, tier: full, reserved: authority_widening}
+  ledger.yaml:             {owner: lead}
+  .github/:                {owner: lead, tier: full, reserved: authority_widening}
+  CODEOWNERS:              {owner: lead, tier: full, reserved: authority_widening}
+  onloop.yaml:             {owner: lead, tier: full, reserved: authority_widening}   # the policy protects itself
+
+# GitHub check-run names that must be green on the exact head before the gate merges.
+required_checks:
+  - policy
+
+# Your project's own checks. The gate runs each `run` command in a clean checkout of the head.
+checks: []
+# checks:
+#   - {name: tests, run: "pytest -q"}
+
+# GitHub App identities for `onloop as-app`. IDs are not secrets; the key file's path is read from the named variable.
+# apps:
+#   agents:   {app_id: 0, installation_id: 0, slug: your-agents-app,   key_env: ONLOOP_AGENTS_KEY}
+#   reviewer: {app_id: 0, installation_id: 0, slug: your-reviewer-app, key_env: ONLOOP_REVIEWER_KEY}
