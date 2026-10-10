@@ -193,9 +193,15 @@ def loosening(base: Policy, head: Policy) -> list[str]:
     """What the head policy relaxes compared with the base policy, as sentences. Empty means it only holds or tightens.
 
     A pull request that changes the rules is not judged by the rules it changes: the gate compares the two and
-    treats any relaxation as authority widening, whatever the files say. Relaxing means: a path loses its
-    reservation, moves to a less strict class or tier, or disappears; a class moves from human to reviewer; the
-    human, reviewer or agent identity changes; a required check is dropped.
+    treats any relaxation as authority widening, whatever the files say.
+
+    Paths are compared by what each policy *decides* for them, not by how the file spells it: for every key in either
+    policy, `base.rule_for(key)` is compared with `head.rule_for(key)`. A rule can change at any key of either policy,
+    so this catches a key that is removed, one whose reservation is dropped, and a new, more specific key that
+    un-reserves part of a reserved directory. Relaxing means: a reservation is lost, moves to a class whose approver
+    is not the human, or the tier falls; a class moves from human to reviewer or disappears; the human, reviewer or
+    agent identity changes; a required check is dropped; or a check, by name and command, is dropped or its command
+    changes.
     """
     out: list[str] = []
     if base.human != head.human:
@@ -210,25 +216,21 @@ def loosening(base: Policy, head: Policy) -> list[str]:
             out.append(f"class {name!r} is removed")
         elif base.approver_of(name) == "human" and new != "human":
             out.append(f"class {name!r} moves its approver from human to {new}")
-    for key, rule in base.paths.items():
-        new_rule = head.paths.get(key)
-        if new_rule is None:
-            covering = head.rule_for(key)
-            if rule.reserved and covering.reserved != rule.reserved:
-                out.append(f"path {key!r} is removed and no longer reserved to {rule.reserved!r}")
-            elif head.tier_rank(covering.tier) < base.tier_rank(rule.tier):
-                out.append(f"path {key!r} is removed and falls to a lower tier")
-            continue
-        if rule.reserved and new_rule.reserved != rule.reserved:
-            if new_rule.reserved is None:
-                out.append(f"path {key!r} is no longer reserved (was {rule.reserved!r})")
-            elif head.approver_of(new_rule.reserved) != "human" and base.approver_of(rule.reserved) == "human":
-                out.append(f"path {key!r} moves from {rule.reserved!r} to {new_rule.reserved!r}, "
-                           "whose approver is not the human")
-        if head.tier_rank(new_rule.tier) < base.tier_rank(rule.tier):
-            out.append(f"path {key!r} lowers its tier from {rule.tier!r} to {new_rule.tier!r}")
-    base_checks = {c["name"] for c in base.checks} | set(base.required_checks)
-    head_checks = {c["name"] for c in head.checks} | set(head.required_checks)
-    for gone in sorted(base_checks - head_checks):
-        out.append(f"the check {gone!r} is dropped")
+    for key in sorted(set(base.paths) | set(head.paths)):
+        was, now = base.rule_for(key), head.rule_for(key)
+        if was.reserved and not now.reserved:
+            out.append(f"{key!r} is no longer reserved (was {was.reserved!r})")
+        elif was.reserved and now.reserved != was.reserved and base.approver_of(was.reserved) == "human"                 and head.approver_of(now.reserved) != "human":
+            out.append(f"{key!r} moves from {was.reserved!r} to {now.reserved!r}, whose approver is not the human")
+        if head.tier_rank(now.tier) < base.tier_rank(was.tier):
+            out.append(f"{key!r} lowers its tier from {was.tier!r} to {now.tier!r}")
+    for gone in sorted(set(base.required_checks) - set(head.required_checks)):
+        out.append(f"the required check {gone!r} is dropped")
+    for source, label in (("checks", "check"), ("post_merge_checks", "post-merge check")):
+        kept = {(c["name"], c["run"]) for c in head.raw.get(source) or []}
+        for c in base.raw.get(source) or []:
+            if (c["name"], c["run"]) not in kept:
+                names = {n for n, _ in kept}
+                what = "changes its command" if c["name"] in names else "is dropped"
+                out.append(f"the {label} {c['name']!r} {what}")
     return out

@@ -127,7 +127,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install -e '.[app]'              # the cryptography package, needed only for signing
+pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.1.0"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
@@ -155,7 +155,7 @@ head policy that cannot be read is treated the same way.
 **The merge gate.** `onloop gate N` merges only if all of these hold on the exact head commit: the pull request is
 open, not a draft, and aimed at the base branch; the reviewer App approved this head and nobody has a standing
 request for changes; the human approved this head when the classification asks for it; every required check is green
-on this head; the authoring role (a `[role]` title prefix, else a `Role:` trailer) owns every path changed, or the
+on this head (every run of a check, not just the last); the authoring role (a `[role]` title prefix, else a `Role:` trailer) owns every path changed, or the
 pull request carries a `Cross-owner:` line; and the project's own checks pass. A review or check on any other commit
 counts for nothing. It merges with `--match-head-commit`, so a push after the decision makes GitHub refuse. If a
 post-merge check fails, it reverts the merge.
@@ -194,7 +194,9 @@ onloop does not replace GitHub's own controls. It relies on them and fills in wh
   re-check every merge after the fact. onloop does those.
 
 Recommended repository settings: allow merge commits only (the gate merges with `--merge` and the audit expects a
-two-parent merge), require pull requests and the `policy` check on `main`, and do not let the agents App bypass.
+two-parent merge), require pull requests, "Require review from Code Owners" and the `policy` check on `main`, and do not let the agents App
+bypass. Code-owner review is what stops the agents App from merging a reserved path by a route that does not pass the
+gate (see the limits in [docs/security-model.md](docs/security-model.md)).
 
 ## Documentation
 

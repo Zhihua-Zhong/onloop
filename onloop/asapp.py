@@ -63,6 +63,9 @@ def check_command(argv: list[str], identity: str) -> list[str]:
             raise AppError("refusing a form that prints the token")
         if low[:1] == ["auth"]:
             raise AppError("refusing `gh auth`: the identity is the App, not a stored login")
+        if low[:2] == ["pr", "merge"]:
+            raise AppError("refusing `gh pr merge`: merges go through `onloop gate`, which makes its own child merge "
+                           "after every condition is checked on the head")
     if prog == "git":
         if low[:1] == ["credential"]:
             raise AppError("refusing `git credential`: it can print the token")
@@ -184,6 +187,7 @@ def self_test() -> tuple[bool, list[str]]:
     cases = [
         ("agents: git push is allowed", ["git", "push", "origin", "b"], "agents", False),
         ("agents: gh pr create is allowed", ["gh", "pr", "create"], "agents", False),
+        ("agents: a top-level gh pr merge is refused", ["gh", "pr", "merge", "7", "--merge"], "agents", True),
         ("agents: gh auth token is refused", ["gh", "auth", "token"], "agents", True),
         ("agents: gh auth status --show-token is refused", ["gh", "auth", "status", "--show-token"], "agents", True),
         ("agents: git credential is refused", ["git", "credential", "fill"], "agents", True),

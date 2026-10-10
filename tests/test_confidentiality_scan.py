@@ -232,3 +232,8 @@ def test_self_test_bites_when_a_pattern_is_removed(monkeypatch: pytest.MonkeyPat
 
 def test_a_git_ref_after_an_at_sign_is_not_an_email():
     assert "email" not in kinds("pip install git+https://host.example/owner/repo@v0.1.0")
+
+
+def test_a_diff_line_prefix_before_an_at_sign_is_not_an_email():
+    assert "email" not in kinds("+@pytest.fixture")
+    assert "email" not in kinds("-@pytest.mark.parametrize")

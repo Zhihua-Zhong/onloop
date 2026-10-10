@@ -1,6 +1,7 @@
 """Fakes for tests and self-tests: a git history and a GitHub that exist only in memory. No network, no repository."""
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 
@@ -17,6 +18,9 @@ class FakeGit:
         self.changed = changed or {}
         self.order = order or list(self.commits)
         self.calls: list[tuple[str, ...]] = []
+        self.unfetched = False                 # True: the pull request head cannot be fetched
+        self.pr_heads: dict[int, str] = {}     # what refs/onloop/pr/N resolves to after the fetch
+        self.worktrees: list[str] = []
 
     def changed_files(self, base: str, head: str) -> list[str]:
         return sorted(self.changed.get((base, head), []))
@@ -40,12 +44,26 @@ class FakeGit:
         return self.commits[sha]["tree"]
 
     def rev_parse(self, rev: str) -> str:
+        if rev.startswith("refs/onloop/pr/"):
+            return self.pr_heads.get(int(rev.rsplit("/", 1)[1]), rev)
         return rev
+
+    def has_commit(self, sha: str) -> bool:
+        return not self.unfetched
+
+    @contextlib.contextmanager
+    def in_worktree(self, rev: str):
+        self.worktrees.append(rev)
+        yield self                              # the fake has no directories; `cwd` is None
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         return True
 
+    cwd = None
+
     def _run(self, *args: str) -> str:
+        if self.unfetched and args[:1] == ("fetch",):
+            raise RuntimeError("fetch failed")
         self.calls.append(args)
         return ""
 

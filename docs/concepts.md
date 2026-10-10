@@ -116,16 +116,22 @@ condition is checked against the head SHA read at the start:
 2. The reviewer App has an approving review on this head. Reviews of other commits are ignored.
 3. Nobody trusted (the reviewer or the human) has a standing request for changes on this head.
 4. When the classification includes `human`, the human's account has an approving review on this head.
-5. Every name in `required_checks` has a successful check run on this head. A check that is missing counts as failing.
+5. Every name in `required_checks` has a check run on this head and every run of that name is successful. A missing
+   check counts as failing, and one green run does not hide a red one.
 6. The authoring role is known and owns every path the change touches. The role is the `[role]` prefix of the title,
    or else the last `Role:` trailer in the commit messages. A path owned by another role needs a
    `Cross-owner: <role> - <reason>` line in the pull request body or a commit message.
-7. Every command under `checks` exits zero in a clean checkout of the head, and no `onloop.checks` plugin refuses.
+7. Every command under `checks` (taken from the policy on the base) exits zero in a clean worktree of the head, and no
+   `onloop.checks` plugin refuses. A plugin that raises refuses.
 
-If anything fails the gate prints each reason and exits 1. If everything holds it merges with
+The gate starts by fetching the pull request's own ref (`refs/pull/N/head`) and refuses, with a plain reason and no
+traceback, if the head cannot be fetched or is not the commit it read the facts for. If anything fails it prints each
+reason and exits 1. Because the project's checks take time, it reads the pull request again right before merging, so
+a review withdrawn or a push made meanwhile stops the merge. If everything holds it merges with
 `--match-head-commit <sha>`: if anyone pushed in between, GitHub refuses and nothing merges. After the merge it runs
-the `post_merge_checks`; if one fails it reverts the merge with a commit carrying a `Gate-Revert: #N <sha>` trailer
-and exits 2.
+the `post_merge_checks` (from the base policy, in a clean worktree of the merge commit); if one fails it reverts the
+merge, in a temporary worktree of the fresh branch tip, with a commit carrying a `Gate-Revert: #N <sha>` trailer and
+exits 2.
 
 Review states are read strictly. `COMMENTED` and `PENDING` reviews assert nothing. A dismissed approval is gone. A
 request for changes that was dismissed by someone other than the reviewer or the human still blocks; only a trusted

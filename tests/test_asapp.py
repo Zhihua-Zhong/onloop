@@ -13,7 +13,7 @@ def test_allowed_commands_pass_through_unchanged(argv, identity):
 
 
 @pytest.mark.parametrize("argv,identity", [
-    (["gh", "auth", "token"], "agents"), (["gh", "auth", "status", "--show-token"], "agents"),
+    (["gh", "auth", "token"], "agents"), (["gh", "pr", "merge", "7"], "agents"), (["gh", "auth", "status", "--show-token"], "agents"),
     (["gh", "auth", "login"], "agents"), (["git", "credential", "fill"], "agents"),
     (["git", "-c", "credential.helper=x", "push"], "agents"), (["git", "--config-env=a=B", "push"], "agents"),
     (["curl", "x"], "agents"), ([], "agents"), (["onloop", "as-app", "--", "git"], "agents"),
@@ -25,6 +25,18 @@ def test_allowed_commands_pass_through_unchanged(argv, identity):
 def test_refused_commands_raise_before_any_token_exists(argv, identity):
     with pytest.raises(asapp.AppError):
         asapp.check_command(argv, identity)
+
+
+def test_the_gates_own_child_merge_is_not_blocked_by_the_wrapper(monkeypatch):
+    """`onloop as-app -- onloop gate N` is allowed; the merge it makes is a child process of onloop, not argv here."""
+    assert asapp.check_command(["onloop", "gate", "7"], "agents") == ["onloop", "gate", "7"]
+    from onloop.github import GitHub
+    seen = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "", ""
+    GitHub("org/repo", lambda argv: (seen.append(argv), Done())[1]).merge(7, "h" * 40)
+    assert seen[0][:3] == ["gh", "pr", "merge"]
 
 
 def test_the_command_environment_carries_the_token_only_in_the_environment():

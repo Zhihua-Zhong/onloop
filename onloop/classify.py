@@ -74,6 +74,11 @@ def classify(files: list[str], base: pol.Policy, head: pol.Policy | None = None,
     return c
 
 
+def copy_raw(base: pol.Policy, paths: dict) -> pol.Policy:
+    """`base` with extra path entries added (a self-test helper)."""
+    return pol.from_dict(dict(base.raw, paths=dict(base.raw["paths"], **paths)))
+
+
 def self_test() -> tuple[bool, list[str]]:
     """The classifier must catch a loosening and ask the right approver for each class."""
     base = pol.from_dict({
@@ -110,6 +115,16 @@ def self_test() -> tuple[bool, list[str]]:
         right = got.approvers == want_approvers and bool(got.loosening) == want_loose
         ok &= right
         lines.append(f"  {'ok' if right else 'FAILED'} {label}" + ("" if right else f" (got {got.approvers})"))
+    # a loosening hidden in a more specific key, and one hidden in a changed check command, must still be seen
+    carve = copy_raw(base, paths={"docs/claims/open/": {"owner": "lead"}})
+    swapped = pol.from_dict(dict(base.raw, checks=[{"name": "t", "run": "true"}]))
+    with_check = pol.from_dict(dict(base.raw, checks=[{"name": "t", "run": "pytest"}]))
+    for label, got in (("a more specific key that un-reserves part of a reserved directory is a loosening",
+                        classify(["onloop.yaml"], base, carve)),
+                       ("a check whose command changed is a loosening", classify(["onloop.yaml"], with_check, swapped))):
+        right = got.needs_human and bool(got.loosening)
+        ok &= right
+        lines.append(f"  {'ok' if right else 'FAILED'} {label}")
     # the loosening must still need the human when the class it lands in names the reviewer
     soft = pol.from_dict(dict(base.raw, classes={"copy_edits": "reviewer", "authority_widening": "reviewer"}))
     got = classify(["onloop.yaml"], soft, pol.from_dict(dict(soft.raw, paths=dict(soft.raw["paths"], **{

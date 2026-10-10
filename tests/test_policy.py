@@ -59,7 +59,8 @@ def _loosen(raw, fn):
 
 @pytest.mark.parametrize("fn,needle", [
     (lambda r: r["paths"]["docs/claims/"].pop("reserved"), "no longer reserved"),
-    (lambda r: r["paths"].pop("docs/claims/"), "removed"),
+    (lambda r: r["paths"].pop("docs/claims/"), "no longer reserved"),
+    (lambda r: r["paths"].update({"docs/claims/sub/": {"owner": "lead"}}), "docs/claims/sub/' is no longer reserved"),
     (lambda r: r["paths"].update({"core/": {"owner": "builder", "tier": "routine"}}), "lowers its tier"),
     (lambda r: r["paths"]["docs/claims/"].update(reserved="copy_edits"), "not the human"),
     (lambda r: r.update(human="someone-else"), "human approver changes"),
@@ -84,3 +85,24 @@ def test_roles_and_post_merge_checks_must_have_the_shape_the_code_reads(raw):
     raw["roles"]["empty"] = {}
     raw["post_merge_checks"] = [{"name": "smoke"}]
     assert any("post_merge_checks" in p for p in pol.validate(raw))
+
+
+def test_a_more_specific_key_that_unreserves_part_of_a_reserved_directory_is_a_loosening(policy, raw):
+    head = _loosen(raw, lambda r: r["paths"].update({"docs/claims/private/": {"owner": "lead"}}))
+    found = pol.loosening(policy, head)
+    assert found and "docs/claims/private/" in found[0]
+    assert head.rule_for("docs/claims/private/x.md").reserved is None             # the effect, not just the wording
+
+
+def test_checks_are_compared_by_name_and_command(raw):
+    raw["checks"] = [{"name": "tests", "run": "pytest -q"}]
+    raw["post_merge_checks"] = [{"name": "smoke", "run": "make smoke"}]
+    base = pol.from_dict(raw)
+    swapped = _loosen(raw, lambda r: r.update(checks=[{"name": "tests", "run": "true"}]))
+    assert any("check 'tests' changes its command" in f for f in pol.loosening(base, swapped))
+    dropped = _loosen(raw, lambda r: r.update(checks=[]))
+    assert any("check 'tests' is dropped" in f for f in pol.loosening(base, dropped))
+    post = _loosen(raw, lambda r: r.update(post_merge_checks=[{"name": "smoke", "run": "true"}]))
+    assert any("post-merge check 'smoke' changes its command" in f for f in pol.loosening(base, post))
+    extra = _loosen(raw, lambda r: r.update(checks=raw["checks"] + [{"name": "lint", "run": "ruff check"}]))
+    assert pol.loosening(base, extra) == []                                       # adding a check only tightens

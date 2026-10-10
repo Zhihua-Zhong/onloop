@@ -78,11 +78,11 @@ A rule may contain only those three fields; anything else is a problem. A rule v
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `required_checks` | list of strings | `[]` | GitHub check-run names that must be successful on the exact head before the gate merges. A missing check counts as failing. |
-| `checks` | list of `{name, run}` | `[]` | Your project's own checks. The gate runs each `run` command through the shell in a clean detached worktree of the head. A non-zero exit refuses the merge. |
-| `post_merge_checks` | list of `{name, run}` | `[]` | Commands the gate runs in its working directory after a merge. A non-zero exit makes the gate revert the merge. Not validated by `policy check`: give each entry a `name` and a `run`. |
+| `checks` | list of `{name, run}` | `[]` | Your project's own checks. The gate runs each `run` command through the shell in a clean detached worktree of the head, using the commands in the policy on the base. A non-zero exit refuses the merge. |
+| `post_merge_checks` | list of `{name, run}` | `[]` | Commands the gate runs, in a clean worktree of the merge commit, after a merge. They are read from the policy on the base, never from the head. A non-zero exit makes the gate revert the merge. `policy check` validates the shape: each entry needs a non-empty `name` and `run`. |
 
-Each `checks` entry needs a non-empty `name` and `run`. Dropping a name from `checks` or `required_checks` in a pull
-request is a policy loosening.
+Each `checks` entry needs a non-empty `name` and `run`. Dropping a check, or changing its command, in a pull request is a policy loosening; so is dropping a name from
+`required_checks`. Checks are compared by name and command.
 
 The starter policy requires one check, `policy`, which is the job name in the starter gate workflow.
 

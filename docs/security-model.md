@@ -95,6 +95,12 @@ The guards stop accidents, not malice. In particular:
   printing the token.
 - The `agents` identity may run any `gh` or `git` subcommand not listed above. Limit what it can do with the App's
   permissions and with the repository ruleset, not with this wrapper.
+- **Merging is guarded only at the front door.** The wrapper refuses a top-level `gh pr merge` for the `agents`
+  identity, so the ordinary way to merge is `onloop gate`, which makes its own child merge once every condition holds
+  on the head. It cannot stop the same App from merging through `gh api`, a script, or a token it was handed. What
+  does stop that is GitHub: enable "Require review from Code Owners" (and "Dismiss stale approvals") in the ruleset
+  on `main`. Because CODEOWNERS is generated from the policy, a reserved path then needs the human's own review
+  however the merge is attempted, and the audit alarms on whatever still gets through.
 - The `-c` refusal also refuses legitimate uses of an option spelled `-c`, such as `git commit -c <commit>`. That
   errs on the safe side.
 - The guards do not stop a process that reads the key file directly. Any process running as the same operating-system

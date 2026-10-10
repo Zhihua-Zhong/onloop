@@ -55,7 +55,7 @@ def _git(cwd, *args):
 def test_the_cli_classifies_a_real_diff_and_catches_a_loosening(tmp_path, raw):
     repo = tmp_path
     _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@example.invalid")      # scan:allow
+    _git(repo, "config", "user.email", "tester")
     _git(repo, "config", "user.name", "t")
     (repo / "onloop.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
     (repo / "src").mkdir()
@@ -79,3 +79,24 @@ def test_the_cli_classifies_a_real_diff_and_catches_a_loosening(tmp_path, raw):
     got = json.loads(out.stdout)
     assert got["approvers"] == ["human", "reviewer"] and got["loosening"]
     assert main(["classify", "--paths", "src/a.py", "--policy", str(repo / "onloop.yaml")]) == 0
+
+
+def test_a_file_moved_out_of_a_reserved_path_still_touches_the_reserved_path(tmp_path, raw):
+    """Real git: a rename is reported as a delete plus an add (`--no-renames`), so the old, reserved path counts."""
+    from onloop.gitutil import Git
+    repo = tmp_path
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tester")
+    _git(repo, "config", "user.name", "t")
+    (repo / "docs" / "claims").mkdir(parents=True)
+    (repo / "docs" / "claims" / "x.md").write_text("a claim, long enough to be recognised as a rename\n" * 5,
+                                                   encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "branch", "base")
+    (repo / "src").mkdir()
+    _git(repo, "mv", "docs/claims/x.md", "src/x.md")
+    _git(repo, "commit", "-q", "-m", "move")
+    files = Git(cwd=str(repo)).changed_files("base", "HEAD")
+    assert files == ["docs/claims/x.md", "src/x.md"]
+    assert classify(files, pol.from_dict(raw)).needs_human

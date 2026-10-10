@@ -31,6 +31,12 @@ def alarms(git, client):
     return audit.audit(git, client, since=ROOT)
 
 
+def test_a_merge_of_something_other_than_the_head_alarms_for_that_reason_alone():
+    git, client = world(head="d" * 40, reviews=[review(commit="d" * 40)])
+    got = alarms(git, client)
+    assert len(got) == 1 and "not the head" in got[0][1]
+
+
 def test_a_clean_gate_merge_is_accepted():
     assert alarms(*world()) == []
 
@@ -45,7 +51,7 @@ def test_each_way_a_merge_can_fail_to_be_a_gate_merge_alarms():
     cases = [
         dict(merged_by={"login": "someone", "type": "User"}),
         dict(merged_by={"login": "agent-bot", "type": "User"}),            # a User may register the same name
-        dict(head="d" * 40),
+        dict(head="d" * 40, reviews=[review(commit="d" * 40)]),          # approved, but it is not what was merged
         dict(reviews=[]),
         dict(reviews=[late]),                                              # approved only after the merge
         dict(reviews=[review(commit="d" * 40)]),                           # approved another head

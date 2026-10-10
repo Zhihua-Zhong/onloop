@@ -120,23 +120,22 @@ def cmd_classify(args) -> int:
 
 
 def cmd_gate(args) -> int:
-    policy = _policy(args)
     client = GitHub(_repo(args))
     git = Git()
 
     def extra(facts, base, c):
-        out = gate.run_project_checks(base, facts["head"])
-        out += gate.plugin_refusals(facts, base, c)
-        return out
+        return gate.run_project_checks(git, base, facts["head"]) + gate.plugin_refusals(facts, base, c)
 
-    def post_merge(base):
-        return [f"post-merge check {c['name']!r} failed" for c in (policy.raw.get("post_merge_checks") or [])
-                if gate.run_shell(c["run"], ".").returncode != 0]
+    def post_merge(base, merge_sha):
+        return gate.run_post_merge_checks(git, base, merge_sha)
 
     code, notes = gate.run(args.number, client, git, base_branch=args.base, extra=extra, post_merge=post_merge,
                            dry_run=args.dry_run)
     for n in notes:
-        (_say if code == 0 else _err)(("" if code == 0 else "refused: ") + n if code == 1 else n)
+        if code == 0:
+            _say(n)
+        else:
+            _err(("refused: " if code == 1 else "") + n)
     return code
 
 

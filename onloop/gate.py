@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import entry_points
 
 from . import policy as pol
 from .classify import Classification, classify
@@ -142,16 +143,22 @@ def decide(facts: Facts, policy: pol.Policy, classification: Classification, *, 
 
 
 def check_results(facts: Facts, policy: pol.Policy) -> list[str]:
-    """Every required check must be green on this head. A missing check is a failing check."""
-    by_name: dict[str, str | None] = {}
+    """Every required check must be green on this head: present, and every run of that name on the head successful.
+
+    A check can run more than once on a head (a re-run, a matrix, two workflows with one job name). One green run
+    does not hide a red one, whatever order GitHub lists them in.
+    """
+    runs: dict[str, list[str | None]] = {}
     for c in facts.get("checks") or []:
-        by_name[c["name"]] = c.get("conclusion")
+        runs.setdefault(c["name"], []).append(c.get("conclusion"))
     out = []
     for name in policy.required_checks:
-        got = by_name.get(name)
-        if got != "SUCCESS":
-            out.append(f"required check {name!r} is {'missing' if name not in by_name else (got or 'pending').lower()} "
-                       f"on head {facts['head'][:7]}")
+        got = runs.get(name)
+        if not got:
+            out.append(f"required check {name!r} is missing on head {facts['head'][:7]}")
+        elif any(r != "SUCCESS" for r in got):
+            bad = sorted({(r or "pending").lower() for r in got if r != "SUCCESS"})
+            out.append(f"required check {name!r} is not green on head {facts['head'][:7]} ({', '.join(bad)})")
     return out
 
 
@@ -172,44 +179,52 @@ def ownership(facts: Facts, policy: pol.Policy, c: Classification) -> list[str]:
 
 # -- the work ---------------------------------------------------------------------------------------------------
 
-CheckRunner = Callable[[pol.Policy, str], list[str]]
+Shell = Callable[[str, str | None], object]
 
 
-def run_project_checks(policy: pol.Policy, head: str, *, runner=None, git_runner=None) -> list[str]:
-    """Run the project's own `checks` in a temporary worktree of the head; each failure is a refusal."""
-    from .gitutil import run as _run
-    run = runner or _run
-    refusals: list[str] = []
-    if not policy.checks:
-        return refusals
-    import tempfile
-    with tempfile.TemporaryDirectory(prefix="onloop-gate-") as tmp:
-        added = run(["git", "worktree", "add", "--detach", tmp, head])
-        if added.returncode != 0:
-            return [f"cannot check out the head to run the project's checks: {(added.stderr or '').strip()[:200]}"]
-        try:
-            for chk in policy.checks:
-                p = run_shell(chk["run"], tmp)
-                if p.returncode != 0:
-                    refusals.append(f"project check {chk['name']!r} failed on the head (exit {p.returncode})")
-        finally:
-            run(["git", "worktree", "remove", "--force", tmp])
-    return refusals
-
-
-def run_shell(command: str, cwd: str):
+def run_shell(command: str, cwd: str | None):
     import subprocess
     return subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)   # noqa: S602
 
 
+def run_commands(git, commands: list[dict[str, str]], rev: str, what: str, *, shell: Shell = run_shell) -> list[str]:
+    """Run each `{name, run}` command in a clean, detached worktree of `rev`. Each failure is a reason, never a traceback.
+
+    The commands come from the base policy, the one already in force, never from the head being judged.
+    """
+    if not commands:
+        return []
+    out: list[str] = []
+    try:
+        with git.in_worktree(rev) as wt:
+            for c in commands:
+                p = shell(c["run"], wt.cwd)
+                if p.returncode != 0:
+                    out.append(f"{what} {c['name']!r} failed on {rev[:7]} (exit {p.returncode})")
+    except Exception as e:                                               # a worktree that cannot be made is a refusal
+        out.append(f"cannot run the {what}s: {type(e).__name__}: {str(e)[:200]}")
+    return out
+
+
+def run_project_checks(git, policy: pol.Policy, head: str, *, shell: Shell = run_shell) -> list[str]:
+    return run_commands(git, policy.checks, head, "project check", shell=shell)
+
+
+def run_post_merge_checks(git, policy: pol.Policy, merge_sha: str, *, shell: Shell = run_shell) -> list[str]:
+    """The base policy's `post_merge_checks`, run in a worktree of the merge commit itself."""
+    return run_commands(git, policy.raw.get("post_merge_checks") or [], merge_sha, "post-merge check", shell=shell)
+
+
 def plugin_refusals(facts: Facts, policy: pol.Policy, c: Classification) -> list[str]:
-    """Refusals from `onloop.checks` entry points: callables taking (facts, policy, classification) -> list[str]."""
-    from importlib.metadata import entry_points
+    """Refusals from `onloop.checks` entry points: callables taking (facts, policy, classification) -> list[str].
+
+    A plugin that raises refuses the merge. A broken check must never read as a passing one.
+    """
     out: list[str] = []
     for ep in entry_points(group="onloop.checks"):
         try:
             out.extend(ep.load()(facts, policy, c) or [])
-        except Exception as e:                                                  # a broken plugin refuses, never passes
+        except Exception as e:
             out.append(f"plugin {ep.name!r} failed: {type(e).__name__}: {e}")
     return out
 
@@ -227,6 +242,29 @@ def plan_policy_change(git, files: list[str], head_rev: str) -> tuple[pol.Policy
         return None, str(e)
 
 
+def fetch_head(git, facts: Facts, base_branch: str) -> str | None:
+    """Make the pull request's head and the base available locally; None when they are, else why not.
+
+    The head is fetched from the pull request's own ref, and must be exactly the commit the decision is about: a head
+    that moved since the facts were read is refused here, before anything is judged.
+    """
+    n = facts["number"]
+    ref = f"refs/onloop/pr/{n}"
+    try:
+        git._run("fetch", "origin", base_branch, f"+refs/pull/{n}/head:{ref}")
+    except Exception as e:
+        return f"cannot fetch #{n}: {str(e)[:200]}"
+    try:
+        got = git.rev_parse(ref)
+    except Exception as e:
+        return f"cannot read the fetched head of #{n}: {str(e)[:200]}"
+    if got != facts["head"]:
+        return f"the head of #{n} moved from {facts['head'][:7]} to {got[:7]} while it was being judged"
+    if not git.has_commit(facts["head"]):
+        return f"the head {facts['head'][:7]} of #{n} is not available locally"
+    return None
+
+
 def plan(facts: Facts, git, *, base_rev: str, base_branch: str = "main", extra: Callable[[Facts, pol.Policy,
          Classification], list[str]] | None = None) -> tuple[list[str], Classification | None, pol.Policy | None]:
     """Read the policy and the diff, classify, and decide. Returns (refusals, classification, base policy)."""
@@ -237,7 +275,10 @@ def plan(facts: Facts, git, *, base_rev: str, base_branch: str = "main", extra: 
         base = pol.loads(base_text)
     except pol.PolicyError as e:
         return [f"the policy on {base_rev} is unusable: {e}"], None, None
-    files = git.changed_files(base_rev, facts["head"])
+    try:
+        files = git.changed_files(base_rev, facts["head"])
+    except Exception as e:
+        return [f"cannot compute the diff of #{facts['number']}: {str(e)[:200]}"], None, None
     head_policy, problem = plan_policy_change(git, files, facts["head"])
     c = classify(files, base, head_policy, problem)
     refusals = decide(facts, base, c, base_branch=base_branch, extra_refusals=(extra(facts, base, c) if extra else []))
@@ -245,32 +286,48 @@ def plan(facts: Facts, git, *, base_rev: str, base_branch: str = "main", extra: 
 
 
 def revert_merge(git, merge_sha: str, number: int, base_branch: str) -> str:
-    """Undo a merge: a new commit that restores the tree before it, carrying the trailer the audit verifies."""
+    """Undo a merge: a new commit that restores the tree before it, carrying the trailer the audit verifies.
+
+    Made in a temporary worktree of the freshly fetched tip, so the operator's own checkout is never touched.
+    """
     git._run("fetch", "origin", base_branch)
-    git._run("checkout", "-B", base_branch, f"origin/{base_branch}")
-    git._run("revert", "-m", "1", "--no-edit", merge_sha)
-    msg = git.message("HEAD").rstrip() + f"\n\nGate-Revert: #{number} {merge_sha}\n"
-    git._run("commit", "--amend", "-m", msg)
-    git._run("push", "origin", f"HEAD:{base_branch}")
-    return git.rev_parse("HEAD")
+    with git.in_worktree(f"origin/{base_branch}") as wt:
+        wt._run("revert", "-m", "1", "--no-edit", merge_sha)
+        msg = wt.message("HEAD").rstrip() + f"\n\nGate-Revert: #{number} {merge_sha}\n"
+        wt._run("commit", "--amend", "-m", msg)
+        wt._run("push", "origin", f"HEAD:{base_branch}")
+        return wt.rev_parse("HEAD")
 
 
 def run(number: int, client, git, *, base_branch: str = "main", extra: Callable | None = None,
-        post_merge: Callable[[pol.Policy], list[str]] | None = None, dry_run: bool = False) -> tuple[int, list[str]]:
+        post_merge: Callable[[pol.Policy, str], list[str]] | None = None,
+        dry_run: bool = False) -> tuple[int, list[str]]:
     """Gate one pull request. (0, notes) merged or would merge; (1, reasons) refused; (2, notes) merged then reverted."""
     facts = client.pr(number)
+    problem = fetch_head(git, facts, base_branch)
+    if problem:
+        return 1, [problem]
     refusals, c, base = plan(facts, git, base_rev=f"origin/{base_branch}", base_branch=base_branch, extra=extra)
     if refusals:
         return 1, refusals
     assert c is not None and base is not None
     if dry_run:
         return 0, [f"would merge #{number} at {facts['head'][:7]} (approvers needed: {', '.join(c.approvers)})"]
+    # the project's checks took time: read the pull request again right before merging, so a review withdrawn, a
+    # check turned red or a push made meanwhile stops the merge
+    fresh = client.pr(number)
+    if fresh["head"] != facts["head"]:
+        return 1, [f"the head of #{number} moved from {facts['head'][:7]} to {fresh['head'][:7]} before the merge"]
+    again = decide(fresh, base, c, base_branch=base_branch)
+    if again:
+        return 1, again
     client.merge(number, facts["head"])
     merged = client.pr(number)
     notes = [f"merged #{number} at {facts['head'][:7]}"]
-    failed = post_merge(base) if post_merge else []
+    merge_sha = merged.get("merge_sha") or ""
+    failed = post_merge(base, merge_sha) if post_merge else []
     if failed:
-        sha = revert_merge(git, merged.get("merge_sha") or "", number, base_branch)
+        sha = revert_merge(git, merge_sha, number, base_branch)
         return 2, notes + failed + [f"reverted as {sha[:7]}"]
     return 0, notes
 
@@ -309,6 +366,10 @@ def self_test() -> tuple[bool, list[str]]:
             facts["reviews"][0], author={"login": "rev-bot", "type": "User"})]), p, c_src), True),
         ("a red required check is refused", decide(dict(facts, checks=[{"name": "ci", "conclusion": "FAILURE"}]),
                                                     p, c_src), True),
+        ("a red run hides behind a green one (red first)", decide(dict(facts, checks=[
+            {"name": "ci", "conclusion": "FAILURE"}, {"name": "ci", "conclusion": "SUCCESS"}]), p, c_src), True),
+        ("a red run hides behind a green one (green first)", decide(dict(facts, checks=[
+            {"name": "ci", "conclusion": "SUCCESS"}, {"name": "ci", "conclusion": "FAILURE"}]), p, c_src), True),
         ("a missing required check is refused", decide(dict(facts, checks=[]), p, c_src), True),
         ("a missing authoring role is refused", decide(dict(facts, title="fix"), p, c_src), True),
         ("a foreign path without Cross-owner is refused", decide(dict(facts, title="[builder] x"), p,

@@ -1,7 +1,9 @@
 """Thin, fakeable wrappers around the `git` command."""
 from __future__ import annotations
 
+import contextlib
 import subprocess
+import tempfile
 from collections.abc import Callable
 
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
@@ -59,6 +61,21 @@ class Git:
 
     def tree(self, sha: str) -> str:
         return self._run("rev-parse", f"{sha}^{{tree}}").strip()
+
+    def has_commit(self, sha: str) -> bool:
+        argv = ["git", "cat-file", "-e", f"{sha}^{{commit}}"]
+        p = self._runner(argv) if self._runner else run(argv, self.cwd)
+        return p.returncode == 0
+
+    @contextlib.contextmanager
+    def in_worktree(self, rev: str):
+        """A clean, detached worktree of `rev` in a temporary directory, as a `Git` bound to it; removed afterwards."""
+        with tempfile.TemporaryDirectory(prefix="onloop-wt-") as tmp:
+            self._run("worktree", "add", "--detach", tmp, rev)
+            try:
+                yield Git(cwd=tmp, runner=self._runner)
+            finally:
+                self._run("worktree", "remove", "--force", tmp)
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         argv = ["git", "merge-base", "--is-ancestor", ancestor, descendant]

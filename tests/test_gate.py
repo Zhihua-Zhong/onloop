@@ -91,6 +91,7 @@ def _world(raw, files, head_raw=None, **facts_over):
                HEAD: {"parents": ["origin/main"], "message": "", "tree": "U",
                       "files": {pol.POLICY_FILE: yaml.safe_dump(head_raw) if head_raw else base_text}}}
     git = FakeGit(commits, {("origin/main", HEAD): files})
+    git.pr_heads[7] = HEAD
     f = {"number": 7, "state": "OPEN", "draft": False, "base": "main", "head": HEAD, "title": "[builder] fix",
          "body": "", "commit_messages": [], "reviews": [review()], "dismissals": [],
          "checks": [{"name": "ci", "conclusion": "SUCCESS"}], "merge_sha": "m" * 40}
@@ -146,9 +147,11 @@ def test_no_policy_on_the_base_means_no_merge(raw):
 
 def test_a_failed_post_merge_check_reverts_with_the_trailer_the_audit_verifies(raw):
     git, client = _world(raw, ["src/a.py"])
-    code, notes = gate.run(7, client, git, post_merge=lambda p: ["post-merge check 'smoke' failed"])
+    code, notes = gate.run(7, client, git, post_merge=lambda p, sha: ["post-merge check 'smoke' failed"])
     assert code == 2 and any("reverted" in n for n in notes)
     calls = [c for c in git.calls]
+    assert git.worktrees == ["origin/main"]                              # made in a temporary worktree of the fresh tip
+    assert not any(c[0] == "checkout" for c in calls)                    # the operator's own checkout is never touched
     assert ("revert", "-m", "1", "--no-edit", "m" * 40) in calls
     assert any(c[:2] == ("commit", "--amend") and "Gate-Revert: #7 " + "m" * 40 in c[3] for c in calls)
     assert any(c[0] == "push" for c in calls)
@@ -164,3 +167,103 @@ def test_the_authoring_role_comes_from_the_title_then_the_last_trailer(title, ms
 def test_the_self_test_bites():
     ok, lines = gate.self_test()
     assert ok, lines
+
+
+# -- the review's must-fixes -----------------------------------------------------------------------------------------
+
+def test_a_required_check_is_green_only_if_every_run_of_that_name_is_green_in_either_order(facts, policy):
+    red, green = {"name": "ci", "conclusion": "FAILURE"}, {"name": "ci", "conclusion": "SUCCESS"}
+    for order in ([red, green], [green, red]):
+        assert any("not green" in r for r in decide(dict(facts, checks=order), policy, ["src/a.py"])), order
+    assert decide(dict(facts, checks=[green, green]), policy, ["src/a.py"]) == []
+    pending = {"name": "ci", "conclusion": None}
+    assert decide(dict(facts, checks=[green, pending]), policy, ["src/a.py"])
+
+
+def test_an_unfetchable_head_is_a_clean_refusal_not_a_traceback(raw):
+    git, client = _world(raw, ["src/a.py"])
+    git.unfetched = True
+    code, notes = gate.run(7, client, git)
+    assert code == 1 and "cannot fetch #7" in notes[0] and client.merged == []
+
+
+def test_the_head_is_fetched_from_the_pull_requests_own_ref_and_must_be_the_head_that_was_read(raw):
+    git, client = _world(raw, ["src/a.py"])
+    gate.run(7, client, git, dry_run=True)
+    assert git.calls[0] == ("fetch", "origin", "main", "+refs/pull/7/head:refs/onloop/pr/7")
+    git, client = _world(raw, ["src/a.py"])
+    git.pr_heads[7] = "d" * 40                                           # it moved after the facts were read
+    code, notes = gate.run(7, client, git)
+    assert code == 1 and "moved" in notes[0] and client.merged == []
+
+
+class Shifting(FakeGitHub):
+    """The pull request as the gate reads it the first time, then as it is a moment later."""
+
+    def __init__(self, first, second):
+        super().__init__({7: first})
+        self.reads = [first, second]
+
+    def pr(self, number):
+        return self.reads.pop(0) if len(self.reads) > 1 else self.reads[0]
+
+
+def test_the_pull_request_is_read_again_right_before_the_merge(raw):
+    git, client = _world(raw, ["src/a.py"])
+    first = client.prs[7]
+    later = dict(first, reviews=[review(state="DISMISSED")])             # the approval was withdrawn meanwhile
+    shifting = Shifting(first, later)
+    code, notes = gate.run(7, shifting, git)
+    assert code == 1 and shifting.merged == [] and any("reviewer approval" in n for n in notes)
+    moved = Shifting(first, dict(first, head="e" * 40))
+    code, notes = gate.run(7, moved, _world(raw, ["src/a.py"])[0])
+    assert code == 1 and moved.merged == [] and "moved" in notes[0]
+
+
+def test_the_projects_checks_and_post_merge_checks_run_in_worktrees_with_commands_from_the_base_policy(raw):
+    raw["checks"] = [{"name": "tests", "run": "pytest -q"}]
+    raw["post_merge_checks"] = [{"name": "smoke", "run": "make smoke"}]
+    base = pol.from_dict(raw)
+    git = FakeGit()
+    ran = []
+
+    class Done:
+        def __init__(self, code):
+            self.returncode = code
+
+    def shell(cmd, cwd):
+        ran.append(cmd)
+        return Done(1 if cmd == "make smoke" else 0)
+    assert gate.run_project_checks(git, base, "h" * 40, shell=shell) == []
+    out = gate.run_post_merge_checks(git, base, "m" * 40, shell=shell)
+    assert ran == ["pytest -q", "make smoke"] and git.worktrees == ["h" * 40, "m" * 40]
+    assert any("post-merge check 'smoke' failed" in o for o in out)
+
+
+def test_a_worktree_that_cannot_be_made_is_a_refusal_not_a_crash(raw):
+    raw["checks"] = [{"name": "tests", "run": "x"}]
+
+    class Broken(FakeGit):
+        def in_worktree(self, rev):
+            raise RuntimeError("no disk")
+    out = gate.run_project_checks(Broken(), pol.from_dict(raw), "h" * 40)
+    assert out and "cannot run the project checks" in out[0]
+
+
+def test_a_broken_or_refusing_plugin_refuses_the_merge(facts, policy, monkeypatch):
+    class EP:
+        def __init__(self, name, fn):
+            self.name, self._fn = name, fn
+
+        def load(self):
+            return self._fn
+
+    def boom(f, p, c):
+        raise RuntimeError("plugin bug")
+    eps = [EP("bad", boom), EP("strict", lambda f, p, c: ["no Fridays"]), EP("quiet", lambda f, p, c: None)]
+    monkeypatch.setattr(gate, "entry_points", lambda group: eps)
+    out = gate.plugin_refusals(facts, policy, classify(["src/a.py"], policy))
+    assert any("plugin 'bad' failed: RuntimeError" in o for o in out) and "no Fridays" in out
+    assert len(out) == 2
+    monkeypatch.setattr(gate, "entry_points", lambda group: [])
+    assert gate.plugin_refusals(facts, policy, classify(["src/a.py"], policy)) == []
