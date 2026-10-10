@@ -22,8 +22,8 @@ classifiers = [
 dependencies = ["PyYAML>=6"]
 
 [project.optional-dependencies]
-app = ["PyJWT>=2.8", "cryptography>=42"]
-dev = ["pytest>=8", "ruff>=0.5", "PyJWT>=2.8", "cryptography>=42"]
+app = ["cryptography>=42"]
+dev = ["pytest>=8", "ruff>=0.5", "cryptography>=42"]
 
 [project.scripts]
 onloop = "onloop.cli:main"

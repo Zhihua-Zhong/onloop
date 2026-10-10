@@ -88,16 +88,26 @@ def test_run_signs_exchanges_and_runs_with_the_token(monkeypatch, tmp_path):
         asapp.run(["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={})
 
 
-def test_a_signed_jwt_carries_the_app_id_and_a_short_life():
-    jwt = pytest.importorskip("jwt")
-    crypto = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.rsa")
-    from cryptography.hazmat.primitives import serialization
-    key = crypto.generate_private_key(65537, 2048)
+def test_a_signed_jwt_verifies_with_the_public_key_and_carries_the_app_id_and_a_short_life():
+    import base64
+    import json
+    pytest.importorskip("cryptography", exc_type=ImportError)
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    key = rsa.generate_private_key(65537, 2048)
     pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                             serialization.NoEncryption()).decode()
     token = asapp.mint_jwt("123", pem, now=1_000_000)
-    claims = jwt.decode(token, key.public_key(), algorithms=["RS256"], options={"verify_exp": False, "verify_iat": False})
-    assert claims["iss"] == "123" and claims["exp"] - claims["iat"] <= 600
+    head, claims, sig = token.split(".")
+
+    def unb64(s):
+        return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+    key.public_key().verify(unb64(sig), f"{head}.{claims}".encode(), padding.PKCS1v15(), hashes.SHA256())   # raises if bad
+    assert json.loads(unb64(head)) == {"alg": "RS256", "typ": "JWT"}
+    body = json.loads(unb64(claims))
+    assert body["iss"] == "123" and body["exp"] - body["iat"] <= 600 and body["iat"] < 1_000_000
+    with pytest.raises(asapp.AppError):
+        asapp.mint_jwt("123", "not a key")
 
 
 def test_the_self_test_bites():

@@ -72,13 +72,27 @@ def b64url(data: bytes) -> str:
 
 
 def mint_jwt(app_id: str, private_key_pem: str, now: float | None = None) -> str:
-    """A signed RS256 JWT for the App. Needs the optional `PyJWT` and `cryptography` packages (`pip install onloop[app]`)."""
+    """A signed RS256 JWT for the App. Needs the optional `cryptography` package (`pip install 'onloop[app]'`).
+
+    Signed with `cryptography` directly: a JWT is three base64url parts and one RSA PKCS#1 v1.5 signature, so no JWT
+    library is needed and its import chain cannot break the command.
+    """
     try:
-        import jwt
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
     except ImportError as e:                                       # pragma: no cover - environment dependent
-        raise AppError("signing needs PyJWT and cryptography: pip install 'onloop[app]'") from e
+        raise AppError("signing needs the cryptography package: pip install 'onloop[app]'") from e
     t = int(now if now is not None else time.time())
-    return jwt.encode({"iat": t - 60, "exp": t + JWT_LIFETIME, "iss": str(app_id)}, private_key_pem, algorithm="RS256")
+    header = b64url(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    claims = b64url(json.dumps({"iat": t - 60, "exp": t + JWT_LIFETIME, "iss": str(app_id)},
+                               separators=(",", ":")).encode())
+    signing_input = f"{header}.{claims}".encode()
+    try:
+        key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+        signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())            # type: ignore[union-attr]
+    except (ValueError, TypeError, AttributeError) as e:
+        raise AppError(f"the private key could not be used to sign: {type(e).__name__}") from e
+    return f"{header}.{claims}.{b64url(signature)}"
 
 
 Http = Callable[[str, dict[str, str]], dict[str, Any]]
