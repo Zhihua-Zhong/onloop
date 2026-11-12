@@ -89,8 +89,10 @@ module must be given a layer there.
   and says so in the changelog.
 - The version is set in one place, `onloop.__version__` in `src/onloop/__init__.py`. `pyproject.toml` reads it, and the
   starter workflows derive their install spec from it.
-- A release is an annotated tag `vX.Y.Z` (for example `v0.3.0`, `v0.3.0rc1`) on `main`, made after the changelog
-  section for it is written. Tags are never moved.
+- A release is an annotated tag `vX.Y.Z` (for example `v0.3.0`, `v0.3.0rc1`), made after the changelog section for
+  it is written. A minor release is cut on a branch `release/X.Y` from `main`, and its patch releases (`X.Y.Z`) are
+  tagged on that branch. CI runs on `main`, on every `release/**` branch and on every `v*` tag. A release commit is
+  published only after CI is green on that exact commit. Tags are never moved.
 
 ## Branches
 

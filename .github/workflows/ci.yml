@@ -2,7 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # main, every release branch, and every release tag: a release commit is green in CI before it is published
+    branches: [main, "release/**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
