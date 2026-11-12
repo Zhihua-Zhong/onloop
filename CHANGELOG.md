@@ -49,6 +49,22 @@ Act modes are off by default.
   its outcome line (being processed)"); "would wake (observe only)" only where it did nothing.
 - `onloop daemon hook` spools a post it cannot deliver to `hook-spool.jsonl`; onloopd logs it once when it is back.
 
+## [0.3.1] - 2026-11-12
+
+### Fixed
+
+- On Linux, a process that has exited but that its parent has not reaped yet (a zombie) no longer counts as running.
+  `onloop daemon stop` no longer waits out its timeout and reports a forced stop (exit 3) for an onloopd that has
+  stopped. onloopd's start no longer refuses to run over the pid of a dead one. The dead-waker probe no longer misses
+  a `pid:` waker that has exited. Windows was not affected.
+
+### Changed
+
+- The README and the release notes install the release's wheel, which carries the UI; a `git+` install builds from
+  source without it.
+- CI also runs on release branches (`release/**`) and release tags (`v*`), so a release commit is tested before it
+  is published.
+
 ## [0.3.0] - 2026-11-11
 
 ### Upgrading

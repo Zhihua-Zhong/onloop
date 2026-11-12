@@ -1,3 +1,9 @@
+# onloop 0.3.1
+
+0.3.1 is a patch release of 0.3.0. On Linux, a process that has exited but is not yet reaped (a zombie) no
+longer counts as running, so `onloop daemon stop` reports a clean stop and the dead-waker probe sees a dead
+`pid:` waker. CI now also runs on release branches and tags. Nothing else changed; the notes for 0.3.0 follow.
+
 # onloop 0.3.0
 
 onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a human **on** the loop rather
@@ -11,7 +17,7 @@ waits, and records what onloop *would* do. It acts on nothing: delivery into the
 ## Install
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.3.0"
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.3.1/onloop-0.3.1-py3-none-any.whl"
 onloop selftest
 onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790
 ```
