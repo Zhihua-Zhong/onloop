@@ -17,7 +17,7 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.3.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and
+Status: 0.3.1 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and
 the roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
@@ -49,10 +49,11 @@ reviewer is a separate identity, and every approval is bound to one commit.
 You need Python 3.11 or later, git, and the [GitHub CLI](https://cli.github.com/) (`gh`) for the commands that talk
 to GitHub. The offline commands in this section need only Python and git.
 
-Install straight from the tagged release (there is no PyPI release):
+Install the release's wheel, which carries the UI (there is no PyPI release; a `git+` install builds from source
+without the UI):
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.3.0"      # no clone needed
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.3.1/onloop-0.3.1-py3-none-any.whl"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -134,7 +135,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.3.0"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.3.1/onloop-0.3.1-py3-none-any.whl"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
