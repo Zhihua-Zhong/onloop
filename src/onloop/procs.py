@@ -24,7 +24,8 @@ __all__ = ["kill_tree", "pid_alive", "run_text", "spawn_kwargs", "start"]
 
 
 def pid_alive(pid: int) -> bool:
-    """Is a process with this id running on this host? Standard library only: kill(pid, 0), or OpenProcess on Windows."""
+    """Is a process with this id running on this host? Standard library only: kill(pid, 0), or OpenProcess on Windows.
+    On Linux a zombie (exited, not yet reaped by its parent) is not running, so it is not alive."""
     if pid <= 0:
         return False
     if sys.platform == "win32":
@@ -46,8 +47,18 @@ def pid_alive(pid: int) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
-    return True
+        return not _zombie(pid)
+    return not _zombie(pid)
+
+
+def _zombie(pid: int) -> bool:
+    """An exited process its parent has not reaped yet: kill(pid, 0) still finds it, but it runs nothing. Read from
+    /proc (Linux); where there is no /proc, nothing is known and the process counts as alive."""
+    try:
+        with open(f"/proc/{int(pid)}/stat", encoding="ascii", errors="replace") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] == "Z"
+    except (OSError, IndexError):
+        return False
 
 
 def run_text(
