@@ -180,6 +180,56 @@ def build_command(claude: tuple[str, ...] | list[str], role: RoleSpec, session_i
     return argv
 
 
+def build_resume_command(
+    claude: tuple[str, ...] | list[str],
+    *,
+    session_id: str,
+    tools: tuple[str, ...],
+    allowed_tools: tuple[str, ...],
+    max_turns: int,
+    settings: str,
+    model: str | None = None,
+    create: bool = False,
+) -> list[str]:
+    """The exact argv of one carried turn (decision 0010): resume the role's session, read one stream-json message on
+    stdin, write stream-json, replay the user message, and run restricted with no prompts. Refusals are denied, not
+    asked (`dontAsk`, `--permission-prompts none`); only the role's project settings and the carrier's hook settings
+    load; no MCP server. `create` starts a new session with that id instead of resuming one."""
+    argv = [
+        *claude,
+        "-p",
+        "--session-id" if create else "--resume",
+        session_id,
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--replay-user-messages",
+        "--tools",
+        ",".join(base_tools(tools)),
+    ]
+    if allowed_tools:
+        argv += ["--allowedTools", ",".join(allowed_tools)]
+    argv += [
+        "--permission-mode",
+        "dontAsk",
+        "--permission-prompts",
+        "none",
+        "--max-turns",
+        str(max_turns),
+        "--settings",
+        settings,
+        "--setting-sources",
+        "project",
+        "--strict-mcp-config",
+        "--restricted",
+    ]
+    if model:
+        argv += ["--model", model]
+    return argv
+
+
 def prompt_vars(
     role: RoleSpec, item: WorkItem, *, sid: str, repo: str = "", queue_size: int = 1
 ) -> dict[str, str]:

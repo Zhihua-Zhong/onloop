@@ -1310,6 +1310,210 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_supervisor_github_issues.py::test_pull_requests_are_not_nodes"],
     ),
     # -- the outcome line (decision 0007) ----------------------------------------------------------------------
+    (
+        "two live leases may hold one session id",
+        "src/onloop/overlay/schema.py",
+        "CREATE UNIQUE INDEX one_live_session_lease",
+        "CREATE INDEX one_live_session_lease",
+        ["tests/test_overlay_schema_v6.py::test_one_live_lease_per_session_id"],
+    ),
+    (
+        "a session lease overwrites the live one",
+        "src/onloop/overlay/projections.py",
+        '"INSERT INTO session_leases (id',
+        '"INSERT OR REPLACE INTO session_leases (id',
+        ["tests/test_overlay_schema_v6.py::test_one_live_lease_per_session_id"],
+    ),
+    (
+        "a turn may get a second corrective delivery",
+        "src/onloop/overlay/schema.py",
+        "CREATE UNIQUE INDEX one_corrective_per_turn",
+        "CREATE INDEX one_corrective_per_turn",
+        ["tests/test_overlay_schema_v6.py::test_at_most_one_corrective_delivery_per_turn"],
+    ),
+    (
+        "a carrier delivery overwrites one of the same id or cause",
+        "src/onloop/overlay/projections.py",
+        'conn.execute(f"INSERT INTO deliveries ({cols})',
+        'conn.execute(f"INSERT OR REPLACE INTO deliveries ({cols})',
+        [
+            "tests/test_overlay_schema_v6.py::test_at_most_one_corrective_delivery_per_turn",
+            "tests/test_overlay_schema_v6.py::test_one_delivery_per_cause",
+        ],
+    ),
+    (
+        "version 5's source check takes the carrier's sources",
+        "src/onloop/overlay/schema.py",
+        'CHECK ({_in("source", SOURCES_5)}),',
+        'CHECK ({_in("source", SOURCES)}),',
+        [
+            "tests/test_overlay_schema_v6.py::test_a_version_5_ledger_migrates_to_version_6_and_keeps_every_event"
+        ],
+    ),
+    (
+        "a retried delivery keeps the failed attempt's times",
+        "src/onloop/overlay/projections.py",
+        '"delivered_at = CASE WHEN ? THEN NULL ELSE delivered_at END, "',
+        '"delivered_at = delivered_at, "',
+        [
+            "tests/test_overlay_schema_v6.py::test_a_delivery_walks_its_states_and_a_retry_clears_the_failed_attempt"
+        ],
+    ),
+    (
+        "a carried role may name Bash",
+        "src/onloop/carrier/config.py",
+        'SHELL_TOOLS = ("bash", ',
+        'SHELL_TOOLS = ("notbash", ',
+        [
+            "tests/test_carrier.py::test_a_role_that_names_a_shell_is_refused_with_a_pointer_to_a_future_decision"
+        ],
+    ),
+    (
+        "the agents listing keeps rows of unbound sessions",
+        "src/onloop/carrier/listing.py",
+        "if not isinstance(sid, str) or sid not in wanted:",
+        "if not isinstance(sid, str):",
+        [
+            "tests/test_carrier.py::test_the_listing_filter_returns_nothing_about_unbound_sessions",
+            "tests/test_carrier.py::test_reading_the_listing_keeps_no_trace_of_unbound_sessions",
+        ],
+    ),
+    (
+        "a delivery is acked only by a turn with a valid outcome",
+        "src/onloop/carrier/deliveries.py",
+        '"SELECT id FROM turns WHERE session_id = ? AND ended_at >= ? ORDER BY ended_at, last_seq LIMIT 1",',
+        '"SELECT id FROM turns WHERE session_id = ? AND ended_at >= ? AND parse_error IS NULL ORDER BY ended_at, last_seq LIMIT 1",',
+        ["tests/test_carrier.py::test_a_turn_without_an_outcome_line_still_acks_and_fails_nothing"],
+    ),
+    (
+        "the kill switch does not end a live run",
+        "src/onloop/carrier/runner.py",
+        "why = hooks.stop_requested()",
+        "why = None",
+        [
+            "tests/test_carrier.py::test_the_kill_switch_ends_a_live_run_within_five_seconds_and_releases_its_lease"
+        ],
+    ),
+    (
+        "overage does not pause the carrier",
+        "src/onloop/carrier/stream.py",
+        'overage=rl.get("isUsingOverage") is True,',
+        "overage=False,",
+        ["tests/test_carrier.py::test_overage_pauses_the_carrier_at_once"],
+    ),
+    (
+        "the run inherits the CLAUDE and ANTHROPIC variables",
+        "src/onloop/carrier/guards.py",
+        "return {k: v for k, v in environ.items() if not k.upper().startswith(_PREFIXES)}",
+        "return dict(environ)",
+        ["tests/test_carrier.py::test_the_child_environment_holds_no_claude_or_anthropic_variable"],
+    ),
+    (
+        "the carrier starts with a metered key",
+        "src/onloop/carrier/guards.py",
+        '    for key in METERED_KEYS:\n        if key in environ:\n            raise MeteredKeyRefused(\n                f"the carrier',
+        '    for key in ():\n        if key in environ:\n            raise MeteredKeyRefused(\n                f"the carrier',
+        ["tests/test_carrier.py::test_a_metered_key_stops_the_carrier_at_start"],
+    ),
+    (
+        "a session held elsewhere is resumed",
+        "src/onloop/carrier/loop.py",
+        "if seen.held(role.session_id):",
+        "if False:",
+        ["tests/test_carrier.py::test_a_session_open_elsewhere_is_never_resumed"],
+    ),
+    (
+        "a turn that answered a corrective gets another",
+        "src/onloop/carrier/loop.py",
+        "            if answered_corrective(led, r.name, turn):\n                continue",
+        "            if False:\n                continue",
+        ["tests/test_carrier.py::test_one_corrective_per_turn_then_the_coordinator_with_the_age"],
+    ),
+    (
+        "a carrier never started acts",
+        "src/onloop/carrier/loop.py",
+        'if not st["enabled"]:',
+        "if False:",
+        [
+            "tests/test_carrier.py::test_a_fresh_install_spawns_nothing_and_logs_what_it_would_deliver",
+            "tests/test_carrier.py::test_opted_in_but_not_started_is_still_observe_only",
+        ],
+    ),
+    (
+        "a usage-limited run is acked from its result line",
+        "src/onloop/carrier/loop.py",
+        'answered = res.stream.result is not None and status not in ("usage_limited", "not_logged_in")',
+        "answered = res.stream.result is not None",
+        [
+            "tests/test_carrier.py::test_the_usage_limit_pauses_until_its_reset_and_puts_the_delivery_back_uncounted"
+        ],
+    ),
+    (
+        "the role budget is ignored",
+        "src/onloop/carrier/guards.py",
+        "    if hour >= per_hour:",
+        "    if False:",
+        [
+            "tests/test_carrier.py::test_the_role_budget_holds_deliveries",
+            "tests/test_carrier.py::test_a_usage_warning_halves_the_rate",
+        ],
+    ),
+    (
+        "a message is stored unscrubbed",
+        "src/onloop/carrier/messages.py",
+        "text, n = scrub(check(body))",
+        "text, n = check(body), 0",
+        ["tests/test_carrier.py::test_a_message_is_scrubbed_kept_for_its_retention_then_only_its_hash"],
+    ),
+    (
+        "a message never expires",
+        "src/onloop/carrier/messages.py",
+        "WHERE expired_at IS NULL AND expires_at <= ? ORDER BY id",
+        "WHERE expired_at IS NULL AND expires_at <= '0' AND ? IS NOT NULL ORDER BY id",
+        ["tests/test_carrier.py::test_a_message_is_scrubbed_kept_for_its_retention_then_only_its_hash"],
+    ),
+    (
+        "a refused run counts as a success",
+        "src/onloop/carrier/loop.py",
+        '        if res.stream.denials():\n            return "refused"',
+        '        if False:\n            return "refused"',
+        ["tests/test_carrier.py::test_a_refused_tool_is_not_a_success_and_is_not_re_run"],
+    ),
+    (
+        "a crash's unanswered delivery is not resent",
+        "src/onloop/carrier/loop.py",
+        'dlv.fail(\n                led,\n                [r["id"]],',
+        'False and dlv.fail(\n                led,\n                [r["id"]],',
+        [
+            "tests/test_carrier.py::test_after_a_crash_a_delivery_with_a_stop_hook_turn_is_acked_and_one_without_is_resent"
+        ],
+    ),
+    (
+        "the compose box opens with no carrier configured",
+        "src/onloop/report/views.py",
+        '    if carrier_cfg is None:\n        return {"enabled": False, "why": MESSAGES_OFF, "command": None}',
+        '    if carrier_cfg is None:\n        return {"enabled": True, "why": None, "command": None}',
+        [
+            "tests/test_carrier_ui_api.py::test_the_compose_box_is_open_only_when_a_message_can_go_somewhere",
+            "tests/test_carrier_ui_api.py::test_without_a_carrier_the_conversation_says_messages_are_off_and_a_post_is_a_plain_404",
+        ],
+    ),
+    (
+        "the compose box opens for a role that opted out",
+        "src/onloop/report/views.py",
+        '    if "message" not in opted:',
+        "    if False:",
+        ["tests/test_carrier_ui_api.py::test_the_compose_box_is_open_only_when_a_message_can_go_somewhere"],
+    ),
+    (
+        "a message with no carrier gets the internal route error",
+        "src/onloop/daemon/routes.py",
+        '        if path.startswith("/messages/"):',
+        "        if False:",
+        [
+            "tests/test_carrier_ui_api.py::test_without_a_carrier_the_conversation_says_messages_are_off_and_a_post_is_a_plain_404"
+        ],
+    ),
 ]
 
 

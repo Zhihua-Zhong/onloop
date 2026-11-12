@@ -11,12 +11,15 @@ import { Empty, Loading, Problem, Ticks } from "@/components/kit";
 // event (a heartbeat ping each minute) is one row with its count, opened on a click.
 
 const FILTERS = ["kind", "subject", "source", "actor", "since", "until"] as const;
-const SOURCES = ["github", "hook", "healthchecks", "ui", "detector", "legacy", "config"];
+const SOURCES = ["github", "hook", "healthchecks", "ui", "cli", "carrier", "detector", "gate", "legacy", "config"];
 const SOURCE_LABEL: Record<string, string> = {
   github: "GitHub",
   hook: "role hook",
   healthchecks: "job result",
-  ui: "person",
+  ui: "person, page",
+  cli: "person, CLI",
+  carrier: "carrier",
+  gate: "merge gate",
   detector: "detector",
   legacy: "import",
   config: "config",

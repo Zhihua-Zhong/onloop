@@ -202,6 +202,9 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
         say(f"onloopd: does not start: github: {type(e).__name__}: {e}"[:300])
         return 2
     ledger = Ledger(cfg.ledger)  # creates or migrates the file; the one writer
+    spooled = hook_receiver.ingest_spool(ledger, state)
+    if spooled:
+        say(f"onloopd: logged {spooled} hook event(s) spooled while it was away")
     declared = sources.declare(ledger, [s.declaration() for s in cfg.watch.schedules])
     if declared:
         say(f"onloopd: declared {len(declared)} new or changed schedule(s) from onloopd.yaml")
@@ -212,12 +215,22 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     routes = Routes(ledger, write_lock)
     for prefix, handler in ROUTES:
         routes.add(prefix, handler)
+    if cfg.watch.carrier is not None:
+        from . import messages_route
+
+        routes.add("/messages/", messages_route.make(cfg.watch.carrier.message_retention_s))
     secret, warning = token.issue(state)
     if warning:
         say(f"onloopd: warning: {warning}")
     try:
         server = srv.make_server(
-            reader, port=cfg.port, host=host, writer=routes, token=secret, heartbeat=state / HEARTBEAT_FILE
+            reader,
+            port=cfg.port,
+            host=host,
+            writer=routes,
+            token=secret,
+            heartbeat=state / HEARTBEAT_FILE,
+            carrier=cfg.watch.carrier,
         )
     except srv.PortInUse as e:
         say(f"onloopd: does not start: {e}")
@@ -227,12 +240,28 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, name="onloopd-http", daemon=True)
     thread.start()
+    carrier_thread = None
+    if cfg.watch.carrier is not None:
+        from ..carrier import loop as carrier_loop
+
+        carrier = carrier_loop.Carrier(ledger, cfg.watch.carrier, state, lock=write_lock, say=say)
+        for note in carrier.boot():
+            say(f"onloopd: carrier: {note}")
+        carrier_thread = threading.Thread(
+            target=carrier_loop.run_thread,
+            args=(carrier, stopping),
+            kwargs={"say": say},
+            name="onloopd-carrier",
+            daemon=True,
+        )
+        carrier_thread.start()
     fsutil.write_atomic(pid_path, f"{os.getpid()}\n", newline="\n")
     say(f"onloopd {__version__}: listening on http://{host}:{port}, ledger {cfg.ledger}, pid {os.getpid()}")
     ticks = 0
     try:
         while not stopping.is_set():
             with write_lock:
+                hook_receiver.ingest_spool(ledger, state)
                 res = tick(ledger, cfg, ingest_sources)
             for err in res.errors:
                 say(f"onloopd: ingest: {err}")
@@ -248,6 +277,9 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
                     break
                 stopping.wait(min(0.5, max(0.0, deadline - time.monotonic())))
     finally:
+        stopping.set()
+        if carrier_thread is not None:
+            carrier_thread.join(timeout=60)  # a live run is ended by the kill of its job when onloopd exits
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)

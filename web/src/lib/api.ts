@@ -1,5 +1,6 @@
 // The ledger API as onloopd serves it (src/onloop/daemon/server.py, src/onloop/report/views.py). Read-only: every
-// request here is a GET (decision 0009), and the browser tests fail on any other method.
+// request here is a GET (decision 0009) but one: a message to a role (`sendMessage`, decision 0011), and the browser
+// tests fail on any other method.
 
 export type Seconds = number | null;
 
@@ -41,7 +42,7 @@ export interface Stall {
   ref: string | null;
   opened_at: string;
   age_s: Seconds;
-  would: { action: string; target: string | null; at: string; label: string } | null;
+  would: { action: string; target: string | null; at: string; label: string; acting?: boolean } | null;
   acknowledged: { at: string; outcome: string | null } | null;
   detail: Record<string, unknown>;
 }
@@ -150,6 +151,78 @@ export const api = {
   items: () => get<{ items: Item[] }>("/api/items").then((b) => b.items),
   alerts: () => get<{ alerts: Item[] }>("/api/alerts").then((b) => b.alerts),
   schedules: () => get<{ schedules: Schedule[] }>("/api/schedules").then((b) => b.schedules),
+  conversation: (role?: string) => get<ConversationModel>(`/api/conversation${role ? `?role=${encodeURIComponent(role)}` : ""}`),
   events: (params: URLSearchParams) =>
     get<{ events: LedgerEvent[]; next_before?: number | null }>(`/api/events?${params.toString()}`),
 };
+
+// The Conversation view (decisions 0010 and 0011). A role's own words are never in it: a turn is its outcome line.
+export interface ConvDelivery {
+  id: string;
+  kind: string;
+  state: string;
+  delivered_at: string | null;
+  processing_at: string | null;
+  acked_at: string | null;
+  acked_by_turn: string | null;
+  attempts: number;
+  resent: boolean;
+  last_error: string | null;
+  escalated_to: string | null;
+}
+export type ConvEntry =
+  | { type: "message"; seq: number; at: string; author: "human" | "onloop"; channel: string; text: string | null; delivery: ConvDelivery | null }
+  | { type: "would"; seq: number; at: string; kind: string; text: string; why: string; command: string }
+  | { type: "run"; seq: number; at: string; role: string; run_id: string; status: string; wall_s: number | null; num_turns: number | null; denials: number; hook_missing: boolean }
+  | { type: "turn"; seq: number; at: string; role: string; outcome: string | null; line: string | null; parse_error: string | null }
+  | { type: "note"; seq: number; at: string; text: string };
+export interface ConvRole {
+  role: string;
+  session_id: string;
+  opted_in: string[];
+  paused: boolean;
+  entry_seqs: number[];
+  attention: string | null;
+  open_command: string;
+  compose: { enabled: boolean; why: string | null; command: string | null };
+}
+export interface ConversationModel {
+  now: string;
+  carrier: { enabled: boolean; paused_reason: string | null; paused_until: string | null; kill_switch: boolean; configured: boolean };
+  roles: ConvRole[];
+  role: string | null;
+  thread: ConvEntry[];
+}
+
+// The UI's one write (decision 0011): a message to a role, with the page's session cookie and its CSRF token.
+let csrf: string | null = null;
+
+async function csrfToken(): Promise<string> {
+  if (!csrf) csrf = (await get<{ csrf: string }>("/api/ui/csrf")).csrf;
+  return csrf;
+}
+
+export async function sendMessage(role: string, text: string): Promise<{ delivery: string }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch("/ui/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": await csrfToken() },
+      body: JSON.stringify({ role, text }),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (r.ok) return (await r.json()) as { delivery: string };
+    if (r.status === 403 && attempt === 0) {
+      csrf = null; // onloopd restarted: ask for a fresh token once
+      continue;
+    }
+    let reason = `${r.status}`;
+    try {
+      reason = ((await r.json()) as { error?: string }).error ?? reason;
+    } catch {
+      /* keep the status */
+    }
+    throw new ApiError(r.status, `The message was not taken: ${reason}`);
+  }
+  throw new ApiError(403, "The message was not taken: reload the page");
+}

@@ -12,7 +12,7 @@ meta:
   system: onloop
   as_of: 2026-11-09
   sources:
-    - "docs/decisions/: 0004 onloop hosts the conversation, 0005 package layout, 0006 overlay ledger, 0007 disposition contract, 0008 resident service and dead-man switch, 0009 one read-only UI"
+    - "docs/decisions/: 0004 onloop hosts the conversation, 0005 package layout, 0006 overlay ledger, 0007 disposition contract, 0008 resident service and dead-man switch, 0009 one read-only UI, 0010 the session lease and delivery, 0011 the UI write path"
     - docs/architecture.md
 
 # Facts that live in the code. `value` is what the diagrams show; `file` and `name` say where the code defines it.
@@ -21,7 +21,7 @@ meta:
 # panel, the dashboard and the demo are gone. Every parameter matched the code.
 params:
   onloopd_port: {value: 8790, file: src/onloop/daemon/server.py, name: DEFAULT_PORT}
-  ledger_schema: {value: 5, file: src/onloop/overlay/schema.py, name: MIGRATIONS, len: true}
+  ledger_schema: {value: 6, file: src/onloop/overlay/schema.py, name: MIGRATIONS, len: true}
 
 elements:
   # ------------------------------------------------------------------------------------------------ people, systems
@@ -94,7 +94,7 @@ elements:
     technology: Python 3.12, stdlib HTTP server
     description: >-
       The resident service. Ticks every 10 s: ingests GitHub, probes wakers, runs the detectors, writes its
-      heartbeat. Serves the UI, read-only JSON and SSE; takes writes only on /hooks and /sources with a token.
+      heartbeat. Serves the UI, read-only JSON and SSE; takes writes only on /hooks, /sources and /messages with a token, and the page's message on /ui/messages with its session cookie and CSRF token.
     owner: onloop
     status: built
     port: "127.0.0.1:${onloopd_port}"  # scan:allow
@@ -112,7 +112,7 @@ elements:
       turns. Replay rebuilds them byte for byte.
     owner: onloop
     status: built
-    facts: [".onloop/ledger.db · schema v${ledger_schema}", "sources incl. config, gate · wait reasons incl. blocked, handoff"]
+    facts: [".onloop/ledger.db · schema v${ledger_schema}", "sources incl. config, gate, carrier, cli · wait reasons incl. blocked, handoff"]
 
   - id: ui
     name: onloop UI
@@ -120,7 +120,7 @@ elements:
     parent: onloop
     technology: React 18, React Flow + ELK, built by Vite; in the browser
     description: >-
-      Now, Flow, Team, Schedules and Audit over the ledger API. Read-only: an action is shown as the command to copy.
+      Now, Flow, Team, Conversation, Schedules and Audit over the ledger API. Read-only but for one write, a message to a role (evidence, not authority); any other action is shown as the command to copy.
       Served by onloopd (decision 0009).
     owner: onloop
     status: built
@@ -423,22 +423,26 @@ elements:
     type: component
     parent: onloopd
     technology: Python
-    description: Turns would.* into deliveries; escalates; reserves gaps. Acts where onloopd now only records.
+    description: >-
+      The carrier's loop: derives deliveries (a person's message, a handoff, the one corrective per turn, a dead
+      waker), fires timers, escalates; observe-only (would.deliver) until a role opts in and the carrier is started.
     owner: onloop
-    status: planned
+    status: built
     phase: R4
-    code: not yet created
+    code: src/onloop/carrier/loop.py
 
   - id: sessions
     name: Sessions
     type: component
     parent: onloopd
     technology: Python, subprocess
-    description: One lease per session id; scrubs the environment, checks the login, counts budgets, reads each result line.
+    description: >-
+      One lease per session id (a unique index); one process and one composed message per run, in a job object;
+      scrubs the environment, checks the login and the agents listing, counts budgets, reads each result line.
     owner: onloop
-    status: planned
+    status: built
     phase: R4
-    code: not yet created
+    code: src/onloop/carrier/runner.py
 
   - id: waker
     name: A waker
@@ -660,7 +664,7 @@ elements:
 relationships:
   # ------------------------------------------------------------------------------------------------ L1
   - {id: lead_onloop, from: lead, to: onloop, description: "Reads what is stuck, what waits on them and what stalled", technology: "Browser, http://localhost:${onloopd_port}", status: built}
-  - {id: onloop_roles, from: onloop, to: roles, description: Wakes a role with a delivery; one lease per session id, technology: "claude -p --resume, stream-json", status: planned}
+  - {id: onloop_roles, from: onloop, to: roles, description: Wakes a role with a delivery; one lease per session id, technology: "claude -p --resume, stream-json", status: built}
   - {id: roles_onloop, from: roles, to: onloop, description: Report each turn's end and its outcome line, technology: "Claude Code hooks, HTTP POST", status: built}
   - {id: roles_anthropic, from: roles, to: anthropic, description: Model inference for every turn, technology: "HTTPS, subscription login", status: built}
   - {id: roles_github, from: roles, to: github, description: Push branches; open and review pull requests, technology: "git, gh", status: built}
@@ -682,7 +686,7 @@ relationships:
   - {id: onloopd_hc, from: onloopd, to: healthchecks, description: Dead-man ping every 60 s, technology: HTTP GET, status: planned}
   - {id: hc_notify, from: healthchecks, to: notify, description: Dead-man alert, technology: "E-mail or push integration", status: planned}
   - {id: onloopd_ledger, from: onloopd, to: ledger, description: Appends events; reads projections, technology: "sqlite3, WAL", status: built}
-  - {id: onloopd_claude, from: onloopd, to: claude_proc, description: Starts one turn under the lease, technology: "subprocess, stream-json", status: planned}
+  - {id: onloopd_claude, from: onloopd, to: claude_proc, description: Starts one turn under the lease, technology: "subprocess, stream-json", status: built}
   - {id: onloopd_github, from: onloopd, to: github, description: Reads PRs, reviews, checks, technology: "gh api, ETag, every 1 min", status: built}
   - {id: claude_github, from: claude_proc, to: github, description: Pushes; opens and reviews PRs, technology: "git, gh", status: built}
   - {id: claude_anthropic, from: claude_proc, to: anthropic, description: Inference, technology: "HTTPS, subscription", status: built}
@@ -715,9 +719,9 @@ relationships:
   - {id: c_core_wakers, from: detect_core, to: wakers, description: Runs, technology: "(ledger, now)", status: built}
   - {id: c_core_schedules, from: detect_core, to: schedules_detect, description: Runs, technology: "(ledger, now)", status: built}
   - {id: c_core_ledger, from: detect_core, to: ledger_api, description: Opens and closes alerts; logs would.*, technology: Python call, status: built}
-  - {id: c_conductor_sessions, from: conductor, to: sessions, description: Delivers, technology: Python call, status: planned}
-  - {id: c_conductor_ledger, from: conductor, to: ledger_api, description: Reads would.*; writes delivery states, technology: Python call, status: planned}
-  - {id: c_sessions_claude, from: sessions, to: claude_proc, description: Starts one turn, technology: "subprocess, stream-json", status: planned}
+  - {id: c_conductor_sessions, from: conductor, to: sessions, description: Delivers, technology: Python call, status: built}
+  - {id: c_conductor_ledger, from: conductor, to: ledger_api, description: Reads would.*; writes delivery states, technology: Python call, status: built}
+  - {id: c_sessions_claude, from: sessions, to: claude_proc, description: Starts one turn, technology: "subprocess, stream-json", status: built}
   - {id: c_server_observe, from: server, to: observe, description: Builds the report on request, technology: Python call, status: built}
   - {id: c_observe_ledger, from: observe, to: ledger_api, description: Reads events, technology: Python call, status: built}
   - {id: c_ledger_proj, from: ledger_api, to: projections, description: Applies each event, technology: same transaction, status: built}
@@ -734,7 +738,7 @@ relationships:
   - {id: d_hc_notify, from: i_hc, to: i_notify, description: Dead-man alert, technology: SMTP or push, status: planned}
   - {id: d_jobs_hc, from: i_jobs, to: i_hc, description: Pings each run, technology: "HTTP :8000", status: planned}
   - {id: d_onloopd_ledger, from: i_onloopd, to: i_ledger, description: Reads and writes, technology: "sqlite3, WAL", status: built}
-  - {id: d_onloopd_claude, from: i_onloopd, to: i_claude, description: Starts one turn under the lease, technology: "claude.cmd, stdin", status: planned}
+  - {id: d_onloopd_claude, from: i_onloopd, to: i_claude, description: Starts one turn under the lease, technology: "claude.cmd, stdin", status: built}
   - {id: d_claude_hooks, from: i_claude, to: i_hooks, description: Runs the hook, technology: stdin JSON, status: built}
   - {id: d_claude_transcripts, from: i_claude, to: i_transcripts, description: Appends, technology: JSONL, status: built}
   - {id: d_hooks_onloopd, from: i_hooks, to: i_onloopd, description: Posts the payload, technology: "HTTP :${onloopd_port}, Bearer", status: built}
@@ -857,7 +861,7 @@ views:
       disposition: {x: 780, y: 1000, w: 240, h: 140}
       sources: {x: 1120, y: 1000, w: 240, h: 140}
       conductor: {x: 1460, y: 1000, w: 240, h: 140}
-      sessions: {x: 1800, y: 1000, w: 240, h: 140}
+      sessions: {x: 1800, y: 1000, w: 240, h: 175}
       ledger_api: {x: 480, y: 1200, w: 1900, h: 100}
       observe: {x: 440, y: 1370, w: 260, h: 140}
       projections: {x: 780, y: 1370, w: 240, h: 120}
@@ -988,11 +992,11 @@ views:
   # ================================================================================================ dynamic (a)
   - key: dynamic-wake
     name: Dynamic wake and ack
-    level: Dynamic · target flow (R4)
-    title: "[Dynamic] A wake, acknowledged only by a valid outcome"
+    level: Dynamic · built (R4)
+    title: "[Dynamic] A wake, acknowledged by the turn it caused"
     subtitle: >-
-      How one delivery to a role is tracked from created to acknowledged. Steps 7–10 run on main today; the conductor
-      and sessions that drive steps 1–6 and 11 are R4.
+      How one delivery to a role is tracked from created to acknowledged (decision 0010). Acknowledgement is the
+      Stop-hook turn; whether that turn wrote a valid outcome line is recorded apart.
     size: [2240, 1180]
     wrap: 30
     elements:
@@ -1005,17 +1009,17 @@ views:
       disposition: {x: 600, y: 900, w: 300, h: 150}
       hooks: {x: 1180, y: 650, w: 320, h: 170}
     steps:
-      - {from: conductor, to: ledger, description: "Delivery created; lease taken for the session id", technology: ledger append, status: planned, layout: {exit: [0.3, 1], entry: [0.3, 0]}}
-      - {from: conductor, to: sessions, description: "Wake role R with delivery D", technology: Python call, status: planned, layout: {exit: [1, 0.5], entry: [0, 0.45], wrap: 20}}
-      - {from: sessions, to: claude_proc, description: "Start claude -p --resume <id>; write the message: delivered", technology: "subprocess, stream-json stdin", status: planned, layout: {exit: [1, 0.15], entry: [0, 0.15]}}
-      - {from: claude_proc, to: sessions, description: "Replays the message when its turn starts: processing", technology: "--replay-user-messages", status: planned, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: conductor, to: ledger, description: "Delivery created; lease taken for the session id", technology: ledger append, status: built, layout: {exit: [0.3, 1], entry: [0.3, 0]}}
+      - {from: conductor, to: sessions, description: "Wake role R with delivery D", technology: Python call, status: built, layout: {exit: [1, 0.5], entry: [0, 0.45], wrap: 20}}
+      - {from: sessions, to: claude_proc, description: "Start claude -p --resume <id>; write the message: delivered", technology: "subprocess, stream-json stdin", status: built, layout: {exit: [1, 0.15], entry: [0, 0.15]}}
+      - {from: claude_proc, to: sessions, description: "Replays the message when its turn starts: processing", technology: "--replay-user-messages", status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
       - {from: claude_proc, to: anthropic, description: Inference for the turn, technology: "HTTPS, subscription", status: built, layout: {exit: [1, 0.5], entry: [0, 0.5]}}
-      - {from: claude_proc, to: sessions, description: "Result line: is_error false, permission_denials empty", technology: stream-json result, status: planned, layout: {exit: [0, 0.85], entry: [1, 0.85]}}
+      - {from: claude_proc, to: sessions, description: "One result line: is_error, permission_denials, rate limit", technology: stream-json result, status: built, layout: {exit: [0, 0.85], entry: [1, 0.85]}}
       - {from: claude_proc, to: hooks, description: "Stop hook with last_assistant_message", technology: hook JSON on stdin, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0]}}
       - {from: hooks, to: hook_receiver, description: "POST /hooks/stop", technology: "HTTP :${onloopd_port}, Bearer, ≤ 2 s", status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
-      - {from: hook_receiver, to: disposition, description: "Parses the outcome line: valid", technology: Python call, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0]}}
-      - {from: hook_receiver, to: ledger, description: "Turn recorded; delivery acknowledged", technology: ledger append, status: built, layout: {exit: [0, 0.5], entry: [1, 0.48], wrap: 22}}
-      - {from: sessions, to: ledger, description: Lease released, technology: ledger append, status: planned, layout: {exit: [0.15, 1], entry: [0.8, 0], points: [[645, 530], [304, 530]]}}
+      - {from: hook_receiver, to: disposition, description: "Parses the outcome line, valid or not", technology: Python call, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0]}}
+      - {from: hook_receiver, to: ledger, description: "Turn recorded; the carrier acks D by it", technology: ledger append, status: built, layout: {exit: [0, 0.5], entry: [1, 0.48], wrap: 22}}
+      - {from: sessions, to: ledger, description: Lease released, technology: ledger append, status: built, layout: {exit: [0.15, 1], entry: [0.8, 0], points: [[645, 530], [304, 530]]}}
     notes:
       - x: 1560
         y: 470
@@ -1025,14 +1029,15 @@ views:
         text: >-
           <b>Steps</b><br>
           <b>1</b> The conductor creates delivery D (state <i>created</i>) and takes the lease on R's session id. Two
-          processes on one id fork the session silently, so the lease is mandatory.<br>
-          <b>2–3</b> Sessions starts the CLI with a scrubbed environment and writes D to stdin: <i>delivered</i>.<br>
-          <b>4</b> The CLI replays a message only when its turn starts: <i>processing</i>. The replay acknowledges
-          processing, not receipt; receipt is onloop's own queue.<br>
-          <b>6</b> Every result line is checked. <i>is_error</i> true, or any <i>permission_denials</i>, fails the
-          delivery although the exit code is 0.<br>
-          <b>7–10</b> The Stop hook carries the final message. Only a valid outcome line acknowledges D; a missing or
-          invalid one opens a missing-outcome alert instead.<br>
+          processes on one id fork the session silently, so the lease is mandatory; the agents listing guards
+          against a holder outside onloop.<br>
+          <b>2–3</b> Sessions starts the CLI in a job object with a scrubbed environment and writes one composed
+          message to stdin: <i>delivered</i>.<br>
+          <b>4</b> The CLI replays the message when its turn starts: <i>processing</i>, not receipt.<br>
+          <b>6</b> The one result line is read: any <i>permission_denials</i> makes the run <i>refused</i> (exit code
+          0 notwithstanding); a rate-limit rejection pauses the carrier.<br>
+          <b>7–10</b> The Stop hook's turn acknowledges D, whatever it said. A missing or invalid outcome line is
+          recorded on the turn and starts the corrective path only for a role that opted in.<br>
           <b>11</b> The lease is released, so the next wake may resume the session.
     legend: {x: 1560, y: 840, w: 420}
 

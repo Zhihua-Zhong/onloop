@@ -116,10 +116,20 @@ def test_now_lists_what_waits_on_the_human_with_the_default_and_the_time_left(le
 
 def test_now_lists_the_stalls_with_their_age_the_would_be_wake_and_no_acknowledgement(led):
     stalls = {s["owner_role"]: s for s in views.now(led, NOW)["stalls"]}
-    assert set(stalls) == {"builder", "lead"}  # a schedule's alert is health, not a stall
+    assert set(stalls) == {
+        "builder",
+        "lead",
+        "designer",
+        "reviewer",
+    }  # a schedule's alert is health, not a stall
+    assert "refused a tool" in stalls["designer"]["title"]  # the carrier's alert: a run refused, not re-run
     b = stalls["builder"]
-    assert b["age_s"] == 12 * 60 and b["would"]["label"] == "would wake (observe only)"
+    assert (
+        b["age_s"] == 12 * 60 and b["would"]["label"] == "onloop asked for its outcome line (being processed)"
+    )  # the carrier acted
     assert b["would"]["target"] == "builder" and b["acknowledged"] is None
+    r = stalls["reviewer"]  # observe-only: the carrier did nothing, so the wake is only what it would do
+    assert r["would"]["label"] == "would wake (observe only)" and not r["would"].get("acting")
     assert stalls["lead"]["detail"]["parse_error"] == "`handoff` needs owner"
     assert stalls["lead"]["age_s"] == 26 * 3600
 

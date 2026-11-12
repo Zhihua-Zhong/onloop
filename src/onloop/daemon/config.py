@@ -16,6 +16,7 @@
       every: 1m                optional, default 1m, at least 30s: how often it reads
       workdir: path            optional: a clone to take patch ids in; without one every push counts as substantive
       policy: path             optional: the onloop.yaml whose required checks and identities intake uses
+    carrier: ...               optional: the session carrier, off by default (carrier/config.py, decision 0010)
     heartbeat_schedule: onloop-heartbeat   optional: the schedule above that is onloop's own heartbeat, pinged from
                                outside it (its dead-man switch, decision 0008); the Now view's health shows its state.
                                Without it, the Now view says "dead-man not configured"
@@ -40,7 +41,7 @@ CONFIG_FILE = "onloopd.yaml"
 DEFAULT_GRACE = "1h"
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
-_TOP = ("port", "schedules", "monitors", "github", "heartbeat_schedule")
+_TOP = ("port", "schedules", "monitors", "github", "heartbeat_schedule", "carrier")
 _SCHEDULE = ("id", "name", "period", "grace", "owner")
 _GITHUB = ("repo", "base", "every", "workdir", "policy")
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -88,6 +89,7 @@ class OnloopdConfig:
     monitors: tuple[tuple[str, str], ...] = field(default_factory=tuple)  # (id, url)
     port: int | None = None
     heartbeat_schedule: str | None = None  # the schedule that is onloop's own dead-man switch
+    carrier: Any = None  # carrier.config.CarrierConfig, or None: the session carrier is not configured
 
 
 def _monitors(raw: Any, problems: list[str]) -> list[tuple[str, str]]:
@@ -224,9 +226,15 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     beat = data.get("heartbeat_schedule")
     if beat is not None and (not isinstance(beat, str) or beat not in seen):
         problems.append("heartbeat_schedule must name one of the schedules declared in this file")
+    carrier = None
+    if data.get("carrier") is not None:
+        from ..carrier import config as carrier_config
+
+        carrier = carrier_config.parse(data["carrier"], problems)
     if problems:
         raise ConfigError(path, problems)
     return OnloopdConfig(
+        carrier=carrier,
         schedules=tuple(schedules),
         github=github,
         monitors=tuple(monitors),

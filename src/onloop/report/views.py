@@ -10,6 +10,7 @@ Each reads the ledger's projections and log only. Every time used is the ledger'
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -277,6 +278,59 @@ def _would(ledger: Any, alert_id: str) -> dict[str, Any] | None:
     }
 
 
+CORRECTIVE_STATE = {
+    "created": "queued",
+    "claimed": "starting",
+    "delivered": "delivered",
+    "processing": "being processed",
+    "acked": "acknowledged",
+    "failed": "failed",
+    "escalated": "escalated",
+    "cancelled": "not sent",
+}
+
+
+def _carried(ledger: Any, detail: Mapping[str, Any]) -> dict[str, Any] | None:
+    """What the carrier did about a turn without an outcome line (decision 0010): the corrective it sent, or the one
+    it will send. None when it did nothing, so the stall keeps its observe-only `would`."""
+    turn = detail.get("turn")
+    if not turn:
+        return None
+    try:
+        d = ledger.select(
+            "SELECT state, created_at, delivered_at FROM deliveries WHERE kind = 'corrective' AND for_turn_id = ?",
+            (turn,),
+        )
+        t = (
+            []
+            if d
+            else ledger.select(
+                "SELECT due_at FROM timers WHERE id = ? AND fired_at IS NULL AND cancelled_at IS NULL",
+                (f"corrective:{turn}",),
+            )
+        )
+    except Exception:  # noqa: BLE001 - a reader without the carrier's tables: nothing was carried
+        return None
+    if d:
+        state = CORRECTIVE_STATE.get(d[0]["state"], d[0]["state"])
+        return {
+            "action": "corrective",
+            "target": detail.get("role"),
+            "at": d[0]["delivered_at"] or d[0]["created_at"],
+            "label": f"onloop asked for its outcome line ({state})",
+            "acting": True,
+        }
+    if t:
+        return {
+            "action": "corrective",
+            "target": detail.get("role"),
+            "at": t[0]["due_at"],
+            "label": "onloop will ask for its outcome line",
+            "acting": True,
+        }
+    return None
+
+
 def _acknowledged(ledger: Any, role: str | None, after: str | None) -> dict[str, Any] | None:
     """A later turn by the role: the only acknowledgement onloop can see while it observes (decision 0007)."""
     if not role or not after:
@@ -294,7 +348,7 @@ def _stalls(ledger: Any, alerts: list[dict[str, Any]], now: str) -> list[dict[st
         detail = a.get("detail") or {}
         if detail.get("detector") == "schedule":
             continue  # a schedule's alert is health, not a stall
-        would = _would(ledger, a["id"])
+        would = _carried(ledger, detail) or _would(ledger, a["id"])
         role = (would or {}).get("target") or a.get("owner_role")
         out.append(
             {
@@ -597,3 +651,235 @@ def _next_due(s: Mapping[str, Any]) -> str | None:
         return ev.shift_ts(base, ev.parse_duration(s["period"]))
     except ev.EventError:
         return None
+
+
+# -- Conversation (blueprint section 4.4; decisions 0010 and 0011) ----------------------------------------------------
+
+THREAD_LIMIT = 200
+
+
+def _decode(v: Any) -> Any:
+    return json.loads(v) if isinstance(v, str) else v
+
+
+MESSAGES_OFF = "Messages are off: the carrier is not configured (docs/carrier.md)"
+
+
+def compose_state(
+    name: str, opted: list[str], carrier_cfg: Any, enabled: bool, kill_switch: bool
+) -> dict[str, Any]:
+    """Whether the compose box can take a message for this role now, and if not, why, in plain words, with the command
+    or setting that changes it. A message is taken only when it can go somewhere: the carrier is configured and
+    started, its kill switch is off, and the role is carried and opted in to messages."""
+    if carrier_cfg is None:
+        return {"enabled": False, "why": MESSAGES_OFF, "command": None}
+    configured = carrier_cfg.role(name)
+    if configured is None:
+        return {
+            "enabled": False,
+            "why": f"Messages are off for {name}: onloopd.yaml does not carry it (no `carrier.roles.{name}`)",
+            "command": None,
+        }
+    if "message" not in configured.opt_in:
+        return {
+            "enabled": False,
+            "why": f"{name} has not opted in to messages: add `message` to `carrier.roles.{name}.opt_in` in onloopd.yaml",
+            "command": None,
+        }
+    if "message" not in opted:
+        return {
+            "enabled": False,
+            "why": f"{name} has not opted in to messages",
+            "command": f"onloop role opt-in {name} message",
+        }
+    if kill_switch:
+        return {
+            "enabled": False,
+            "why": "Messages are off: the carrier is stopped (its kill switch)",
+            "command": "onloop carrier start",
+        }
+    if not enabled:
+        return {
+            "enabled": False,
+            "why": "Messages are off: the carrier is not started",
+            "command": "onloop carrier start",
+        }
+    return {"enabled": True, "why": None, "command": None}
+
+
+def conversation(
+    reader: Any,
+    now: str,
+    role: str | None = None,
+    *,
+    kill_switch: bool = False,
+    carrier_cfg: Any = None,
+) -> dict[str, Any]:
+    """The roles onloop carries and one role's thread, oldest first: what onloop sent and how far each delivery got,
+    what it would have sent where it only observes, each run, and each turn by its outcome line. A role's own words
+    are never here; `open_command` shows them in the person's own client."""
+    st = reader.select("SELECT * FROM carrier_state WHERE id = 1")
+    carrier = {
+        "enabled": bool(st and st[0]["enabled"]),
+        "paused_reason": st[0]["paused_reason"] if st else None,
+        "paused_until": st[0]["paused_until"] if st else None,
+        "kill_switch": kill_switch,
+        "configured": carrier_cfg is not None,
+    }
+    bound = reader.select("SELECT id, session_id, opted_in FROM role_sessions ORDER BY id")
+    paused = {r["id"] for r in reader.select("SELECT id FROM roles WHERE state = 'paused_by_human'")}
+    roles = []
+    for r in bound:
+        # What is new to the person: the thread's own entries, less their messages (one function, so the unread
+        # count and the thread can never disagree).
+        seqs = [
+            e["seq"]
+            for e in _thread(reader, r["id"])
+            if not (e["type"] == "message" and e["author"] == "human")
+        ]
+        roles.append(
+            {
+                "role": r["id"],
+                "session_id": r["session_id"],
+                "opted_in": _decode(r["opted_in"]) or [],
+                "paused": r["id"] in paused,
+                "entry_seqs": seqs,
+                "attention": _attention(reader, r["id"], r["id"] in paused, _decode(r["opted_in"]) or []),
+                "open_command": f"claude --resume {r['session_id']}",
+                "compose": compose_state(
+                    r["id"], _decode(r["opted_in"]) or [], carrier_cfg, carrier["enabled"], kill_switch
+                ),
+            }
+        )
+    names = [r["role"] for r in roles]
+    chosen = role if role in names else (names[0] if names else None)
+    return {
+        "now": now,
+        "carrier": carrier,
+        "roles": roles,
+        "role": chosen,
+        "thread": _thread(reader, chosen) if chosen else [],
+    }
+
+
+def _attention(reader: Any, role: str, paused: bool, opted: list[str]) -> str | None:
+    """The one thing about a carried role a person should see in the list, most urgent first."""
+    if paused:
+        return "paused"
+    run = reader.select(
+        "SELECT status FROM runs WHERE role = ? ORDER BY started_at DESC, id DESC LIMIT 1", (role,)
+    )
+    if run and run[0]["status"] in ("refused", "contended", "error", "timeout", "silent"):
+        return f"run {run[0]['status']}"
+    turn = reader.select(
+        "SELECT parse_error FROM turns WHERE role = ? ORDER BY ended_at DESC, last_seq DESC LIMIT 1", (role,)
+    )
+    if turn and turn[0]["parse_error"]:
+        return "no outcome line"
+    if not opted:
+        return "observe only"
+    if run and run[0]["status"] == "running":
+        return "running"
+    return None
+
+
+def _thread(reader: Any, role: str) -> list[dict[str, Any]]:
+    subject = f"role:{role}"
+    events = reader.select(
+        "SELECT seq, kind, ts_system, at, payload FROM events WHERE subject_ref = ? AND kind IN "
+        "('message.posted', 'would.deliver', 'run.ended', 'hook.stop') ORDER BY seq DESC LIMIT ?",
+        (subject, THREAD_LIMIT),
+    )
+    out: list[dict[str, Any]] = []
+    for e in reversed(events):
+        p = _decode(e["payload"]) or {}
+        at = e["at"] or e["ts_system"]
+        kind = e["kind"]
+        if kind == "message.posted":
+            m = reader.select("SELECT * FROM messages WHERE id = ?", (p.get("id"),))
+            d = reader.select("SELECT * FROM deliveries WHERE message_id = ?", (p.get("id"),)) if m else []
+            msg = m[0] if m else {}
+            out.append(
+                {
+                    "type": "message",
+                    "seq": e["seq"],
+                    "at": at,
+                    "author": "human" if msg.get("author") == "human" else "onloop",
+                    "channel": msg.get("channel") or p.get("channel"),
+                    "text": msg.get("body"),
+                    "delivery": _delivery(d[0]) if d else None,
+                }
+            )
+        elif kind == "would.deliver":
+            if str(p.get("cause", "")).startswith("delivery:"):
+                continue  # a person's message that was not sent: shown on the message itself
+            out.append(
+                {
+                    "type": "would",
+                    "seq": e["seq"],
+                    "at": at,
+                    "kind": p.get("kind"),
+                    "text": p.get("text") or "",
+                    "why": p.get("why") or "",
+                    "command": p.get("command") or "",
+                }
+            )
+        elif kind == "run.ended":
+            r = reader.select("SELECT * FROM runs WHERE id = ?", (p.get("id"),))
+            if not r:
+                continue
+            run = r[0]
+            out.append(
+                {
+                    "type": "run",
+                    "seq": e["seq"],
+                    "at": at,
+                    "role": role,
+                    "run_id": run["id"],
+                    "status": run["status"],
+                    "wall_s": run["wall_s"],
+                    "num_turns": run["num_turns"],
+                    "denials": run["denials"],
+                    "hook_missing": bool(run["hook_missing"]),
+                }
+            )
+        elif kind == "hook.stop":
+            out.append(
+                {
+                    "type": "turn",
+                    "seq": e["seq"],
+                    "at": at,
+                    "role": role,
+                    "outcome": (p.get("outcome") or {}).get("value"),
+                    "line": p.get("line"),
+                    "parse_error": p.get("parse_error"),
+                }
+            )
+    notes = reader.select(
+        "SELECT e.seq, e.ts_system, e.at, i.title FROM items i JOIN events e ON e.subject_ref = i.id AND "
+        "e.kind = 'item.opened' WHERE i.id LIKE 'alert:carrier:%' AND (i.owner_role = ? OR "
+        "json_extract(i.detail, '$.role') = ?) ORDER BY e.seq DESC LIMIT ?",
+        (role, role, THREAD_LIMIT),
+    )
+    for n in notes:
+        out.append(
+            {"type": "note", "seq": n["seq"], "at": n["at"] or n["ts_system"], "text": n["title"] or ""}
+        )
+    out.sort(key=lambda x: x["seq"])
+    return out
+
+
+def _delivery(d: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": d["id"],
+        "kind": d["kind"],
+        "state": d["state"],
+        "delivered_at": d["delivered_at"],
+        "processing_at": d["processing_at"],
+        "acked_at": d["acked_at"],
+        "acked_by_turn": d["acked_by_turn"],
+        "attempts": d["attempts"],
+        "resent": bool(d["resent"]),
+        "last_error": d["last_error"],
+        "escalated_to": d["escalated_to"],
+    }

@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { api, type Item, type Role, type Turn, type Wait } from "@/lib/api";
+import { api, type Item, type Role, type Stall, type Turn, type Wait } from "@/lib/api";
 import { clock, duration, plural, reason } from "@/lib/format";
 import { Command, Empty, Loading, Pill, Problem, Ticks, type Tone } from "@/components/kit";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,7 @@ function said(t: Turn): string {
   }
 }
 
-function lane(r: Role, turns: Turn[], waits: Wait[], items: Item[], alerts: Item[]): Lane {
+function lane(r: Role, turns: Turn[], waits: Wait[], items: Item[], alerts: Item[], stalls: Stall[]): Lane {
   const last = turns.find((t) => t.role === r.id);
   const owned = items.filter((i) => i.owner_role === r.id && i.state !== "done" && i.kind !== "alert");
   const onRole = waits.find((w) => w.waiter === r.id && w.on_kind === "role");
@@ -67,7 +67,8 @@ function lane(r: Role, turns: Turn[], waits: Wait[], items: Item[], alerts: Item
       t: "stall",
       what: lastText.what,
       whatDetail: lastText.detail,
-      next: `would wake (observe only); not acknowledged for ${duration((Date.now() - Date.parse(stall.opened_at ?? "")) / 1000)}`,
+      // The same words as Now's stall card: what the carrier did, or what it would do while it only observes.
+      next: `${stalls.find((s) => s.id === stall.id)?.would?.label ?? "would wake (observe only)"}; not acknowledged for ${duration((Date.now() - Date.parse(stall.opened_at ?? "")) / 1000)}`,
     };
   }
   if (r.state === "working") {
@@ -113,13 +114,14 @@ export function TeamView() {
       { queryKey: ["waits"], queryFn: api.waits },
       { queryKey: ["items"], queryFn: api.items },
       { queryKey: ["alerts"], queryFn: api.alerts },
+      { queryKey: ["now"], queryFn: api.now },
     ],
   });
-  const [roles, turns, waits, items, alerts] = qs;
+  const [roles, turns, waits, items, alerts, now] = qs;
   const failed = qs.find((q) => q.isError);
   const ready = qs.every((q) => q.data);
   const lanes = ready
-    ? roles.data!.map((r) => lane(r, turns.data!, waits.data!, items.data!, alerts.data!)).sort((a, b) => ORDER.indexOf(a.t) - ORDER.indexOf(b.t) || a.role.localeCompare(b.role))
+    ? roles.data!.map((r) => lane(r, turns.data!, waits.data!, items.data!, alerts.data!, now.data!.stalls)).sort((a, b) => ORDER.indexOf(a.t) - ORDER.indexOf(b.t) || a.role.localeCompare(b.role))
     : [];
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6 sm:py-5" data-testid="view-team">

@@ -85,6 +85,40 @@ def event_for(name: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def ingest_spool(ledger: Ledger, state: Any) -> int:
+    """Log what `onloop daemon hook` spooled while onloopd was away, then empty the spool. Each line is logged under
+    its hook's own event id, so a line logged before (a crash between logging and emptying) is skipped. A line that
+    cannot be read is kept in `hook-spool.bad.jsonl`, never dropped silently. Returns the events logged."""
+    import json
+    import pathlib
+
+    from .hook_client import SPOOL
+
+    path = pathlib.Path(state) / SPOOL
+    if not path.exists():
+        return 0
+    work = path.with_suffix(".ingesting")
+    if not work.exists():
+        path.replace(work)
+    logged, bad = 0, []
+    for line in work.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+            event = event_for(rec["event"], rec["body"])
+            event.setdefault("payload", {})["spooled_at"] = rec.get("at")
+            if ledger.append(event) is not None:
+                logged += 1
+        except (ValueError, KeyError, TypeError, WriteRefused):
+            bad.append(line)
+    if bad:
+        with open(work.with_name("hook-spool.bad.jsonl"), "a", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(bad) + "\n")
+    work.unlink()
+    return logged
+
+
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
     """The `/hooks/` route."""
     event = event_for(rest, body)

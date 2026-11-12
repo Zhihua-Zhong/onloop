@@ -143,7 +143,9 @@ function StallCard({ s }: { s: Stall }) {
       <Meta>
         <span className="font-medium text-fg">stalled {duration(s.age_s)}</span>
         <Dot />
-        <span data-testid="would">{s.would ? `${s.would.label}${s.would.target ? `: ${s.would.target}` : ""}` : "no wake scheduled"}</span>
+        <span data-testid="would" className={s.would?.acting ? "font-medium text-state-open" : ""}>
+          {s.would ? (s.would.acting ? s.would.label : `${s.would.label}${s.would.target ? `: ${s.would.target}` : ""}`) : "no wake scheduled"}
+        </span>
         <Dot />
         <span data-testid="ack" className={s.acknowledged ? "text-state-done" : ""}>
           {s.acknowledged ? `acknowledged ${clock(s.acknowledged.at)}` : "not acknowledged"}

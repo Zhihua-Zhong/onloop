@@ -8,6 +8,7 @@ import { NowView } from "@/views/Now";
 import { TeamView } from "@/views/Team";
 import { SchedulesView } from "@/views/Schedules";
 import { AuditView } from "@/views/Audit";
+import { ConversationView } from "@/views/Conversation";
 
 // Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
 const FlowView = lazy(() => import("@/views/Flow"));
@@ -66,7 +67,10 @@ function LiveBadge({ live }: { live: Live }) {
 
 function Nav({ view }: { view: View }) {
   return (
-    <nav aria-label="Views" className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto">
+    <nav
+      aria-label="Views"
+      className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto max-[480px]:order-last max-[480px]:-mb-1 max-[480px]:w-full max-[480px]:justify-between"
+    >
       {VIEWS.map((v) => (
         <a
           key={v}
@@ -95,17 +99,21 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2 max-[420px]:gap-2 max-[420px]:px-3">
+      <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2 max-[480px]:flex-wrap max-[480px]:gap-y-1 max-[420px]:gap-x-2 max-[420px]:px-3">
         <a href={href("now")} className="flex shrink-0 items-center gap-2 font-semibold tracking-tight" aria-label="onloop, Now">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-fg text-[11px] font-bold text-bg" aria-hidden>ol</span>
-          <span className="max-sm:hidden">onloop</span>
+          <span className="min-[481px]:max-sm:hidden">onloop</span>
         </a>
         <Nav view={route.view} />
         <div className="ml-auto flex shrink-0 items-center gap-3 max-[420px]:gap-1.5 max-[420px]:pl-1">
           <LiveBadge live={live} />
-          <span className="inline-flex items-center gap-1 text-xs text-muted" title="This page only reads. Where you can act, it shows the command to copy." data-testid="read-only">
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted"
+            title="This page only reads, except the message box on Conversation. Where you can act, it shows the command to copy."
+            data-testid="read-only"
+          >
             <Eye className="h-3.5 w-3.5" aria-hidden />
-            <span className="max-lg:sr-only">Read-only</span>
+            <span className="max-lg:sr-only">{route.view === "conversation" ? "Read-only except messages" : "Read-only"}</span>
           </span>
           <button
             type="button"
@@ -124,7 +132,7 @@ export default function App() {
           read then, and reconnects by itself.
         </div>
       )}
-      <main className={cn("min-h-0 flex-1", route.view === "flow" ? "flex flex-col" : "overflow-y-auto")}>
+      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" ? "flex flex-col" : "overflow-y-auto")}>
         {route.view === "now" && <NowView />}
         {route.view === "flow" && (
           <Suspense fallback={<div className="p-4"><Loading what="the flow" /></div>}>
@@ -132,6 +140,7 @@ export default function App() {
           </Suspense>
         )}
         {route.view === "team" && <TeamView />}
+        {route.view === "conversation" && <ConversationView params={route.params} />}
         {route.view === "schedules" && <SchedulesView params={route.params} />}
         {route.view === "audit" && <AuditView params={route.params} />}
       </main>

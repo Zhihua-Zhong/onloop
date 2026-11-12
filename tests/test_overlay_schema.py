@@ -199,7 +199,7 @@ def version_4(path, monkeypatch):
 def test_a_version_4_ledger_migrates_to_version_5_and_keeps_every_event(tmp_path, monkeypatch):
     before, uid = version_4(tmp_path / "old.db", monkeypatch)
     with Ledger(tmp_path / "old.db", clock=lambda: T0) as led:
-        assert led.version() == 5 == len(schema.MIGRATIONS)
+        assert led.version() == len(schema.MIGRATIONS)  # through version 5 and on
         for table, key in (("events", "seq"), ("waits", "id"), ("items", "id"), ("slot_grants", "id")):
             assert [tuple(r) for r in led.conn.execute(f"SELECT * FROM {table} ORDER BY {key}")] == before[
                 table

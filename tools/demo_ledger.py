@@ -9,7 +9,9 @@ the UI blueprint's section 4, with generic names:
 - a paused reviewer;
 - a builder that ended its turn without an outcome line, and a handoff with no owner;
 - a failing nightly job and an overdue weekly one;
-- three directions of work on the canvas.
+- three directions of work on the canvas;
+- the session carrier (decision 0010): builder and designer carried and opted in, the reviewer carried but observe-only;
+  a person's message acknowledged, a corrective wake in flight, a refused run, and a message not sent.
 
 The times are relative to `now` (default: the current time), so the ages read the same whenever it is built.
 """
@@ -274,6 +276,229 @@ def _story(s: _Story) -> None:
     s.tick(MIN)
 
 
+def _carrier(s: _Story) -> None:
+    """The Conversation view's story: what the carrier logged, written as its own events (no CLI is run)."""
+    import hashlib
+
+    def turn_id(role: str, prompt: str) -> str:  # the id the hook receiver gives that Stop hook
+        return hr.event_for(
+            "stop", {"role": role, "payload": {"session_id": f"s-{role}", "prompt_id": prompt}}
+        )["id"]
+
+    def ev_(
+        ago: float, kind: str, role: str, payload: dict, source: str = "carrier", actor: str = "carrier"
+    ) -> None:
+        s.event(ago, kind, f"role:{role}", payload, source=source, actor=actor)
+
+    ui_messages: set[str] = set()
+
+    def message(ago: float, role: str, mid: str, body: str, author: str, channel: str) -> None:
+        if channel == "ui":
+            ui_messages.add(mid)
+        payload = {
+            "id": mid,
+            "thread": role,
+            "author": author,
+            "channel": channel,
+            "body": body,
+            "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            "redacted": 0,
+            "expires_at": s.ts(30 * DAY - ago),
+        }
+        source = channel if channel in ("cli", "ui") else "carrier"
+        ev_(ago, "message.posted", role, payload, source=source, actor=author)
+
+    def delivery(ago: float, role: str, did: str, mid: str, kind: str, **extra: str) -> None:
+        payload = {"id": did, "to_role": role, "kind": kind, "message_id": mid, "origin": "onloop", **extra}
+        source = "ui" if mid in ui_messages else ("cli" if kind == "message" else "carrier")
+        ev_(ago, "delivery.created", role, payload, source=source)
+
+    def run(
+        ago: float,
+        role: str,
+        n: int,
+        dids: list[str],
+        wall: float,
+        status: str,
+        end_ago: float | None,
+        **extra,
+    ) -> None:
+        sid = f"s-{role}"
+        lease = {
+            "id": f"lease-{n}",
+            "session_id": sid,
+            "role": role,
+            "run_id": f"run-{n}",
+            "holder_instance": "0123456789abcdef:demo0001",
+            "expires_at": s.ts(-ago + 660),
+        }
+        s.event(ago, "lease.session_granted", f"session:{sid}", lease, source="carrier", actor="carrier")
+        ev_(
+            ago,
+            "run.started",
+            role,
+            {"id": f"run-{n}", "role": role, "session_id": sid, "lease_id": f"lease-{n}", "deliveries": dids},
+        )
+        ev_(
+            ago - 1,
+            "run.spawned",
+            role,
+            {"id": f"run-{n}", "pid": 7100 + n, "claude_pid": 7200 + n, "claude_started_at": 1},
+        )
+        for d in dids:
+            ev_(ago - 2, "delivery.delivered", role, {"id": d})
+            ev_(ago - 5, "delivery.processing", role, {"id": d})
+        if end_ago is None:
+            return
+        ended = {
+            "id": f"run-{n}",
+            "status": status,
+            "exit_code": 0,
+            "wall_s": wall,
+            "num_turns": 3,
+            "denials": 0,
+            "rate_limit": {"status": "allowed", "utilization": {"five_hour": 0.18}},
+            **extra,
+        }
+        ev_(end_ago, "run.ended", role, ended)
+        s.event(
+            end_ago,
+            "lease.session_released",
+            f"session:{sid}",
+            {"id": f"lease-{n}", "reason": status},
+            source="carrier",
+            actor="carrier",
+        )
+
+    s.event(3 * HOUR, "carrier.enabled", "carrier", {"by": "cli"}, source="cli", actor="cli")
+    for role, opt in (
+        ("builder", ("message", "corrective")),
+        ("designer", ("message", "event")),
+        ("reviewer", ()),
+    ):
+        s.event(
+            3 * HOUR,
+            "session.bound",
+            f"role:{role}",
+            {"role": role, "session_id": f"s-{role}"},
+            source="config",
+            actor="onloopd.yaml",
+        )
+        for a in opt:
+            s.event(
+                3 * HOUR,
+                "role.opted_in",
+                f"role:{role}",
+                {"role": role, "action": a},
+                source="config",
+                actor="onloopd.yaml",
+            )
+
+    # designer: a run refused a tool, before its last turn
+    message(
+        2 * HOUR + 54 * MIN,
+        "designer",
+        "msg-l1",
+        "Please draft the release notes in docs/release.md.",
+        "human",
+        "cli",
+    )
+    delivery(2 * HOUR + 54 * MIN, "designer", "dlv-l1", "msg-l1", "message")
+    run(2 * HOUR + 53 * MIN, "designer", 1, ["dlv-l1"], 64.0, "refused", 2 * HOUR + 52 * MIN, denials=1)
+    s.stop(2 * HOUR + 52 * MIN, "designer", "p-l1", "Could not write the file.\n\noutcome: idle")
+    ev_(
+        2 * HOUR + 52 * MIN,
+        "delivery.acked",
+        "designer",
+        {"id": "dlv-l1", "turn": turn_id("designer", "p-l1")},
+    )
+    s.event(
+        2 * HOUR + 52 * MIN,
+        "item.opened",
+        "alert:carrier:refused:run-1",
+        {
+            "id": "alert:carrier:refused:run-1",
+            "kind": "alert",
+            "state": "open",
+            "title": "designer's run was refused a tool; not re-run",
+            "owner_role": "designer",
+            "detail": {"run": "run-1", "role": "designer"},
+        },
+        source="carrier",
+        actor="carrier",
+    )
+
+    # builder: a person's message, acknowledged by the next turn
+    message(
+        52 * MIN, "builder", "msg-b1", "I'll set the credential; you open the PR as a draft.", "human", "ui"
+    )
+    delivery(52 * MIN, "builder", "dlv-b1", "msg-b1", "message")
+    run(51 * MIN, "builder", 2, ["dlv-b1"], 212.0, "ok", 47 * MIN, stop_turn_id=turn_id("builder", "p-b1"))
+    s.stop(47 * MIN, "builder", "p-b1", "Opened the draft.\n\noutcome: done ref=pr#102")
+    ev_(47 * MIN, "delivery.acked", "builder", {"id": "dlv-b1", "turn": turn_id("builder", "p-b1")})
+    # (the builder's turn at 13 min, in _story, ended without an outcome line: the corrective follows)
+    message(
+        11 * MIN,
+        "builder",
+        "msg-b2",
+        (
+            "Your last turn ended without a valid outcome line. End every turn with an outcome line, as the shared role "
+            "template says: the last line of your final message, on its own, one of "
+            "`outcome: done | idle | in_review | blocked | handoff | continue` with its keys."
+        ),
+        "onloop",
+        "carrier",
+    )
+    delivery(11 * MIN, "builder", "dlv-b2", "msg-b2", "corrective", for_turn_id=turn_id("builder", "p7"))
+    run(10 * MIN, "builder", 3, ["dlv-b2"], 0.0, "running", None)
+
+    # reviewer: carried, but it has not opted in. Its last turn, before the pause, had no outcome line: onloop only
+    # records the corrective it would send. A person's message to it is not sent either.
+    s.stop(15 * MIN, "reviewer", "p-r1", "Looking at the login change.")
+    s.event(
+        12 * MIN - 1,
+        "would.deliver",
+        "role:reviewer",
+        {
+            "role": "reviewer",
+            "kind": "corrective",
+            "cause": f"corrective:{turn_id('reviewer', 'p-r1')}",
+            "why": "observe-only: reviewer has not opted in to the corrective wake",
+            "command": "claude -p --resume s-reviewer ...",
+            "text": (
+                "Your last turn ended without a valid outcome line. End every turn with an outcome line, as the "
+                "shared role template says: the last line of your final message, on its own, one of "
+                "`outcome: done | idle | in_review | blocked | handoff | continue` with its keys."
+            ),
+        },
+        source="carrier",
+        actor="carrier",
+    )
+    message(20 * MIN, "reviewer", "msg-r1", "Can you look at the export retry first?", "human", "cli")
+    delivery(20 * MIN, "reviewer", "dlv-r1", "msg-r1", "message")
+    s.event(
+        20 * MIN - 2,
+        "would.deliver",
+        "role:reviewer",
+        {
+            "role": "reviewer",
+            "kind": "message",
+            "cause": "delivery:dlv-r1",
+            "why": "observe-only: reviewer has not opted in to messages",
+            "command": "claude -p --resume s-reviewer ...",
+            "text": "Can you look at the export retry first?",
+        },
+        source="carrier",
+        actor="carrier",
+    )
+    ev_(
+        20 * MIN - 2,
+        "delivery.cancelled",
+        "reviewer",
+        {"id": "dlv-r1", "why": "observe-only: reviewer has not opted in to messages"},
+    )
+
+
 def _url(num: int) -> str:
     return f"https://example.com/acme/app/pull/{num}"
 
@@ -297,6 +522,7 @@ def build(path: pathlib.Path, now: str | None = None) -> str:
         raise SystemExit(f"{path} exists; the demo ledger is built into a new file")
     story = _Story(now)
     _story(story)
+    _carrier(story)
     with Ledger(path, clock=story) as led:
         story.write(led)
     return now

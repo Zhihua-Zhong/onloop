@@ -794,6 +794,41 @@ def cmd_ingest(args) -> int:
     return 0
 
 
+def _role_opt(args) -> int:
+    """Opt a carried role in to or out of one action (source `cli`). Opting in cannot go past what onloopd.yaml's
+    `opt_in` lists; opting out takes effect on the carrier's next pass."""
+    import uuid
+
+    from .carrier.config import ACTIONS
+    from .overlay.ledger import Ledger, LedgerError
+
+    if args.what not in ACTIONS:
+        _err(f"onloop: an action is one of {', '.join(ACTIONS)}")
+        return 2
+    try:
+        with Ledger(_ledger_path(args)) as led:
+            if not led.select("SELECT 1 FROM role_sessions WHERE id = ?", (args.role,)):
+                _err(f"onloop: {args.role} is not a carried role")
+                return 2
+            led.append(
+                {
+                    "id": f"cli-{uuid.uuid4().hex}",
+                    "source": "cli",
+                    "kind": "role.opted_in" if args.action == "opt-in" else "role.opted_out",
+                    "subject_ref": f"role:{args.role}",
+                    "actor": "cli",
+                    "payload": {"role": args.role, "action": args.what},
+                }
+            )
+    except LedgerError as e:
+        _err(f"onloop: {e}")
+        return 2
+    _say(f"{args.role}: {args.action} {args.what}")
+    if args.action == "opt-in":
+        _say("(it takes effect only if onloopd.yaml's carrier.roles opt_in also lists it)")
+    return 0
+
+
 def cmd_role(args) -> int:
     """Pause or resume a role (source `ui`): a paused role's items wait on the human, with reason paused_by_human."""
     import re
@@ -801,8 +836,10 @@ def cmd_role(args) -> int:
 
     from .overlay.ledger import Ledger, LedgerError
 
+    if args.action in ("opt-in", "opt-out"):
+        return _role_opt(args)
     if args.action not in ("pause", "resume"):
-        _err("onloop: say which role action: pause or resume")
+        _err("onloop: say which role action: pause, resume, opt-in or opt-out")
         return 2
     if not re.match(r"^[a-z][a-z0-9_-]{0,39}$", args.role or ""):
         _err("onloop: a role name is lowercase letters, digits, '_' or '-'")
@@ -835,6 +872,119 @@ def cmd_role(args) -> int:
         _say(f"{args.role} paused; {held} item(s) now wait on the human")
     else:
         _say(f"{args.role} resumed")
+    return 0
+
+
+def _post_onloopd(state: pathlib.Path, path: str, body: dict) -> tuple[int, dict]:
+    """POST to the running onloopd with its write token. (status, answer); status 0 when it cannot be reached."""
+    import urllib.error
+    import urllib.request
+
+    from .daemon import main as daemon
+    from .daemon import server as daemon_server
+    from .daemon import token as token_mod
+
+    try:
+        beat = json.loads((state / daemon.HEARTBEAT_FILE).read_text(encoding="utf-8"))
+        secret = token_mod.read(state)
+        if not secret:
+            raise OSError("no onloopd.token")
+        req = urllib.request.Request(
+            f"http://{daemon_server.HOST}:{int(beat['port'])}{path}",
+            data=json.dumps(body).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {secret}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - the loopback address only
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode("utf-8"))
+        except ValueError:
+            return e.code, {"error": str(e)}
+    except (OSError, ValueError, KeyError) as e:
+        return 0, {"error": f"onloopd is not reachable: {type(e).__name__}: {e}"}
+
+
+def cmd_say(args) -> int:
+    """A person's message to a carried role, through onloopd (decision 0011): evidence, not authority."""
+    state = _ledger_path(args).resolve().parent
+    text = args.text if args.text != "-" else sys.stdin.read()
+    code, out = _post_onloopd(state, f"/messages/{args.role}", {"text": text, "channel": "cli"})
+    if code != 200:
+        _err(f"onloop: the message was not taken: {out.get('error')}")
+        return 2
+    _say(f"message to {args.role} queued as {out['delivery']} (local user, not verified)")
+    if not out.get("opted_in"):
+        _say(f"{args.role} has not opted in to messages: onloop logs what it would send, and sends nothing")
+    return 0
+
+
+def cmd_carrier(args) -> int:
+    """Start, stop (the kill switch) or show the session carrier."""
+    import uuid
+
+    from .carrier import guards
+    from .overlay.ledger import Ledger, LedgerError
+
+    ledger = _ledger_path(args)
+    state = ledger.resolve().parent
+    kill = state / guards.KILL_FILE
+    try:
+        with Ledger(ledger) as led:
+            if args.action == "start":
+                if kill.exists():
+                    kill.unlink()
+                    _say(f"removed the kill switch {kill}")
+                for kind, payload in (("carrier.enabled", {"by": "cli"}), ("carrier.resumed", {"by": "cli"})):
+                    led.append(
+                        {
+                            "id": f"cli-{uuid.uuid4().hex}",
+                            "source": "cli",
+                            "kind": kind,
+                            "subject_ref": "carrier",
+                            "actor": "cli",
+                            "payload": payload,
+                        }
+                    )
+                _say(
+                    "carrier started: roles act on what they opted in to; everything else stays observe-only"
+                )
+                return 0
+            if args.action == "stop":
+                kill.write_text("stopped by `onloop carrier stop`\n", encoding="utf-8")
+                led.append(
+                    {
+                        "id": f"cli-{uuid.uuid4().hex}",
+                        "source": "cli",
+                        "kind": "carrier.paused",
+                        "subject_ref": "carrier",
+                        "actor": "cli",
+                        "payload": {"reason": "kill_switch", "by": "cli"},
+                    }
+                )
+                _say(
+                    f"carrier stopped: {kill} written; live runs end within 5 s; `onloop carrier start` to resume"
+                )
+                return 0
+            st = led.select("SELECT * FROM carrier_state WHERE id = 1")
+            out = {
+                "state": st[0] if st else {"enabled": 0},
+                "kill_switch": kill.exists(),
+                "roles": led.select("SELECT id, session_id, opted_in FROM role_sessions ORDER BY id"),
+                "live_leases": led.select(
+                    "SELECT session_id, role, run_id, holder_pid, granted_at FROM session_leases WHERE released_at IS NULL"
+                ),
+                "runs_last_day": led.select(
+                    "SELECT role, status, COUNT(*) AS n, ROUND(SUM(COALESCE(wall_s, 0)), 1) AS wall_s FROM runs "
+                    "WHERE started_at >= ? GROUP BY role, status ORDER BY role, status",
+                    (events_mod.shift_ts(led.now(), -86400),),
+                ),
+            }
+    except LedgerError as e:
+        _err(f"onloop: {e}")
+        return 2
+    _say(json.dumps(out, indent=2, sort_keys=True))
     return 0
 
 
@@ -1303,6 +1453,42 @@ def build_parser() -> argparse.ArgumentParser:
         sp = rsub.add_parser(action, help=help_, description=help_)
         sp.set_defaults(fn=cmd_role)
         sp.add_argument("role", help="the role name")
+        sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+    for action, help_ in (
+        (
+            "opt-in",
+            "let the carrier act for a carried role: message, event, corrective, dead_waker or dead_waker_wake",
+        ),
+        ("opt-out", "stop the carrier acting for a carried role on one action, at once"),
+    ):
+        sp = rsub.add_parser(action, help=help_, description=help_)
+        sp.set_defaults(fn=cmd_role)
+        sp.add_argument("role", help="the role name")
+        sp.add_argument("what", help="the action")
+        sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    sp = sub.add_parser(
+        "say",
+        help="send a message to a carried role, through onloopd (evidence, not authority)",
+        description="send a message to a carried role, through onloopd (evidence, not authority)",
+    )
+    sp.set_defaults(fn=cmd_say)
+    sp.add_argument("role", help="the role name")
+    sp.add_argument("text", help="the message, or - to read it from stdin")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    cp = sub.add_parser("carrier", help="the session carrier: start, stop (the kill switch), status")
+    csub = cp.add_subparsers(dest="action", metavar="<action>")
+    for action, help_ in (
+        ("start", "start the carrier: roles act on what they opted in to (removes carrier.off)"),
+        (
+            "stop",
+            "the kill switch: write carrier.off; live runs end within 5 s; nothing starts until `start`",
+        ),
+        ("status", "the carrier's state, its roles, live leases and the last day's runs"),
+    ):
+        sp = csub.add_parser(action, help=help_, description=help_)
+        sp.set_defaults(fn=cmd_carrier)
         sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
 
     ip = sub.add_parser("item", help="an item in the overlay ledger")

@@ -1,8 +1,9 @@
 # The UI
 
-onloopd serves one read-only UI over the ledger at `http://localhost:8790` (decision 0009). It has five views of the
-same ledger. Every request it makes is a GET. Where a person can act, the page shows the exact `onloop` command with a
-copy button. Writes come later, through the approval channel.
+onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). It has six views of the same
+ledger. Every request it makes is a GET but one: the Conversation view's compose box, a message to a role
+([decision 0011](decisions/0011-ui-write-path.md)). Where a person can act otherwise, the page shows the exact
+`onloop` command with a copy button. Approvals come later, through the approval channel.
 
 ```text
 onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790
@@ -15,6 +16,7 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
 | **Flow** (`#/flow`) | Where is the work, what does it wait on, and what does the constraint hold up? | `GET /api/flow` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
+| **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
 | **Schedules** (`#/schedules`) | Did every scheduled job run, and which are failing or overdue? | `/api/schedules`, `/api/alerts`, `/api/events` |
 | **Audit** (`#/audit`) | What happened, who did it, and from what source? | `GET /api/events` with filters |
 
@@ -72,12 +74,36 @@ It reconnects by itself.
 Light or dark follows the system's `prefers-color-scheme`, live, until the person picks one with the toggle; that
 choice is kept in this browser. `?theme=dark` or `?theme=light` in the URL overrides both (the screenshots use it).
 
+### Conversation
+
+The roles onloop carries ([carrier.md](carrier.md)) on the left, each with an unread count and one pill for what
+needs you (paused, a run refused, no outcome line, observe only). The selected role's thread on the right, oldest
+first:
+- your messages, marked "local user, not verified", with how far each got: queued, delivered, being processed,
+  acknowledged (by the role's next turn), or not sent and why;
+- onloop's own notes, such as the one corrective per turn asking for the outcome line;
+- what onloop would have sent where it only observes, with the reason;
+- each run, with its status, and each turn by its outcome line only. A role's own words are never stored; the header
+  shows `claude --resume <id>` to read them in your own client.
+
+The compose box at the bottom is open only when a message can go somewhere: the carrier is configured and started,
+its kill switch is off, and the role is carried and opted in to messages (`GET /api/conversation` says so per role,
+in `compose`). Then it says what will happen: an idle role is woken, a busy one gets it queued. Otherwise it is
+closed and says why in plain words, with the command or the onloopd.yaml setting that opens it, for example
+"Messages are off: the carrier is not configured (docs/carrier.md)" on a default install, or "designer has not opted
+in to messages" with `onloop role opt-in designer message`. A message closed as observe-only says so on its bubble:
+"not sent: observe-only (would deliver)". A banner says when the carrier is not configured, stopped or not started.
+Now's stall card and Team's lane use the same words for what the carrier did.
+
 ## Serving and security
 
 The UI has the same origin and the same rules as the API (decision 0008):
 - the loopback address only;
 - a request is answered only when its Host is `127.0.0.1:<port>` or `localhost:<port>`; <!-- scan:allow -->
-- GET and HEAD only.
+- GET and HEAD, and one POST: `/ui/messages`, the compose box. It needs the page's session cookie (`HttpOnly`,
+  `SameSite=Strict`, set when `/` is served), the CSRF token from `GET /api/ui/csrf` in `X-CSRF-Token`, and an
+  `Origin` of this onloopd; anything else is 403. A message is evidence, not authority: it is shown as "local user,
+  not verified" and never counts as an approval.
 
 Every page answer carries:
 - a strict Content-Security-Policy: scripts, styles and requests from the same origin only, no inline script, no

@@ -19,7 +19,9 @@ _TS = "GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0
 
 SOURCES_1 = ("github", "hook", "healthchecks", "ui", "detector", "legacy")
 SOURCES_3 = (*SOURCES_1, "config")  # version 3: onloopd.yaml's declarations, not a person's action
-SOURCES = (*SOURCES_3, "gate")  # version 5: the merge gate's own decisions, not a person's action
+SOURCES_5 = (*SOURCES_3, "gate")  # version 5: the merge gate's own decisions, not a person's action
+# version 6: the session carrier's own events (leases, runs, deliveries, timers), and what a person sends by the CLI
+SOURCES = (*SOURCES_5, "carrier", "cli")
 ITEM_KINDS = ("task", "decision", "followup", "alert")
 ITEM_STATES = ("open", "ready", "blocked", "in_review", "done")
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
@@ -55,7 +57,44 @@ PROJECTIONS = {
     "turns": "id",  # version 2
     "slot_requests": "id",  # version 4
     "slot_grants": "id",  # version 4
+    "role_sessions": "id",  # version 6
+    "session_leases": "id",  # version 6
+    "runs": "id",  # version 6
+    "messages": "id",  # version 6
+    "timers": "id",  # version 6
+    "carrier_state": "id",  # version 6
 }
+
+# Version 6 value sets (decision 0010).
+DELIVERY_KINDS = ("message", "event", "corrective", "dead_waker")
+DELIVERY_STATES = (
+    "created",
+    "claimed",
+    "delivered",
+    "processing",
+    "acked",
+    "failed",
+    "escalated",
+    "cancelled",
+)
+RUN_STATES = (
+    "running",
+    "ok",
+    "refused",
+    "error",
+    "timeout",
+    "silent",
+    "killed",
+    "usage_limited",
+    "not_logged_in",
+    "orphaned",
+    "held_elsewhere",
+    "contended",
+)
+TIMER_KINDS = ("corrective", "escalate", "retry", "lease_check")
+MESSAGE_AUTHORS = ("human", "onloop", "role")
+MESSAGE_CHANNELS = ("ui", "cli", "carrier")
+CARRIER_PAUSES = ("kill_switch", "usage_limit", "not_logged_in", "overage")
 
 
 def _in(column: str, values: tuple[str, ...], *, nullable: bool = False) -> str:
@@ -340,7 +379,7 @@ CREATE TABLE events_v5 (
   seq         INTEGER PRIMARY KEY AUTOINCREMENT,
   id          TEXT NOT NULL UNIQUE,
   {_ts("ts_system", nullable=False)},
-  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_5)}),
   kind        TEXT NOT NULL,
   subject_ref TEXT NOT NULL,
   actor       TEXT,
@@ -356,12 +395,148 @@ CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT
 CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END
 """
 
+# Version 6: the session carrier (decision 0010). `events.source` also takes `carrier` and `cli` (copied row for row,
+# as in versions 3 and 5). The invariants are the database's, so a projection that would break one fails the append:
+# - one live lease per session id (`one_live_session_lease`), and one role per session id;
+# - at most one corrective delivery per turn (`one_corrective_per_turn`);
+# - one delivery per cause (`one_delivery_per_cause`), so the same cause seen twice makes no second delivery;
+# - a run's status, a delivery's kind and state, a timer's kind and a message's author and channel are fixed sets.
+# Acknowledgement and outcome are apart: a delivery is acked by a Stop-hook turn (`acked_by_turn`), and whether that
+# turn wrote a valid outcome line stays on the turn (`turns.parse_error`), never on the delivery.
+SCHEMA_6 = f"""
+CREATE TABLE events_v6 (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id          TEXT NOT NULL UNIQUE,
+  {_ts("ts_system", nullable=False)},
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  kind        TEXT NOT NULL,
+  subject_ref TEXT NOT NULL,
+  actor       TEXT,
+  {_ts("at")},
+  payload     TEXT NOT NULL CHECK (json_valid(payload))
+);
+INSERT INTO events_v6 (seq, id, ts_system, source, kind, subject_ref, actor, at, payload) SELECT seq, id, ts_system, source, kind, subject_ref, actor, at, payload FROM events ORDER BY seq;
+DROP TABLE events;
+ALTER TABLE events_v6 RENAME TO events;
+CREATE INDEX events_kind ON events(kind, seq);
+CREATE INDEX events_subject ON events(subject_ref, seq);
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+
+ALTER TABLE deliveries ADD COLUMN kind TEXT CHECK ({_in("kind", DELIVERY_KINDS, nullable=True)});
+ALTER TABLE deliveries ADD COLUMN state TEXT NOT NULL DEFAULT 'created' CHECK ({_in("state", DELIVERY_STATES)});
+ALTER TABLE deliveries ADD COLUMN run_id TEXT;
+ALTER TABLE deliveries ADD COLUMN {_ts("next_attempt_at")};
+ALTER TABLE deliveries ADD COLUMN last_error TEXT;
+ALTER TABLE deliveries ADD COLUMN dedupe_key TEXT;
+ALTER TABLE deliveries ADD COLUMN for_turn_id TEXT;
+ALTER TABLE deliveries ADD COLUMN message_id TEXT;
+ALTER TABLE deliveries ADD COLUMN acked_by_turn TEXT;
+ALTER TABLE deliveries ADD COLUMN resent INTEGER NOT NULL DEFAULT 0 CHECK (resent IN (0, 1));
+CREATE UNIQUE INDEX one_corrective_per_turn ON deliveries(for_turn_id) WHERE kind = 'corrective';
+CREATE UNIQUE INDEX one_delivery_per_cause ON deliveries(dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX deliveries_open ON deliveries(to_role, created_at) WHERE state IN ('created', 'claimed', 'delivered', 'processing', 'failed');
+
+CREATE TABLE role_sessions (
+  id          TEXT PRIMARY KEY,
+  session_id  TEXT NOT NULL,
+  cwd         TEXT,
+  created_by  TEXT NOT NULL DEFAULT 'adopted' CHECK (created_by IN ('adopted', 'onloop')),
+  opted_in    TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(opted_in)),
+  last_seq    INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_role_per_session ON role_sessions(session_id);
+
+CREATE TABLE session_leases (
+  id                TEXT PRIMARY KEY,
+  session_id        TEXT NOT NULL,
+  role              TEXT NOT NULL,
+  run_id            TEXT NOT NULL,
+  holder_instance   TEXT NOT NULL,
+  holder_pid        INTEGER,
+  holder_started_at INTEGER,
+  {_ts("granted_at", nullable=False)},
+  {_ts("expires_at", nullable=False)},
+  {_ts("renewed_at")},
+  {_ts("released_at")},
+  release_reason    TEXT,
+  last_seq          INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_live_session_lease ON session_leases(session_id) WHERE released_at IS NULL;
+
+CREATE TABLE runs (
+  id                TEXT PRIMARY KEY,
+  role              TEXT NOT NULL,
+  session_id        TEXT NOT NULL,
+  lease_id          TEXT NOT NULL,
+  pid               INTEGER,
+  claude_pid        INTEGER,
+  claude_started_at INTEGER,
+  {_ts("started_at", nullable=False)},
+  {_ts("ended_at")},
+  exit_code         INTEGER,
+  is_error          INTEGER CHECK (is_error IS NULL OR is_error IN (0, 1)),
+  terminal_reason   TEXT,
+  api_error_status  TEXT,
+  denials           INTEGER NOT NULL DEFAULT 0,
+  num_turns         INTEGER,
+  wall_s            REAL,
+  rate_limit        TEXT CHECK (rate_limit IS NULL OR json_valid(rate_limit)),
+  stop_turn_id      TEXT,
+  hook_missing      INTEGER NOT NULL DEFAULT 0 CHECK (hook_missing IN (0, 1)),
+  status            TEXT NOT NULL DEFAULT 'running' CHECK ({_in("status", RUN_STATES)}),
+  detail            TEXT NOT NULL DEFAULT '{{}}' CHECK (json_valid(detail)),
+  last_seq          INTEGER NOT NULL
+);
+CREATE INDEX runs_role ON runs(role, started_at);
+
+CREATE TABLE messages (
+  id          TEXT PRIMARY KEY,
+  thread      TEXT NOT NULL,
+  author      TEXT NOT NULL CHECK ({_in("author", MESSAGE_AUTHORS)}),
+  channel     TEXT NOT NULL CHECK ({_in("channel", MESSAGE_CHANNELS)}),
+  {_ts("created_at", nullable=False)},
+  body        TEXT,
+  body_sha256 TEXT NOT NULL CHECK (length(body_sha256) = 64),
+  redacted    INTEGER NOT NULL DEFAULT 0,
+  {_ts("expires_at", nullable=False)},
+  {_ts("expired_at")},
+  delivery_id TEXT,
+  last_seq    INTEGER NOT NULL,
+  CHECK ((expired_at IS NULL) = (body IS NOT NULL))
+);
+CREATE INDEX messages_thread ON messages(thread, created_at);
+
+CREATE TABLE timers (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL CHECK ({_in("kind", TIMER_KINDS)}),
+  subject      TEXT NOT NULL,
+  {_ts("due_at", nullable=False)},
+  {_ts("fired_at")},
+  {_ts("cancelled_at")},
+  detail       TEXT NOT NULL DEFAULT '{{}}' CHECK (json_valid(detail)),
+  last_seq     INTEGER NOT NULL
+);
+CREATE INDEX timers_due ON timers(due_at) WHERE fired_at IS NULL AND cancelled_at IS NULL;
+
+CREATE TABLE carrier_state (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled       INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  paused_reason TEXT CHECK ({_in("paused_reason", CARRIER_PAUSES, nullable=True)}),
+  {_ts("paused_until")},
+  set_by        TEXT,
+  {_ts("changed_at")},
+  last_seq      INTEGER NOT NULL
+)
+"""
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
     SCHEMA_3,
     SCHEMA_4,
     SCHEMA_5,
+    SCHEMA_6,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 

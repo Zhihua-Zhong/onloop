@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..overlay.ledger import Ledger
-from .server import WriteRefused
+from .server import WRITE_PREFIXES, WriteRefused
 
 Handler = Callable[[Ledger, str, dict[str, Any]], dict[str, Any]]
 
@@ -26,8 +26,10 @@ class Routes:
         self._routes: list[tuple[str, Handler]] = []
 
     def add(self, prefix: str, handler: Handler) -> None:
-        if not prefix.startswith(("/hooks/", "/sources/")) or not prefix.endswith("/"):
-            raise ValueError(f"a write route is under /hooks/ or /sources/ and ends with '/': {prefix!r}")
+        if not prefix.startswith(WRITE_PREFIXES) or not prefix.endswith("/"):
+            raise ValueError(
+                f"a write route is under {', '.join(WRITE_PREFIXES)} and ends with '/': {prefix!r}"
+            )
         self._routes.append((prefix, handler))
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -35,4 +37,8 @@ class Routes:
             if path.startswith(prefix):
                 with self._lock:
                     return handler(self._ledger, path[len(prefix) :], body)
+        if path.startswith("/messages/"):
+            raise WriteRefused(
+                404, "messages are off: no carrier configured (a carrier: block in onloopd.yaml)"
+            )
         raise WriteRefused(404, f"no write route for {path}")

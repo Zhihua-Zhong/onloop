@@ -9,6 +9,11 @@ a broken onloop can never stop or slow a session beyond that.
 
 A payload that is not valid JSON is still posted, as `{"unreadable": "<why>"}`: the Stop then records a turn without
 a valid outcome (story 8), instead of nothing.
+
+**The spool** (decision 0010, point 8). When onloopd cannot be reached (it is down, or being respawned, which takes
+43-53 s), the post is appended to `hook-spool.jsonl` next to the ledger instead, one JSON line per hook. onloopd
+ingests the spool at its start and on every tick, under each hook's own event id, so a hook that arrives twice is
+logged once. A refusal from a running onloopd (an HTTP error) is not spooled: it would be refused again.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ from . import server as srv
 from . import token as token_mod
 
 ERROR_LOG = "hook-errors.log"
+SPOOL = "hook-spool.jsonl"
+SPOOL_MAX_BYTES = 8 * 1024 * 1024
 ERROR_LOG_MAX_BYTES = 64 * 1024
 
 
@@ -50,12 +57,30 @@ def _log(state: pathlib.Path, line: str) -> None:
         pass
 
 
+def spool(state: pathlib.Path, event: str, body: dict[str, Any]) -> bool:
+    """Append one hook post to the spool. False when it cannot (the spool is full or not writable)."""
+    try:
+        path = state / SPOOL
+        if path.exists() and path.stat().st_size > SPOOL_MAX_BYTES:
+            return False
+        line = json.dumps(
+            {"event": event, "body": body, "at": ev.now_ts()}, ensure_ascii=False, sort_keys=True
+        )
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
+            f.write(line + "\n")
+        return True
+    except OSError:
+        return False
+
+
 def post(event: str, role: str, state: pathlib.Path, stdin: BinaryIO, timeout: float = 2.0) -> int:
     """Post one hook event. Always returns 0."""
     start = time.monotonic()
+    obj: dict[str, Any] | None = None
     try:
         raw = stdin.read()
-        body = json.dumps({"role": role, "payload": _payload(raw)}).encode("utf-8")
+        obj = {"role": role, "payload": _payload(raw)}
+        body = json.dumps(obj).encode("utf-8")
         beat = json.loads((state / "onloopd.heartbeat.json").read_text(encoding="utf-8"))
         secret = token_mod.read(state)
         if not secret:
@@ -72,7 +97,9 @@ def post(event: str, role: str, state: pathlib.Path, stdin: BinaryIO, timeout: f
     except urllib.error.HTTPError as e:
         _log(state, f"{event} {role}: onloopd answered {e.code}: {e.read()[:200]!r}")
     except Exception as e:  # noqa: BLE001 - a hook must never fail a session
-        _log(state, f"{event} {role}: {type(e).__name__}: {e}"[:300])
+        spooled = obj is not None and spool(state, event, obj)
+        note = "; spooled for onloopd" if spooled else ""
+        _log(state, f"{event} {role}: {type(e).__name__}: {e}{note}"[:300])
     return 0
 
 

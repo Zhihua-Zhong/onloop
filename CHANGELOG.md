@@ -4,6 +4,51 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The session carrier (decision 0010) and the Conversation view (decision 0011) are meant for 0.4.0.
+Act modes are off by default.
+
+### Upgrading
+
+- Ledger schema 6: a ledger opened by this onloop migrates once and keeps every event; an older onloop then refuses
+  it. Nothing in it changes until onloopd.yaml has a `carrier:` block.
+- The UI is no longer GET-only: the Conversation view's compose box posts `/ui/messages`, with the page's session
+  cookie, a CSRF token and an Origin check. Nothing else writes.
+
+### Added
+
+- **The session carrier** ([carrier.md](docs/carrier.md), decision 0010). onloop delivers messages into the role
+  sessions itself, with headless `claude -p --resume`, on the user's own subscription login:
+  - one live lease per session id, a unique index in the ledger; a session open in another process is never resumed
+    (`claude agents --json`, filtered to the carried sessions in one function; nothing else from it is kept);
+  - one process and one composed message per run, in a Windows job object, `--restricted`, `dontAsk`, no prompts,
+    and the role's tools, never a shell (a role that names one is refused);
+  - a delivery is acknowledged by the role's Stop-hook turn, whatever it said; a missing outcome line is recorded on
+    the turn and starts the corrective only for a role that opted in;
+  - the corrective wake at most once per turn, then the coordinator with the item's age; handoffs and review requests
+    to a carried role; a dead waker, to the coordinator first;
+  - observe-only by default (`would.deliver`, with the exact command and text);
+  - the kill switch (`onloop carrier stop`, or the `carrier.off` file), budgets per role and across roles, the
+    metered-key refusal, the login check, and the usage limit: a rejection pauses until its reset, a warning halves
+    the rate, overage pauses at once;
+  - recovery after a crash (the lease released once, a delivery acknowledged by evidence or resent with a mark), a
+    hook spool across a respawn, and sleep (a corrective for a turn older than an hour escalates instead).
+- `onloop carrier start|stop|status`, `onloop role opt-in|opt-out`, `onloop say`, and the `carrier:` block of
+  onloopd.yaml.
+- The **Conversation** view: the carried roles with unread counts and what needs you, one role's thread (your
+  messages and how far each got, onloop's notes, what it would send, runs, turns by their outcome line), and a compose
+  box that is open only when a message can go somewhere, and otherwise says why, with the command that opens it.
+  `GET /api/conversation`.
+- The text onloop writes into a session is stored, scrubbed of secret-shaped strings, for 30 days, then only its
+  hash. Nothing a role writes is stored.
+
+### Changed
+
+- Now's stall card and Team's lane say what the carrier did about a turn without an outcome line ("onloop asked for
+  its outcome line (being processed)"); "would wake (observe only)" only where it did nothing.
+- `onloop daemon hook` spools a post it cannot deliver to `hook-spool.jsonl`; onloopd logs it once when it is back.
+
 ## [0.3.0] - 2026-11-11
 
 ### Upgrading

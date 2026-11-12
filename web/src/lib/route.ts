@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 
 // The views are hash routes (#/now, #/flow, #/audit?kind=pr.merged), so a reload or a shared link opens the same view
 // and onloopd serves one index.html for all of them.
-export const VIEWS = ["now", "flow", "team", "schedules", "audit"] as const;
+export const VIEWS = ["now", "flow", "team", "conversation", "schedules", "audit"] as const;
 export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", flow: "Flow", team: "Team", schedules: "Schedules", audit: "Audit" };
+export const VIEW_LABEL: Record<View, string> = { now: "Now", flow: "Flow", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
 
 export interface Route { view: View; params: URLSearchParams }
 

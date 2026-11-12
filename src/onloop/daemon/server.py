@@ -29,18 +29,27 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
                                 ?plain=1 leaves out the `event:` line, so a browser's EventSource sees every event
-    GET /, GET /assets/...      the UI's built files (`ui.py`), with a strict Content-Security-Policy; read-only
+    GET /api/conversation       the Conversation view: the carried roles and one role's thread (?role=R)
+    GET /api/ui/csrf            the page's CSRF token, for a request that carries the page's session cookie
+    POST /ui/messages           the UI's one write (decision 0011): {"role", "text"}, a person's message to a role. It
+                                needs the page's session cookie (HttpOnly, SameSite=Strict, set when `/` is served),
+                                its CSRF token in `X-CSRF-Token`, an `Origin` of this onloopd, and a writer; anything
+                                else is 403 (405 without a writer). It is evidence, not authority: a request from a
+                                local user, not verified
+    GET /, GET /assets/...      the UI's built files (`ui.py`), with a strict Content-Security-Policy
 """
 
 from __future__ import annotations
 
 import errno
+import hashlib
 import hmac
 import http.server
 import ipaddress
 import json
 import os
 import pathlib
+import secrets
 import sys
 import threading
 import time
@@ -58,7 +67,10 @@ EVENTS_PAGE = 500
 STREAM_POLL_S = 1.0
 STREAM_KEEPALIVE_S = 15.0
 MAX_BODY = 1024 * 1024
-WRITE_PREFIXES = ("/hooks/", "/sources/")
+WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/")
+UI_WRITE = "/ui/messages"
+UI_COOKIE = "onloop_ui"
+UI_MAX_BODY = 64 * 1024
 
 
 class Reader(Protocol):
@@ -134,8 +146,10 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         token: str | None = None,
         heartbeat: pathlib.Path | None = None,
         ui_dir: pathlib.Path | None = None,
+        carrier: Any = None,
     ):
         super().__init__(address, _Handler)
+        self._carrier = carrier  # the carrier's configuration, None when onloopd.yaml has no carrier: block
         self.reader = reader
         self.writer = writer
         self.token = token
@@ -143,6 +157,36 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         self.ui_dir = ui_dir or ui.UI_DIR  # the built UI, package data
         self.started_at = ev.now_ts()
         self.stopping = threading.Event()
+        self.ui_key = secrets.token_bytes(
+            32
+        )  # this process's own: a restart makes the page fetch a new token
+
+    # -- the page's session (decision 0011) -------------------------------------------------------------------------
+
+    def _sign(self, what: str) -> str:
+        return hmac.new(self.ui_key, what.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def new_session(self) -> str:
+        nonce = secrets.token_hex(16)
+        return f"{nonce}.{self._sign('session:' + nonce)}"
+
+    def session_nonce(self, cookie_header: str | None) -> str | None:
+        """The nonce of a valid page session cookie in the request, or None."""
+        for part in (cookie_header or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name != UI_COOKIE or "." not in value:
+                continue
+            nonce, sig = value.split(".", 1)
+            if hmac.compare_digest(sig.encode(), self._sign("session:" + nonce).encode()):
+                return nonce
+        return None
+
+    def csrf_for(self, nonce: str) -> str:
+        return self._sign("csrf:" + nonce)
+
+    @property
+    def carrier(self) -> Any:
+        return self._carrier() if callable(self._carrier) else self._carrier
 
     def shutdown(self) -> None:
         self.stopping.set()  # ends open SSE streams at their next poll
@@ -158,6 +202,7 @@ def make_server(
     token: str | None = None,
     heartbeat: pathlib.Path | None = None,
     ui_dir: pathlib.Path | None = None,
+    carrier: Any = None,
 ) -> DaemonServer:
     """A server on the loopback address; `port=0` picks a free one. Any other host is refused before binding.
     Without both a writer and a token, every POST is 405."""
@@ -165,7 +210,7 @@ def make_server(
         raise ValueError("a writer needs a token, and a token a writer")
     host = check_host(host)
     try:
-        return DaemonServer((host, port), reader, writer, token, heartbeat, ui_dir)
+        return DaemonServer((host, port), reader, writer, token, heartbeat, ui_dir, carrier)
     except OSError as e:
         if e.errno in _IN_USE or getattr(e, "winerror", None) in _IN_USE:
             raise PortInUse(host, port, e) from e
@@ -219,6 +264,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        if path == UI_WRITE:
+            self._ui_write()
+            return
         if self.server.writer is None or not path.startswith(WRITE_PREFIXES):
             self._drain()
             self._not_allowed()
@@ -267,6 +315,62 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(e.status, {"error": str(e)})
             return
         except Exception as e:  # noqa: BLE001 - a failed write is a 500 with its reason, and nothing half-written
+            self._send_json(500, {"error": f"{type(e).__name__}: {e}"[:300]})
+            return
+        self._send_json(200, out)
+
+    def _ui_write(self) -> None:
+        """The compose box's POST: the page's cookie, its CSRF token and this onloopd's origin, or 403."""
+        if self.server.writer is None:
+            self._drain()
+            self._not_allowed()
+            return
+        port = self.server.server_address[1]
+        refusal = self._refusal()
+        origin = self.headers.get("Origin")
+        nonce = self.server.session_nonce(self.headers.get("Cookie"))
+        token = self.headers.get("X-CSRF-Token") or ""
+        if refusal is None and origin not in (f"http://{h}" for h in allowed_hosts(port)):
+            refusal = "a message from the page must come from this onloopd's own origin"
+        if refusal is None and nonce is None:
+            refusal = "a message from the page needs the page's session; reload it"
+        if refusal is None and not hmac.compare_digest(
+            token.encode(), self.server.csrf_for(nonce or "").encode()
+        ):
+            refusal = "a message from the page needs its CSRF token; reload it"
+        if refusal:
+            self._drain()
+            self._send_json(403, {"error": refusal})
+            return
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._drain()
+            self._send_json(415, {"error": "a message is a JSON body (Content-Type: application/json)"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or "-1")
+        except ValueError:
+            length = -1
+        if length < 0 or length > UI_MAX_BODY:
+            self.close_connection = True
+            self._send_json(
+                413 if length > UI_MAX_BODY else 411, {"error": f"a message is at most {UI_MAX_BODY} bytes"}
+            )
+            return
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, ValueError):
+            self._send_json(400, {"error": "the body is not a JSON object in UTF-8"})
+            return
+        role = body.get("role") if isinstance(body, dict) else None
+        if not isinstance(role, str):
+            self._send_json(400, {"error": 'a message is {"role": ..., "text": ...}'})
+            return
+        try:
+            out = self.server.writer.post(f"/messages/{role}", {"text": body.get("text"), "channel": "ui"})
+        except WriteRefused as e:
+            self._send_json(e.status, {"error": str(e)})
+            return
+        except Exception as e:  # noqa: BLE001 - a failed write is a 500 with its reason
             self._send_json(500, {"error": f"{type(e).__name__}: {e}"[:300]})
             return
         self._send_json(200, out)
@@ -341,6 +445,21 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
+            elif url.path == "/api/conversation":
+                kill = bool(self.server.heartbeat) and (self.server.heartbeat.parent / "carrier.off").exists()
+                body = views.conversation(
+                    reader,
+                    ev.now_ts(),
+                    query.get("role", [None])[0],
+                    kill_switch=kill,
+                    carrier_cfg=self.server.carrier,
+                )
+            elif url.path == "/api/ui/csrf":
+                nonce = self.server.session_nonce(self.headers.get("Cookie"))
+                if nonce is None:
+                    self._send_json(403, {"error": "no page session; reload the page"}, head_only)
+                    return
+                body = {"csrf": self.server.csrf_for(nonce)}
             elif url.path == "/api/stream" and not head_only:
                 plain = query.get("plain", ["0"])[0] in ("1", "true")
                 self._stream(_int(self.headers.get("Last-Event-ID") or query.get("after", ["0"])[0]), plain)
@@ -366,6 +485,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         else:
             data, ctype = b"not found\n", "text/plain; charset=utf-8"
         self.send_response(found.status)
+        if found.status == 200 and ctype.startswith("text/html"):
+            self.send_header(
+                "Set-Cookie", f"{UI_COOKIE}={self.server.new_session()}; HttpOnly; SameSite=Strict; Path=/"
+            )
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header(

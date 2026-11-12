@@ -1,6 +1,6 @@
 # The supervisor
 
-*Status: released in 0.3.0; dry run by default. Role steps run as CI jobs ([decision 0003](decisions/0003-roles-run-as-ci-jobs.md)):
+*Status: Unreleased; dry run by default. Role steps run as CI jobs ([decision 0003](decisions/0003-roles-run-as-ci-jobs.md)):
 a job runs [`onloop step`](#one-step-from-a-ci-job) for one item. onloop is moving towards hosting the role sessions
 itself ([decision 0004](decisions/0004-onloop-hosts-the-conversation.md)); the step runner on this page is what such a
 session is started with.*

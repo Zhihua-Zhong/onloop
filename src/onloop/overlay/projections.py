@@ -16,6 +16,12 @@ Two vocabularies are applied:
 - the role sessions' hooks: `hook.stop` records a turn with its outcome or parse error, clears the role's
   `continue` and `permission` waits, and opens a wait on the waker of a `continue`; `hook.session_start` sets the
   role's session; a blocking `hook.notification` is a wait on the human with reason `permission`.
+- the session carrier's (decision 0010): `session.bound`, `role.opted_in`, `role.opted_out`,
+  `lease.session_granted`, `lease.session_renewed`, `lease.session_released`, `run.started`, `run.spawned`,
+  `run.ended`, `delivery.claimed`, `delivery.failed`, `delivery.escalated`, `delivery.cancelled`, `message.posted`,
+  `message.expired`, `timer.set`, `timer.fired`, `timer.cancelled`, `carrier.enabled`, `carrier.paused`,
+  `carrier.resumed`. Their invariants (one live lease per session, one corrective delivery per turn, one delivery per
+  cause) are unique indexes, and these rules use plain INSERTs, so an event that would break one fails its append.
 
 Any other kind is kept in the log and changes no projection.
 """
@@ -55,6 +61,10 @@ def _insert(conn: sqlite3.Connection, table: str, row: Mapping[str, Any]) -> Non
     cols = ", ".join(row)
     marks = ", ".join("?" for _ in row)
     conn.execute(f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({marks})", tuple(row.values()))
+
+
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(r[1] == column for r in conn.execute(f"PRAGMA table_info({table})"))
 
 
 def _exists(conn: sqlite3.Connection, table: str, key: str) -> bool:
@@ -151,9 +161,20 @@ def _role_changed(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> N
         _set(conn, "roles", p["id"], _pick(p, ROLE_FIELDS), e["seq"])
 
 
+DELIVERY_FIELDS = ("to_role", "item_id", "kind", "dedupe_key", "for_turn_id", "message_id", "next_attempt_at")
+
+
 def _delivery_created(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
-    row = {"id": p["id"], **_pick(p, ("to_role", "item_id")), "created_at": when(e), "attempts": 0}
-    _insert(conn, "deliveries", {**row, "last_seq": e["seq"]})
+    row = {"id": p["id"], **_pick(p, DELIVERY_FIELDS), "created_at": when(e), "attempts": 0}
+    if "kind" not in p:  # a delivery from before the carrier (version 1's vocabulary)
+        _insert(conn, "deliveries", {**row, "last_seq": e["seq"]})
+        return
+    cols = ", ".join((*row, "state", "last_seq"))
+    marks = ", ".join("?" for _ in range(len(row) + 2))
+    conn.execute(f"INSERT INTO deliveries ({cols}) VALUES ({marks})", (*row.values(), "created", e["seq"]))
+
+
+DELIVERY_STATE_OF = {"delivered_at": "delivered", "processing_at": "processing", "acked_at": "acked"}
 
 
 def _delivery_mark(column: str) -> Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]:
@@ -165,8 +186,14 @@ def _delivery_mark(column: str) -> Callable[[sqlite3.Connection, Event, Mapping[
             f"UPDATE deliveries SET {extra}{column} = ?, last_seq = ? WHERE id = ?",
             (when(e), e["seq"], p["id"]),
         )
+        if _has_column(
+            conn, "deliveries", "state"
+        ):  # version 6 on; a test may hold a ledger at an older version
+            conn.execute("UPDATE deliveries SET state = ? WHERE id = ?", (DELIVERY_STATE_OF[column], p["id"]))
         if p.get("escalated_to"):
             conn.execute("UPDATE deliveries SET escalated_to = ? WHERE id = ?", (p["escalated_to"], p["id"]))
+        if column == "acked_at" and p.get("turn"):
+            conn.execute("UPDATE deliveries SET acked_by_turn = ? WHERE id = ?", (p["turn"], p["id"]))
 
     return mark
 
@@ -711,6 +738,224 @@ def _hook_notification(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any])
     _insert(conn, "waits", {**wait, "last_seq": e["seq"]})
 
 
+# -- the session carrier (decision 0010) -------------------------------------------------------------------------------
+
+
+def _session_bound(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """A role bound to a session id. Rebinding a role replaces its session; a session already bound to another role
+    fails the append (`one_role_per_session`)."""
+    conn.execute(
+        "INSERT INTO role_sessions (id, session_id, cwd, created_by, opted_in, last_seq) VALUES (?, ?, ?, ?, '[]', ?) "
+        "ON CONFLICT(id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd, "
+        "created_by = excluded.created_by, last_seq = excluded.last_seq",
+        (p["role"], p["session_id"], p.get("cwd"), p.get("created_by") or "adopted", e["seq"]),
+    )
+
+
+def _role_opted(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    row = conn.execute("SELECT opted_in FROM role_sessions WHERE id = ?", (p["role"],)).fetchone()
+    if row is None:
+        return
+    have = set(json.loads(row[0]))
+    if e["kind"] == "role.opted_in":
+        have.add(p["action"])
+    else:
+        have.discard(p["action"])
+    _set(conn, "role_sessions", p["role"], {"opted_in": _dump(sorted(have))}, e["seq"])
+
+
+def _session_lease(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    kind = e["kind"]
+    if kind == "lease.session_granted":
+        conn.execute(
+            "INSERT INTO session_leases (id, session_id, role, run_id, holder_instance, granted_at, expires_at, "
+            "last_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                p["id"],
+                p["session_id"],
+                p["role"],
+                p["run_id"],
+                p["holder_instance"],
+                when(e),
+                p["expires_at"],
+                e["seq"],
+            ),
+        )
+    elif kind == "lease.session_renewed":
+        fields = {"expires_at": p["expires_at"], "renewed_at": when(e)}
+        conn.execute(
+            "UPDATE session_leases SET expires_at = ?, renewed_at = ?, last_seq = ? WHERE id = ? AND released_at IS NULL",
+            (fields["expires_at"], fields["renewed_at"], e["seq"], p["id"]),
+        )
+    else:
+        conn.execute(
+            "UPDATE session_leases SET released_at = ?, release_reason = ?, last_seq = ? WHERE id = ? "
+            "AND released_at IS NULL",
+            (when(e), p.get("reason") or "released", e["seq"], p["id"]),
+        )
+
+
+RUN_END_FIELDS = (
+    "status",
+    "exit_code",
+    "is_error",
+    "terminal_reason",
+    "api_error_status",
+    "denials",
+    "num_turns",
+    "wall_s",
+    "stop_turn_id",
+    "hook_missing",
+)
+
+
+def _run(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    kind = e["kind"]
+    if kind == "run.started":
+        conn.execute(
+            "INSERT INTO runs (id, role, session_id, lease_id, started_at, status, detail, last_seq) "
+            "VALUES (?, ?, ?, ?, ?, 'running', ?, ?)",
+            (
+                p["id"],
+                p["role"],
+                p["session_id"],
+                p["lease_id"],
+                when(e),
+                _dump(p.get("detail") or {}),
+                e["seq"],
+            ),
+        )
+        for d in p.get("deliveries") or []:
+            conn.execute(
+                "UPDATE deliveries SET state = 'claimed', run_id = ?, last_seq = ? WHERE id = ?",
+                (p["id"], e["seq"], d),
+            )
+        return
+    if not _exists(conn, "runs", p["id"]):
+        return
+    if kind == "run.spawned":
+        fields = _pick(p, ("pid", "claude_pid", "claude_started_at"))
+        _set(conn, "runs", p["id"], fields, e["seq"])
+        lease = conn.execute("SELECT lease_id FROM runs WHERE id = ?", (p["id"],)).fetchone()[0]
+        conn.execute(
+            "UPDATE session_leases SET holder_pid = ?, holder_started_at = ?, last_seq = ? WHERE id = ?",
+            (p.get("claude_pid") or p.get("pid"), p.get("claude_started_at"), e["seq"], lease),
+        )
+        return
+    fields = _pick(p, RUN_END_FIELDS)
+    for flag in ("is_error", "hook_missing"):
+        if flag in fields and fields[flag] is not None:
+            fields[flag] = 1 if fields[flag] else 0
+    if "rate_limit" in p:
+        fields["rate_limit"] = None if p["rate_limit"] is None else _dump(p["rate_limit"])
+    if kind == "run.ended":
+        fields["ended_at"] = when(e)
+    _set(conn, "runs", p["id"], fields, e["seq"])
+
+
+def _delivery_carrier(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """claimed (a run took it), failed (back to `created` when it is retried), escalated, cancelled."""
+    if not _exists(conn, "deliveries", p["id"]):
+        return
+    kind = e["kind"]
+    if kind == "delivery.claimed":
+        conn.execute(
+            "UPDATE deliveries SET state = 'claimed', run_id = ?, last_seq = ? WHERE id = ?",
+            (p.get("run_id"), e["seq"], p["id"]),
+        )
+    elif kind == "delivery.failed":
+        retry = bool(p.get("retry"))
+        conn.execute(
+            "UPDATE deliveries SET state = ?, last_error = ?, next_attempt_at = ?, run_id = NULL, "
+            "delivered_at = CASE WHEN ? THEN NULL ELSE delivered_at END, "
+            "processing_at = CASE WHEN ? THEN NULL ELSE processing_at END, "
+            "attempts = MAX(0, attempts - ?), resent = CASE WHEN ? THEN 1 ELSE resent END, last_seq = ? WHERE id = ?",
+            (
+                "created" if retry else "failed",
+                p.get("error"),
+                p.get("next_attempt_at"),
+                retry,
+                retry,
+                1 if p.get("uncount") else 0,
+                bool(p.get("resend_mark")),
+                e["seq"],
+                p["id"],
+            ),
+        )
+    elif kind == "delivery.escalated":
+        conn.execute(
+            "UPDATE deliveries SET state = 'escalated', escalated_to = ?, last_error = COALESCE(?, last_error), "
+            "last_seq = ? WHERE id = ?",
+            (p.get("to"), p.get("error"), e["seq"], p["id"]),
+        )
+    else:
+        conn.execute(
+            "UPDATE deliveries SET state = 'cancelled', last_error = COALESCE(?, last_error), last_seq = ? WHERE id = ?",
+            (p.get("why"), e["seq"], p["id"]),
+        )
+
+
+def _message(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    if e["kind"] == "message.posted":
+        conn.execute(
+            "INSERT INTO messages (id, thread, author, channel, created_at, body, body_sha256, redacted, expires_at, "
+            "delivery_id, last_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                p["id"],
+                p["thread"],
+                p["author"],
+                p["channel"],
+                when(e),
+                p["body"],
+                p["body_sha256"],
+                int(p.get("redacted") or 0),
+                p["expires_at"],
+                p.get("delivery_id"),
+                e["seq"],
+            ),
+        )
+    else:
+        conn.execute(
+            "UPDATE messages SET body = NULL, expired_at = ?, last_seq = ? WHERE id = ? AND expired_at IS NULL",
+            (when(e), e["seq"], p["id"]),
+        )
+
+
+def _timer(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    kind = e["kind"]
+    if kind == "timer.set":
+        conn.execute(
+            "INSERT INTO timers (id, kind, subject, due_at, detail, last_seq) VALUES (?, ?, ?, ?, ?, ?)",
+            (p["id"], p["kind"], p["subject"], p["due_at"], _dump(p.get("detail") or {}), e["seq"]),
+        )
+        return
+    column = "fired_at" if kind == "timer.fired" else "cancelled_at"
+    conn.execute(
+        f"UPDATE timers SET {column} = ?, last_seq = ? WHERE id = ? AND fired_at IS NULL AND cancelled_at IS NULL",
+        (when(e), e["seq"], p["id"]),
+    )
+
+
+def _carrier_state(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    kind = e["kind"]
+    row = conn.execute("SELECT enabled FROM carrier_state WHERE id = 1").fetchone()
+    enabled = row[0] if row else 0
+    reason, until = None, None
+    if kind == "carrier.enabled":
+        enabled = 1
+    elif kind == "carrier.paused":
+        reason, until = p["reason"], p.get("until")
+        if reason == "kill_switch":
+            enabled = 0
+    conn.execute(
+        "INSERT INTO carrier_state (id, enabled, paused_reason, paused_until, set_by, changed_at, last_seq) "
+        "VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, "
+        "paused_reason = excluded.paused_reason, paused_until = excluded.paused_until, set_by = excluded.set_by, "
+        "changed_at = excluded.changed_at, last_seq = excluded.last_seq",
+        (enabled, reason, until, p.get("by") or e.get("actor"), when(e), e["seq"]),
+    )
+
+
 RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]] = {
     "item.opened": _item_opened,
     "item.changed": _item_changed,
@@ -739,6 +984,21 @@ RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]]
     "hook.stop": _hook_stop,
     "hook.session_start": _hook_session_start,
     "hook.notification": _hook_notification,
+    "session.bound": _session_bound,
+    "role.opted_in": _role_opted,
+    "role.opted_out": _role_opted,
+    **{
+        k: _session_lease
+        for k in ("lease.session_granted", "lease.session_renewed", "lease.session_released")
+    },
+    **{k: _run for k in ("run.started", "run.spawned", "run.ended")},
+    **{
+        k: _delivery_carrier
+        for k in ("delivery.claimed", "delivery.failed", "delivery.escalated", "delivery.cancelled")
+    },
+    **{k: _message for k in ("message.posted", "message.expired")},
+    **{k: _timer for k in ("timer.set", "timer.fired", "timer.cancelled")},
+    **{k: _carrier_state for k in ("carrier.enabled", "carrier.paused", "carrier.resumed")},
 }
 
 

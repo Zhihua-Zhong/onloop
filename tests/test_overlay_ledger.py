@@ -134,7 +134,7 @@ def story(led):
 
 
 def test_a_new_ledger_is_its_own_file_at_the_current_schema_version(tmp_path, ledger):
-    assert ledger.path.name == "ledger.db" and ledger.version() == len(schema.MIGRATIONS) == 5
+    assert ledger.path.name == "ledger.db" and ledger.version() == len(schema.MIGRATIONS) == 6
     tables = {r[0] for r in ledger.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert set(schema.PROJECTIONS) | {"events", "ingest_cursors"} <= tables
 

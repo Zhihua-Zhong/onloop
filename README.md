@@ -17,13 +17,13 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.3.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and
+Status: 0.3.0 is the latest release, alpha. `main` is 0.4.0.dev0 and unreleased. See [CHANGELOG.md](CHANGELOG.md) and
 the roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
-onloopd serves this read-only UI at `http://localhost:8790`: Now, Flow, Team, Schedules and Audit, five views of one
-ledger ([docs/ui.md](docs/ui.md)).
+onloopd serves this UI at `http://localhost:8790`: Now, Flow, Team, Conversation, Schedules and Audit, six views of
+one ledger ([docs/ui.md](docs/ui.md)). Its one write is a message to a role, from the Conversation view.
 
 ## Why human-on-the-loop
 
@@ -259,6 +259,14 @@ Everything described above exists and has a self-test.
 - **The UI**, served by onloopd: five read-only views of the ledger (Now, Flow, Team, Schedules and Audit). It
   replaces the dashboard, the demo site, the workbench and the work-graph panel, which are removed
   ([docs/ui.md](docs/ui.md), [decision 0009](docs/decisions/0009-one-read-only-ui.md)).
+
+On `main`, unreleased (0.4.0, behind the subscription-use question in decision 0010):
+
+- **The session carrier** (decision 0010), off by default: onloop delivers messages into the role sessions itself,
+  one lease per session id, one process per run, acknowledged by the role's next turn. Until a role opts in and the
+  carrier is started, it only records what it would send ([docs/carrier.md](docs/carrier.md)).
+- **The Conversation view**, the UI's sixth: the carried roles and their threads, with a compose box, the UI's one
+  write (decision 0011).
 
 Where it goes next ([decision 0004](docs/decisions/0004-onloop-hosts-the-conversation.md)): onloop becomes the
 operations layer for a team of AI agents, a loop owner that runs outside any session, hosts the role sessions itself

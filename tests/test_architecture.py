@@ -42,8 +42,8 @@ LAYERS = {
         "detect",
         "report",
     },
-    3: {"supervisor", "daemon"},
-    4: {"cli"},
+    3: {"supervisor", "daemon", "carrier"},
+    4: {"cli", "__main__"},
 }
 LAYER_OF = {name: n for n, names in LAYERS.items() for name in names}
 

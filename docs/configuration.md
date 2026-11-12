@@ -389,6 +389,44 @@ github:
   every: 1m
 ```
 
+### The carrier
+
+Optional. The session carrier ([carrier.md](carrier.md), [decision 0010](decisions/0010-session-lease-and-delivery.md)):
+the role sessions onloop delivers messages into. Without this block there is no carrier at all; with it and no
+opt-in, or before `onloop carrier start`, the carrier only logs `would.deliver`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `claude` | `claude.cmd` on Windows, else `claude` | the CLI to run |
+| `coordinator` | none (escalations go to you) | the carried role escalations are sent to |
+| `wall_per_day` | `4h` | carrier wall time across all roles per day |
+| `message_retention` | `30d` | how long the text onloop stores is kept before only its hash remains |
+| `roles.<role>.session_id` | required | the role's existing Claude Code session (a lowercase UUID); onloop adopts it |
+| `roles.<role>.cwd` | required | the folder the session runs in; file tools are confined to it |
+| `roles.<role>.tools` | required | the built-in tools a run may see. **A shell (Bash, PowerShell or any other) is refused**: with a shell named, read-only commands run without the allowlist even under `--restricted`. A future decision will define a safe shell |
+| `roles.<role>.allowed_tools` | `tools` | the patterns pre-approved; never a shell either |
+| `roles.<role>.model` | the CLI's | the model |
+| `roles.<role>.max_turns` | 20 | model turns per run |
+| `roles.<role>.wall`, `silence` | `20m`, `5m` | one run's wall budget, and its longest stretch without output |
+| `roles.<role>.runs_per_hour`, `runs_per_day`, `wall_per_day` | 4, 24, `2h` | the role's budget |
+| `roles.<role>.opt_in` | none | what onloop may do: `message`, `event`, `corrective`, `dead_waker`, `dead_waker_wake` (which needs `dead_waker`) |
+
+```yaml
+carrier:
+  coordinator: lead
+  roles:
+    builder:
+      session_id: 00000000-0000-4000-8000-000000000001
+      cwd: C:/work/app
+      tools: [Read, Grep, Glob, Edit, Write]
+      opt_in: [message, corrective]
+    lead:
+      session_id: 00000000-0000-4000-8000-000000000002
+      cwd: C:/work/app
+      tools: [Read, Grep]
+      opt_in: [message, event]
+```
+
 ## Command reference
 
 Every command accepts `--help`. `--policy PATH` (default `onloop.yaml`) is accepted by every command that reads the
@@ -426,7 +464,10 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop report observe` | `--since TIME` (a date or a UTC time), `--until TIME` (default now), `--json`, `--ledger FILE`: each thing onloop would have done (`would.*`), next to what happened then (the role's next turn and how it ended, or the schedule's next success), and each role's turns with how many had no valid outcome. All times are the ledger's. Also `GET /api/report/observe?since=&until=` | 0, 2 a bad time |
 | `onloop role pause` / `resume` | `ROLE`, `--ledger FILE`: pause a role, so every item it owns that is not done waits on the human (reason `paused_by_human`) until it is resumed; its own turns do not end the pause | 0 (also when it already was), 2 a bad role name |
 | `onloop item evidence` | `ID REF`, `--ledger FILE`: attach the evidence (a URL, a pull request, a log line) a follow-up such as `pr#12/post-merge/1` needs. The follow-up is then done, and its pull request too once no follow-up lacks evidence | 0, 1 no such item, no evidence asked, or evidence already attached, 2 a bad reference |
-| `onloop daemon hook` | `--event stop\|session-start\|notification`, `--role ROLE`, `--ledger FILE`, `--timeout SECONDS` (default 2): post the hook's payload (stdin) to onloopd. For a role's Claude Code hook settings | always 0; a failure is a line in `hook-errors.log` next to the ledger |
+| `onloop daemon hook` | `--event stop\|session-start\|notification`, `--role ROLE`, `--ledger FILE`, `--timeout SECONDS` (default 2): post the hook's payload (stdin) to onloopd. For a role's Claude Code hook settings. When onloopd cannot be reached, the post is spooled to `hook-spool.jsonl` and logged once when it is back | always 0; a failure is a line in `hook-errors.log` next to the ledger |
+| `onloop carrier start` / `stop` / `status` | `--ledger FILE`: start the session carrier (it acts on what roles opted in to; removes `carrier.off`); stop it (the kill switch: writes `carrier.off`, live runs end within 5 s); show its state, roles, live leases and the last day's runs. See [carrier.md](carrier.md) | 0, 2 a ledger error |
+| `onloop role opt-in` / `opt-out` | `ROLE ACTION`, `--ledger FILE`: let the carrier act for a carried role on `message`, `event`, `corrective`, `dead_waker` or `dead_waker_wake`, or stop it at once. Opting in cannot go past onloopd.yaml's `opt_in` | 0, 2 not a carried role or not an action |
+| `onloop say` | `ROLE TEXT` (`-` reads stdin), `--ledger FILE`: a message to a carried role, posted to onloopd with its write token. A request from a local user, not verified, never an approval ([decision 0011](decisions/0011-ui-write-path.md)) | 0 queued, 2 refused or onloopd not reachable |
 | `onloop daemon stop` | `--ledger FILE`, `--timeout SECONDS` (default 30): ask onloopd to stop and wait for its pid to exit | 0 stopped cleanly, 1 not running, 3 stopped by its process tree after the timeout |
 | `onloop daemon status` | `--ledger FILE`: the last heartbeat and the `/health` answer | 0, 1 no heartbeat or no answer |
 | `onloop supervise` | `--config FILE` and `--once` (both required): print the command of every role step that would start now; starts nothing, writes nothing. See [supervisor.md](supervisor.md) | 0, 1 the source could not be read, 2 a configuration error |
