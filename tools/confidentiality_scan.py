@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +33,21 @@ _DASHES = "-" * 5
 _PEM_BEGIN = _DASHES + "BEGIN "
 _CJK = "[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]"
 _QUOTES = "\"'"
+
+
+# A lockfile's "integrity" value is a base64 digest. By chance it can contain a short denylist pattern, and a JSON file cannot take the
+# opt-out marker. The one exception: a line that is nothing but the key "integrity" and a value of exactly the SRI form, in a file named
+# package-lock.json. Any other line of that file, and any other file, is scanned in full.
+# The digest lengths are those of base64 for 32, 48 and 64 bytes, padding included.
+_SRI = r"sha512-[A-Za-z0-9+/]{86}==|sha384-[A-Za-z0-9+/]{64}|sha256-[A-Za-z0-9+/]{43}="
+_SRI_LINE = re.compile(r'^\s*"integrity":\s*"(?:' + _SRI + r')",?\s*$')
+
+
+def lockfile_integrity_line(rel_path: str) -> Callable[[str], bool] | None:
+    """The line skip for this file, or None: only a package-lock.json gets one."""
+    if rel_path.rsplit("/", 1)[-1] != "package-lock.json":
+        return None
+    return lambda line: _SRI_LINE.match(line) is not None
 
 
 @dataclass(frozen=True)
@@ -54,7 +69,10 @@ def generic_patterns() -> list[Pattern]:
     """The always-on patterns."""
     return [
         Pattern("ipv4", re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")),
-        Pattern("email", re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")),
+        Pattern(
+            "email",
+            re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"),
+        ),
         Pattern(
             "windows-user-path",
             re.compile(rf"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s{_QUOTES}]+[\\/]", re.IGNORECASE),
@@ -105,11 +123,13 @@ def load_denylist(path: Path, index: int = 1) -> list[Pattern]:
     return patterns
 
 
-def scan_text(text: str, patterns: Iterable[Pattern]) -> list[Hit]:
+def scan_text(text: str, patterns: Iterable[Pattern], skip: Callable[[str], bool] | None = None) -> list[Hit]:
     """Return one hit per (line, pattern). Lines carrying the opt-out marker are flagged allowed."""
     patterns = list(patterns)
     hits: list[Hit] = []
     for number, line in enumerate(text.splitlines(), start=1):
+        if skip is not None and skip(line):
+            continue
         allowed = ALLOW_MARKER in line
         for pattern in patterns:
             if not pattern.regex.search(line):
@@ -137,9 +157,9 @@ def read_scannable(path: Path) -> str | None:
 
 
 def _git(root: Path, *args: str) -> list[str]:
-    out = subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, check=True
-    ).stdout.decode("utf-8", errors="surrogateescape")
+    out = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=True).stdout.decode(
+        "utf-8", errors="surrogateescape"
+    )
     return [p for p in out.split("\0") if p]
 
 
@@ -156,8 +176,12 @@ def list_files(root: Path) -> list[Path]:
         )
 
 
-def scan_root(root: Path, patterns: list[Pattern]) -> tuple[list[tuple[str, Hit]], int, int]:
-    """Return (hits, allowed_count, files_scanned). Allowed hits are not in the hit list."""
+def scan_root(
+    root: Path, patterns: list[Pattern], skipped: list[int] | None = None
+) -> tuple[list[tuple[str, Hit]], int, int]:
+    """Return (hits, allowed_count, files_scanned). Allowed hits are not in the hit list.
+
+    If `skipped` is a one-element list, the number of lockfile integrity lines that were not scanned is added to it."""
     found: list[tuple[str, Hit]] = []
     allowed = 0
     scanned = 0
@@ -167,7 +191,10 @@ def scan_root(root: Path, patterns: list[Pattern]) -> tuple[list[tuple[str, Hit]
             continue
         scanned += 1
         rel = path.relative_to(root).as_posix()
-        for hit in scan_text(text, patterns):
+        skip = lockfile_integrity_line(rel)
+        if skip is not None and skipped is not None:
+            skipped[0] += sum(1 for line in text.splitlines() if skip(line))
+        for hit in scan_text(text, patterns, skip):
             if hit.allowed:
                 allowed += 1
             else:
@@ -218,6 +245,19 @@ def self_test() -> int:
 
     marked = scan_text(samples["ipv4"] + "  # " + ALLOW_MARKER, generic)
     check("allow-marker", bool(marked) and all(h.allowed for h in marked))
+
+    # The lockfile skip: an SRI line is not scanned, and nothing beside it, short of it, or in another file is skipped.
+    chance = [Pattern("denylist pattern #1", re.compile("Qx7Z"), show_excerpt=False)]
+    digest = "sha512-" + "A" * 40 + "Qx7Z" + "B" * 42 + "=="
+    sri_line = '  "integrity": "' + digest + '",'
+    lock = lockfile_integrity_line("package-lock.json")
+    check("lockfile-sri-skipped", not scan_text(sri_line, chance, lock))
+    check("lockfile-term-beside-sri-caught", bool(scan_text(sri_line + ' "x": "Qx7Z"', chance, lock)))
+    check("lockfile-short-value-caught", bool(scan_text('  "integrity": "sha512-Qx7Z",', chance, lock)))
+    check(
+        "other-file-not-skipped",
+        lockfile_integrity_line("package.json") is None and bool(scan_text(sri_line, chance)),
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
@@ -284,12 +324,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    found, allowed, scanned = scan_root(root, patterns)
+    skipped = [0]
+    found, allowed, scanned = scan_root(root, patterns, skipped)
     for rel, hit in found:
         suffix = f" | {hit.excerpt}" if hit.excerpt else ""
         print(f"{rel}:{hit.line}: {hit.kind}{suffix}")
     if not args.quiet:
-        print(f"scanned {scanned} files: {len(found)} hits, {allowed} lines opted out with {ALLOW_MARKER}")
+        print(
+            f"scanned {scanned} files: {len(found)} hits, {allowed} lines opted out with {ALLOW_MARKER}, "
+            f"{skipped[0]} lockfile integrity lines not scanned"
+        )
     return 1 if found else 0
 
 

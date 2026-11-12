@@ -237,3 +237,68 @@ def test_a_git_ref_after_an_at_sign_is_not_an_email():
 def test_a_diff_line_prefix_before_an_at_sign_is_not_an_email():
     assert "email" not in kinds("+@pytest.fixture")
     assert "email" not in kinds("-@pytest.mark.parametrize")
+
+
+# --- the lockfile's integrity values -------------------------------------------------------------------------------------------------
+# A base64 digest can contain a short denylist pattern by chance. The scanner skips a line only when it is exactly `"integrity": "<SRI value>"`
+# in a file named package-lock.json. The pattern here stands in for a denylist term that the digest happens to contain.
+CHANCE = "Qx7Z"
+SRI = "sha512-" + "A" * 40 + CHANCE + "B" * 42 + "=="  # 86 characters and ==, the real length
+SRI384 = "sha384-" + "A" * 30 + CHANCE + "B" * 30  # 64 characters
+SRI256 = "sha256-" + "A" * 20 + CHANCE + "B" * 19 + "="  # 43 characters and =
+CHANCE_PATTERN = [scan.Pattern("denylist pattern #1", scan.re.compile(CHANCE), show_excerpt=False)]
+
+
+def lock_hits(rel: str, text: str) -> list:
+    return scan.scan_text(text, CHANCE_PATTERN, scan.lockfile_integrity_line(rel))
+
+
+def test_an_sri_integrity_line_in_a_lockfile_is_skipped() -> None:
+    assert lock_hits("web/package-lock.json", f'      "integrity": "{SRI}",') == []
+    assert lock_hits("package-lock.json", f'"integrity": "{SRI}"') == []
+    assert lock_hits("package-lock.json", f'"integrity": "{SRI384}",') == []
+    assert lock_hits("package-lock.json", f'"integrity": "{SRI256}",') == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f'      "resolved": "https://registry.npmjs.org/{CHANCE}/-/{CHANCE}-1.0.0.tgz",',  # another key's value
+        f'      "name": "{CHANCE}",',
+        f'      "{CHANCE}": "sha512-AAAA",',  # the term in a key
+        f'      "integrity": "{CHANCE}",',  # a value that is not the SRI form
+        f'      "integrity": "sha1-{CHANCE}",',  # an algorithm outside the form
+        f'      "integrity": "{SRI}", "x": "{CHANCE}"',  # more on the same line
+        f'      "integrity": "{SRI}" {CHANCE}',
+        f'      "integrity": "sha512-{CHANCE}",',  # a value far shorter than a digest
+        f'      "integrity": "sha512-AcmeCorp{CHANCE}",',
+        f'      "integrity": "{SRI[:-2]}",',  # sha512 without its == padding
+        f'      "integrity": "{SRI384[:-1]}",',  # one character short
+        f'      "integrity": "{SRI256}A",',  # one character long
+        f'      "integrity": "{SRI}!",',  # a character outside the base64 set
+    ],
+)
+def test_every_other_lockfile_line_is_still_scanned(line: str) -> None:
+    assert lock_hits("package-lock.json", line)
+
+
+@pytest.mark.parametrize(
+    "rel", ["package.json", "web/package-lock.json.bak", "lock.json", "notes.md", "web/src/package-lock.js"]
+)
+def test_no_other_file_gets_the_skip(rel: str) -> None:
+    assert scan.lockfile_integrity_line(rel) is None
+    assert lock_hits(rel, f'"integrity": "{SRI}"')
+
+
+@needs_git
+def test_cli_a_lockfile_integrity_value_does_not_fail_but_a_term_beside_it_does(
+    repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    deny = tmp_path / "deny.txt"
+    deny.write_text(CHANCE + "\n", encoding="utf-8")
+    lock = repo / "package-lock.json"
+    lock.write_text('{\n  "integrity": "' + SRI + '"\n}\n', encoding="utf-8")
+    assert scan.main(["--root", str(repo), "--denylist", str(deny)]) == 0
+    lock.write_text('{\n  "integrity": "' + SRI + '",\n  "name": "' + CHANCE + '"\n}\n', encoding="utf-8")
+    assert scan.main(["--root", str(repo), "--denylist", str(deny)]) == 1
+    assert "package-lock.json:3" in capsys.readouterr().out

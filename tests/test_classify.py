@@ -24,7 +24,9 @@ def test_the_tier_is_the_highest_of_the_paths_and_owners_are_collected(policy):
     assert c.unowned == ["README.md"]
 
 
-def test_a_loosening_is_authority_widening_and_needs_the_human_even_when_its_class_names_the_reviewer(policy, raw):
+def test_a_loosening_is_authority_widening_and_needs_the_human_even_when_its_class_names_the_reviewer(
+    policy, raw
+):
     loose = copy.deepcopy(raw)
     loose["paths"]["docs/claims/"].pop("reserved")
     c = classify(["onloop.yaml"], policy, pol.from_dict(loose))
@@ -66,15 +68,23 @@ def test_the_cli_classifies_a_real_diff_and_catches_a_loosening(tmp_path, raw):
     _git(repo, "checkout", "-q", "-b", "feature")
     (repo / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "plain")
-    plain = subprocess.run([sys.executable, "-m", "onloop.cli", "classify", "--base", "base", "--head", "feature",
-                            "--json"], cwd=repo, capture_output=True, text=True)
+    plain = subprocess.run(
+        [sys.executable, "-m", "onloop.cli", "classify", "--base", "base", "--head", "feature", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
     assert json.loads(plain.stdout)["approvers"] == ["reviewer"]
     loose = copy.deepcopy(raw)
     loose["paths"]["docs/claims/"].pop("reserved")
     (repo / "onloop.yaml").write_text(yaml.safe_dump(loose), encoding="utf-8")
     _git(repo, "commit", "-qam", "loosen")
-    out = subprocess.run([sys.executable, "-m", "onloop.cli", "classify", "--base", "base", "--head", "feature",
-                          "--json"], cwd=repo, capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, "-m", "onloop.cli", "classify", "--base", "base", "--head", "feature", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
     assert out.returncode == 0, out.stderr
     got = json.loads(out.stdout)
     assert got["approvers"] == ["human", "reviewer"] and got["loosening"]
@@ -84,13 +94,15 @@ def test_the_cli_classifies_a_real_diff_and_catches_a_loosening(tmp_path, raw):
 def test_a_file_moved_out_of_a_reserved_path_still_touches_the_reserved_path(tmp_path, raw):
     """Real git: a rename is reported as a delete plus an add (`--no-renames`), so the old, reserved path counts."""
     from onloop.gitutil import Git
+
     repo = tmp_path
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "tester")
     _git(repo, "config", "user.name", "t")
     (repo / "docs" / "claims").mkdir(parents=True)
-    (repo / "docs" / "claims" / "x.md").write_text("a claim, long enough to be recognised as a rename\n" * 5,
-                                                   encoding="utf-8")
+    (repo / "docs" / "claims" / "x.md").write_text(
+        "a claim, long enough to be recognised as a rename\n" * 5, encoding="utf-8"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "base")
     _git(repo, "branch", "base")

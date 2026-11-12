@@ -1,0 +1,16 @@
+{
+  "schema": "onloop.kpi.baseline/1",
+  "split_method": "fixed-origin-v1",
+  "weeks": [
+    {
+      "week": "2026-W47",
+      "coordinator_messages": { "mechanical": 41, "judgment": 9 },
+      "asks_to_human": { "count": 6, "wait_s_total": 15300, "wait_s_max": 7200 }
+    },
+    {
+      "week": "2026-W48",
+      "coordinator_messages": { "mechanical": 37, "judgment": 11 },
+      "asks_to_human": { "count": 4, "wait_s_total": 5400 }
+    }
+  ]
+}

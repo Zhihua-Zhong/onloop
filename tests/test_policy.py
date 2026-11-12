@@ -15,26 +15,36 @@ def test_a_valid_policy_loads_and_matches_the_longest_path(policy):
 
 
 def test_the_six_builtin_classes_exist_and_a_project_may_add_one(policy):
-    for name in ("claims", "safety_widening", "authority_widening", "destructive", "money_accounts", "leaves_project"):
+    for name in (
+        "claims",
+        "safety_widening",
+        "authority_widening",
+        "destructive",
+        "money_accounts",
+        "leaves_project",
+    ):
         assert policy.approver_of(name) == "human"
     assert policy.approver_of("copy_edits") == "reviewer"
-    assert policy.approver_of("never_heard_of_it") == "human"           # unknown reads as the strictest
+    assert policy.approver_of("never_heard_of_it") == "human"  # unknown reads as the strictest
 
 
-@pytest.mark.parametrize("mutate,needle", [
-    (lambda r: r.pop("human"), "`human`"),
-    (lambda r: r.update(reviewer="owner-a"), "different account"),
-    (lambda r: r.update(agents="rev-bot"), "different identities"),
-    (lambda r: r.update(roles={}), "`roles`"),
-    (lambda r: r["paths"].pop("onloop.yaml"), "itself"),
-    (lambda r: r["paths"]["onloop.yaml"].pop("reserved"), "protects itself"),
-    (lambda r: r["paths"].update({"x/": {"owner": "ghost"}}), "not a role"),
-    (lambda r: r["paths"].update({"x/": {"tier": "gold"}}), "not one of the tiers"),
-    (lambda r: r["paths"].update({"x/": {"reserved": "nope"}}), "not a class"),
-    (lambda r: r["paths"].update({"x/": {"colour": "red"}}), "unknown field"),
-    (lambda r: r.update(classes={"c": "robot"}), "approver"),
-    (lambda r: r.update(checks=[{"name": "t"}]), "`checks`"),
-])
+@pytest.mark.parametrize(
+    "mutate,needle",
+    [
+        (lambda r: r.pop("human"), "`human`"),
+        (lambda r: r.update(reviewer="owner-a"), "different account"),
+        (lambda r: r.update(agents="rev-bot"), "different identities"),
+        (lambda r: r.update(roles={}), "`roles`"),
+        (lambda r: r["paths"].pop("onloop.yaml"), "itself"),
+        (lambda r: r["paths"]["onloop.yaml"].pop("reserved"), "protects itself"),
+        (lambda r: r["paths"].update({"x/": {"owner": "ghost"}}), "not a role"),
+        (lambda r: r["paths"].update({"x/": {"tier": "gold"}}), "not one of the tiers"),
+        (lambda r: r["paths"].update({"x/": {"reserved": "nope"}}), "not a class"),
+        (lambda r: r["paths"].update({"x/": {"colour": "red"}}), "unknown field"),
+        (lambda r: r.update(classes={"c": "robot"}), "approver"),
+        (lambda r: r.update(checks=[{"name": "t"}]), "`checks`"),
+    ],
+)
 def test_every_way_a_policy_can_be_unusable_is_named(raw, mutate, needle):
     mutate(raw)
     problems = pol.validate(raw)
@@ -57,17 +67,26 @@ def _loosen(raw, fn):
     return pol.from_dict(r)
 
 
-@pytest.mark.parametrize("fn,needle", [
-    (lambda r: r["paths"]["docs/claims/"].pop("reserved"), "no longer reserved"),
-    (lambda r: r["paths"].pop("docs/claims/"), "no longer reserved"),
-    (lambda r: r["paths"].update({"docs/claims/sub/": {"owner": "lead"}}), "docs/claims/sub/' is no longer reserved"),
-    (lambda r: r["paths"].update({"core/": {"owner": "builder", "tier": "routine"}}), "lowers its tier"),
-    (lambda r: r["paths"]["docs/claims/"].update(reserved="copy_edits"), "not the human"),
-    (lambda r: r.update(human="someone-else"), "human approver changes"),
-    (lambda r: r.update(reviewer="other-bot"), "reviewer identity changes"),
-    (lambda r: r.update(required_checks=[]), "dropped"),
-    (lambda r: r.update(classes={"copy_edits": "reviewer", "claims": "reviewer"}), "from human to reviewer"),
-])
+@pytest.mark.parametrize(
+    "fn,needle",
+    [
+        (lambda r: r["paths"]["docs/claims/"].pop("reserved"), "no longer reserved"),
+        (lambda r: r["paths"].pop("docs/claims/"), "no longer reserved"),
+        (
+            lambda r: r["paths"].update({"docs/claims/sub/": {"owner": "lead"}}),
+            "docs/claims/sub/' is no longer reserved",
+        ),
+        (lambda r: r["paths"].update({"core/": {"owner": "builder", "tier": "routine"}}), "lowers its tier"),
+        (lambda r: r["paths"]["docs/claims/"].update(reserved="copy_edits"), "not the human"),
+        (lambda r: r.update(human="someone-else"), "human approver changes"),
+        (lambda r: r.update(reviewer="other-bot"), "reviewer identity changes"),
+        (lambda r: r.update(required_checks=[]), "dropped"),
+        (
+            lambda r: r.update(classes={"copy_edits": "reviewer", "claims": "reviewer"}),
+            "from human to reviewer",
+        ),
+    ],
+)
 def test_every_relaxation_of_the_policy_is_caught(policy, raw, fn, needle):
     found = pol.loosening(policy, _loosen(raw, fn))
     assert any(needle in f for f in found), found
@@ -91,7 +110,7 @@ def test_a_more_specific_key_that_unreserves_part_of_a_reserved_directory_is_a_l
     head = _loosen(raw, lambda r: r["paths"].update({"docs/claims/private/": {"owner": "lead"}}))
     found = pol.loosening(policy, head)
     assert found and "docs/claims/private/" in found[0]
-    assert head.rule_for("docs/claims/private/x.md").reserved is None             # the effect, not just the wording
+    assert head.rule_for("docs/claims/private/x.md").reserved is None  # the effect, not just the wording
 
 
 def test_checks_are_compared_by_name_and_command(raw):
@@ -105,4 +124,4 @@ def test_checks_are_compared_by_name_and_command(raw):
     post = _loosen(raw, lambda r: r.update(post_merge_checks=[{"name": "smoke", "run": "true"}]))
     assert any("post-merge check 'smoke' changes its command" in f for f in pol.loosening(base, post))
     extra = _loosen(raw, lambda r: r.update(checks=raw["checks"] + [{"name": "lint", "run": "ruff check"}]))
-    assert pol.loosening(base, extra) == []                                       # adding a check only tightens
+    assert pol.loosening(base, extra) == []  # adding a check only tightens

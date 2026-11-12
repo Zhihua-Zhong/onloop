@@ -17,12 +17,13 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.2.0, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
+Status: 0.3.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and
+the roadmap below.
 
-**Live demo: https://zhihua-zhong.github.io/onloop/** (a dashboard and six scripted pull requests, built by the
-real classifier, gate and audit).
+![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
-![The onloop dashboard: the loop with its counts, the policy map, queues, what waits on the human](docs/img/dashboard.jpg)
+onloopd serves this read-only UI at `http://localhost:8790`: Now, Flow, Team, Schedules and Audit, five views of one
+ledger ([docs/ui.md](docs/ui.md)).
 
 ## Why human-on-the-loop
 
@@ -51,7 +52,7 @@ to GitHub. The offline commands in this section need only Python and git.
 Install straight from the tagged release (there is no PyPI release):
 
 ```bash
-pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.2.0"      # no clone needed
+pip install "onloop @ git+https://github.com/Zhihua-Zhong/onloop@v0.3.0"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -76,6 +77,7 @@ docs/charter/roles/{lead,operator,reviewer,builder}.md
 docs/decisions/TEMPLATE.md           decision record with "decisions by size"
 .github/workflows/onloop-gate.yml    the checks the gate requires
 .github/workflows/onloop-audit.yml   the main-branch audit
+.github/workflows/onloop-preflight.yml   tells the author what the gate would refuse for form
 ```
 
 It keeps files that already exist unless you pass `--force`. Replace the three placeholder logins in `onloop.yaml`
@@ -132,11 +134,31 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.2.0"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ git+https://github.com/Zhihua-Zhong/onloop@v0.3.0"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
 ```
+
+## Watching the team: onloopd
+
+onloopd is the resident service ([decision 0008](docs/decisions/0008-resident-service-and-dead-man-switch.md)). It
+binds the loopback address only (port 8790 by default), reads GitHub into the overlay ledger by GETs, takes the role
+sessions' hooks and the scheduled jobs' results, and on every tick detects what is stuck: a turn without a valid
+outcome line, a `continue` whose waker is dead, a scheduled job that failed or did not run, a merge whose post-merge
+step has no evidence. In this release it **observes only**: it records what it would do, and wakes nobody.
+
+```bash
+onloop daemon run                                   # the service, in the foreground
+onloop ingest github --once --repo owner/name       # one read of a repository into the ledger, by hand
+onloop report observe --since 2026-11-16            # what it would have done, next to what happened
+onloop kpi weekly                                   # asks to the human and messages to the coordinator, per week
+onloop preflight 12                                 # a pull request's form problems and the slots it needs
+onloop slot need --paths db/migrate/001.sql
+```
+
+See [docs/configuration.md](docs/configuration.md) for `onloopd.yaml` and every command, and
+[docs/automation.md](docs/automation.md) for the slots and the `slots:` and `automation:` policy blocks.
 
 ## Concepts in one screen
 
@@ -207,18 +229,47 @@ gate (see the limits in [docs/security-model.md](docs/security-model.md)).
 
 - [docs/index.md](docs/index.md): table of contents
 - [docs/concepts.md](docs/concepts.md): how the pieces fit
+- [docs/architecture.md](docs/architecture.md): the package's layers, supported surface, extension points and state
 - [docs/configuration.md](docs/configuration.md): every field of `onloop.yaml` and `ledger.yaml`
+- [docs/automation.md](docs/automation.md): slots, pre-flight, the KPIs, and the `slots:` and `automation:` blocks
 - [docs/security-model.md](docs/security-model.md): what is trusted, what is bound, what is not protected
 - [docs/faq.md](docs/faq.md)
-- [docs/dashboard.md](docs/dashboard.md): the dashboard and the demo site, and how to host your own
+- [docs/ui.md](docs/ui.md): the read-only UI onloopd serves, and how it is built and tested
+- [docs/supervisor.md](docs/supervisor.md): the role table and the governed step runner (`onloop step`)
+- [docs/decisions/](docs/decisions/): the decision records
 - [examples/minimal/](examples/minimal/): a toy configuration that validates
 
 ## Status and roadmap
 
-0.1.0 was the first release; 0.2.0 adds the dashboard (`onloop dashboard`) and the demo site (`onloop demo`). Everything described above exists and has a self-test. Not yet:
+0.1.0 was the first release; 0.2.0 added the dashboard (`onloop dashboard`) and the demo site (`onloop demo`).
+Everything described above exists and has a self-test.
 
-- an event-driven dispatcher, where GitHub events launch headless agents;
-- a PyPI release.
+0.3.0 (2026-11-11) adds:
+
+- **The governed step runner.** `onloop step --config supervisor.yaml --role R --pr N` runs one role step for one pull
+  request, from a CI job: it reads whether the step is due from the role's triggers (by GETs), then runs one bounded
+  headless `claude -p` call with the role's tools under `dontAsk`, a wall budget and a silence limit enforced by the
+  step's own pid, and writes the result to a file so the step needs no write tool. Dry run unless `--live`, which
+  refuses a metered API key and an unlogged CLI. `onloop supervise --once` prints every step that would start now;
+  `onloop digest` and `onloop attention` cover the person's asks. See [docs/supervisor.md](docs/supervisor.md) and
+  [decision 0003](docs/decisions/0003-roles-run-as-ci-jobs.md).
+- **onloopd**, observe-only: the overlay ledger, the hook receiver, the GitHub ingest, the detectors, the
+  observe-only report and the weekly KPIs. The act-mode loop (`onloop run`, `intake`, `acceptance`, `handover`) is
+  removed.
+- **The UI**, served by onloopd: five read-only views of the ledger (Now, Flow, Team, Schedules and Audit). It
+  replaces the dashboard, the demo site, the workbench and the work-graph panel, which are removed
+  ([docs/ui.md](docs/ui.md), [decision 0009](docs/decisions/0009-one-read-only-ui.md)).
+
+Where it goes next ([decision 0004](docs/decisions/0004-onloop-hosts-the-conversation.md)): onloop becomes the
+operations layer for a team of AI agents, a loop owner that runs outside any session, hosts the role sessions itself
+(`claude -p --resume`), holds goals and a clock, delivers events into the sessions, tracks who waits on whom, and
+watches results.
+
+- **0.3.0 observes:** scheduled-job results, the constraint view, handoffs nobody owns, system time, checks that fail
+  closed, and a report of what onloop would have done against what happened.
+- **0.4.0 acts:** delivery into sessions, reserved gaps, a safe stop, and no clutter and no expiry, with onloop's own
+  dead-man switch.
+- Not yet: act mode in a real project, and a PyPI release.
 
 ## Licence
 

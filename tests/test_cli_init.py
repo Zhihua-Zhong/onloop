@@ -10,16 +10,41 @@ from onloop.init import init
 
 def test_init_in_an_empty_repository_gives_a_policy_that_checks_and_matching_codeowners(tmp_path, capsys):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    assert main(["init", "--dir", str(tmp_path), "--human", "owner-a", "--reviewer", "rev-bot",
-                 "--agents", "agent-bot"]) == 0
-    for rel in ("onloop.yaml", "ledger.yaml", "CODEOWNERS", "docs/decisions/TEMPLATE.md",
-                "docs/charter/roles/lead.md", "docs/charter/roles/operator.md", "docs/charter/roles/reviewer.md",
-                "docs/charter/roles/builder.md", ".github/workflows/onloop-gate.yml",
-                ".github/workflows/onloop-audit.yml"):
+    assert (
+        main(
+            [
+                "init",
+                "--dir",
+                str(tmp_path),
+                "--human",
+                "owner-a",
+                "--reviewer",
+                "rev-bot",
+                "--agents",
+                "agent-bot",
+            ]
+        )
+        == 0
+    )
+    for rel in (
+        "onloop.yaml",
+        "ledger.yaml",
+        "CODEOWNERS",
+        "docs/decisions/TEMPLATE.md",
+        "docs/charter/roles/lead.md",
+        "docs/charter/roles/operator.md",
+        "docs/charter/roles/reviewer.md",
+        "docs/charter/roles/builder.md",
+        ".github/workflows/onloop-gate.yml",
+        ".github/workflows/onloop-audit.yml",
+        ".github/workflows/onloop-preflight.yml",
+    ):
         assert (tmp_path / rel).is_file(), rel
     policy_file = str(tmp_path / "onloop.yaml")
     assert main(["policy", "check", "--policy", policy_file]) == 0
-    assert main(["codeowners", "--check", "--policy", policy_file, "--file", str(tmp_path / "CODEOWNERS")]) == 0
+    assert (
+        main(["codeowners", "--check", "--policy", policy_file, "--file", str(tmp_path / "CODEOWNERS")]) == 0
+    )
     assert main(["ledger", "check", "--file", str(tmp_path / "ledger.yaml"), "--policy", policy_file]) == 0
 
 
@@ -39,7 +64,7 @@ def test_init_keeps_existing_files_unless_forced(tmp_path):
     try:
         init(tmp_path, human="a", reviewer="b", agents="c")
     except pol.PolicyError:
-        pass                                  # the kept file is not a usable policy, so CODEOWNERS is not generated
+        pass  # the kept file is not a usable policy, so CODEOWNERS is not generated
     else:
         raise AssertionError("expected the kept, invalid policy to be reported")
     assert mine.read_text(encoding="utf-8") == "keep: me" + chr(10)
@@ -54,7 +79,9 @@ def test_the_codeowners_are_generated_from_the_policy_most_specific_last(tmp_pat
     text = (tmp_path / "CODEOWNERS").read_text(encoding="utf-8")
     lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
     assert "/onloop.yaml @owner-a" in lines and "/docs/decisions/ @owner-a" in lines
-    assert all(ln.split()[1] == "@owner-a" for ln in lines)      # the starter's roles declare no handle of their own
+    assert all(
+        ln.split()[1] == "@owner-a" for ln in lines
+    )  # the starter's roles declare no handle of their own
     assert text == codeowners.generate(pol.load(tmp_path / "onloop.yaml"))
 
 
@@ -89,6 +116,7 @@ def test_policy_check_reports_problems_and_fails(tmp_path, capsys):
 
 # -- the GitHub client, with gh replaced -----------------------------------------------------------------------
 
+
 class Done:
     def __init__(self, out, code=0):
         self.stdout, self.stderr, self.returncode = out, "", code
@@ -101,24 +129,58 @@ def test_the_client_reads_a_pull_request_into_plain_facts_and_merges_bound_to_th
         calls.append(argv)
         url = argv[-1]
         if url.endswith("pulls/9"):
-            return Done(json.dumps({"state": "open", "merged": False, "draft": False, "base": {"ref": "main"},
-                                    "head": {"sha": "h" * 40}, "title": "[builder] t", "body": "b"}))
+            return Done(
+                json.dumps(
+                    {
+                        "state": "open",
+                        "merged": False,
+                        "draft": False,
+                        "base": {"ref": "main"},
+                        "head": {"sha": "h" * 40},
+                        "title": "[builder] t",
+                        "body": "b",
+                    }
+                )
+            )
         if url.endswith("pulls/9/reviews"):
-            return Done(json.dumps([{"id": 1, "user": {"login": "rev-bot", "type": "Bot"}, "state": "APPROVED",
-                                     "commit_id": "h" * 40, "submitted_at": "2026-01-01T00:00:00Z"}]))
+            return Done(
+                json.dumps(
+                    [
+                        {
+                            "id": 1,
+                            "user": {"login": "rev-bot", "type": "Bot"},
+                            "state": "APPROVED",
+                            "commit_id": "h" * 40,
+                            "submitted_at": "2026-01-01T00:00:00Z",
+                        }
+                    ]
+                )
+            )
         if url.endswith("pulls/9/commits"):
             return Done(json.dumps([{"commit": {"message": "fix\n\nRole: builder"}}]))
         if "check-runs" in url:
-            return Done(json.dumps({"check_runs": [{"name": "ci", "conclusion": "success"}]}))
+            return Done(json.dumps({"check_runs": [{"name": "ci", "conclusion": "success", "id": 77}]}))
         if url.endswith("issues/9/timeline"):
-            return Done(json.dumps([{"event": "review_dismissed", "actor": {"login": "x", "type": "User"},
-                                     "dismissed_review": {"review_id": 1, "state": "changes_requested"}}]))
+            return Done(
+                json.dumps(
+                    [
+                        {
+                            "event": "review_dismissed",
+                            "actor": {"login": "x", "type": "User"},
+                            "dismissed_review": {"review_id": 1, "state": "changes_requested"},
+                        }
+                    ]
+                )
+            )
         return Done("[]")
 
     gh = github.GitHub("org/repo", runner)
     facts = gh.pr(9)
-    assert facts["head"] == "h" * 40 and facts["state"] == "OPEN" and facts["checks"] == [
-        {"name": "ci", "conclusion": "SUCCESS"}]
+    assert (
+        facts["head"] == "h" * 40
+        and facts["state"] == "OPEN"
+        and facts["checks"] == [{"name": "ci", "conclusion": "SUCCESS", "id": 77}]
+    )
     assert facts["reviews"][0]["commit"] == "h" * 40 and facts["dismissals"][0]["review_id"] == 1
     gh.merge(9, "h" * 40)
     assert calls[-1][-2:] == ["--match-head-commit", "h" * 40]
@@ -140,7 +202,9 @@ def test_a_failing_gh_call_raises_with_a_short_reason():
 
 def test_a_rest_apps_login_with_the_bot_suffix_matches_the_bare_slug_in_the_policy():
     assert github.actor({"login": "agent-bot[bot]", "type": "Bot"}) == {"login": "agent-bot", "type": "Bot"}
-    assert github.actor({"login": "agent-bot[bot]", "type": "User"})["login"] == "agent-bot[bot]"   # a User is not the App
+    assert (
+        github.actor({"login": "agent-bot[bot]", "type": "User"})["login"] == "agent-bot[bot]"
+    )  # a User is not the App
     assert github.actor(None) == {"login": None, "type": None}
 
 
@@ -148,28 +212,54 @@ def test_the_pull_request_facts_carry_when_the_head_was_pushed():
     def runner(argv):
         url = argv[-1]
         if url.endswith("pulls/9"):
-            return Done(json.dumps({"state": "open", "merged": False, "base": {"ref": "main"}, "head": {"sha": "h" * 40}}))
+            return Done(
+                json.dumps(
+                    {"state": "open", "merged": False, "base": {"ref": "main"}, "head": {"sha": "h" * 40}}
+                )
+            )
         if url.endswith("pulls/9/commits"):
-            return Done(json.dumps([{"commit": {"message": "a", "committer": {"date": "2026-01-01T00:00:00Z"}}},
-                                    {"commit": {"message": "b", "committer": {"date": "2026-01-02T00:00:00Z"}}}]))
+            return Done(
+                json.dumps(
+                    [
+                        {"commit": {"message": "a", "committer": {"date": "2026-01-01T00:00:00Z"}}},
+                        {"commit": {"message": "b", "committer": {"date": "2026-01-02T00:00:00Z"}}},
+                    ]
+                )
+            )
         return Done("[]")
+
     assert github.GitHub("org/repo", runner).pr(9)["head_pushed_at"] == "2026-01-02T00:00:00Z"
 
 
 def test_the_starter_workflows_install_the_tagged_release_unless_told_otherwise(tmp_path):
     init(tmp_path / "a", human="owner-a", reviewer="rev-bot", agents="agent-bot")
-    for name in ("onloop-gate.yml", "onloop-audit.yml"):
+    for name in ("onloop-gate.yml", "onloop-audit.yml", "onloop-preflight.yml"):
         text = (tmp_path / "a" / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert 'pip install "onloop @ git+https://github.com/' in text and f"@v{__version__}" in text
         assert "__INSTALL_SPEC__" not in text
-    init(tmp_path / "b", human="owner-a", reviewer="rev-bot", agents="agent-bot", install_spec="onloop==9.9.9")
+    init(
+        tmp_path / "b", human="owner-a", reviewer="rev-bot", agents="agent-bot", install_spec="onloop==9.9.9"
+    )
     text = (tmp_path / "b" / ".github" / "workflows" / "onloop-audit.yml").read_text(encoding="utf-8")
     assert 'pip install "onloop==9.9.9"' in text
-    assert main(["init", "--dir", str(tmp_path / "c"), "--install-spec", "onloop @ git+https://example.invalid/x@v1"]) == 0
+    assert (
+        main(
+            [
+                "init",
+                "--dir",
+                str(tmp_path / "c"),
+                "--install-spec",
+                "onloop @ git+https://example.invalid/x@v1",
+            ]
+        )
+        == 0
+    )
     assert "example.invalid/x@v1" in (tmp_path / "c" / ".github" / "workflows" / "onloop-gate.yml").read_text(
-        encoding="utf-8")
+        encoding="utf-8"
+    )
 
 
 def test_the_default_install_spec_is_the_package_version():
     from onloop import init
+
     assert init.DEFAULT_INSTALL_SPEC.endswith(f"@v{__version__}")

@@ -23,7 +23,7 @@ dependencies = ["PyYAML>=6"]
 
 [project.optional-dependencies]
 app = ["cryptography>=42"]
-dev = ["pytest>=8", "ruff>=0.5", "cryptography>=42"]
+dev = ["pytest>=8", "ruff==0.17.3", "cryptography>=42"]
 
 [project.scripts]
 onloop = "onloop.cli:main"
@@ -32,10 +32,11 @@ onloop = "onloop.cli:main"
 version = { attr = "onloop.__version__" }
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["onloop*"]
 
 [tool.setuptools.package-data]
-onloop = ["templates/**/*"]
+onloop = ["templates/**/*", "ui/**/*"]  # ui/: the built UI, made at release time (decision 0009)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -46,5 +47,7 @@ line-length = 110
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
+select = ["E", "F", "W", "I", "B", "UP", "PLW1514"]   # PLW1514: every open() and read_text() names its encoding
 ignore = ["E501"]
+preview = true
+explicit-preview-rules = true                   # PLW1514 is a preview rule; this turns on only the preview rules selected by name

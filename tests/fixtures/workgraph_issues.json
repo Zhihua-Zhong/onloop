@@ -1,0 +1,418 @@
+{
+ "repo": "owner-a/example",
+ "pages": [
+  [
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/1",
+    "html_url": "https://github.com/owner-a/example/issues/1",
+    "id": 1001,
+    "number": 1,
+    "title": "Speed up the nightly build",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/topic",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "prio/now",
+      "color": "ededed"
+     },
+     {
+      "id": 3,
+      "name": "role/lead",
+      "color": "ededed"
+     },
+     {
+      "id": 4,
+      "name": "class/expedite",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-02T10:00:00Z",
+    "closed_at": null,
+    "body": "Topic raised by the owner.",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 1,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/2",
+    "html_url": "https://github.com/owner-a/example/issues/2",
+    "id": 1002,
+    "number": 2,
+    "title": "Cache the dependency layer",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/build",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "prio/next",
+      "color": "ededed"
+     },
+     {
+      "id": 3,
+      "name": "role/builder",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-02T09:00:00Z",
+    "closed_at": null,
+    "body": "Parent: #1 (nightly build).\n\nDone when the cache hits.",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/3",
+    "html_url": "https://github.com/owner-a/example/issues/3",
+    "id": 1003,
+    "number": 3,
+    "title": "Split the slow test file",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/build",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "prio/later",
+      "color": "ededed"
+     },
+     {
+      "id": 3,
+      "name": "role/builder",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-01T09:00:00Z",
+    "closed_at": null,
+    "body": "Steps (parent topic #1):\n1. split\n\nBlocked by: #2 and #9.",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 1,
+     "total_blocked_by": 1,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/4",
+    "html_url": "https://github.com/owner-a/example/issues/4",
+    "id": 1004,
+    "number": 4,
+    "title": "Decide whether to buy a bigger runner",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/decision",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "state/waiting-human",
+      "color": "ededed"
+     },
+     {
+      "id": 3,
+      "name": "role/lead",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-01T09:00:00Z",
+    "closed_at": null,
+    "body": "## Why it is the owner's\nMoney.\n\nDefault: no purchase; builds stay slow\nExpires: 2026-03-20 (end of the quarter)",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/5",
+    "html_url": "https://github.com/owner-a/example/issues/5",
+    "id": 1005,
+    "number": 5,
+    "title": "Rewrite the onboarding guide",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/topic",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "role/lead",
+      "color": "ededed"
+     },
+     {
+      "id": 3,
+      "name": "class/background",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-01T09:00:00Z",
+    "closed_at": null,
+    "body": "Topic.",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   }
+  ],
+  [
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/6",
+    "html_url": "https://github.com/owner-a/example/issues/6",
+    "id": 1006,
+    "number": 6,
+    "title": "Old idea nobody wants",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "role/builder",
+      "color": "ededed"
+     }
+    ],
+    "state": "closed",
+    "state_reason": "not_planned",
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-03T00:00:00Z",
+    "closed_at": "2026-03-03T00:00:00Z",
+    "body": "Parent: #5",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/7",
+    "html_url": "https://github.com/owner-a/example/issues/7",
+    "id": 1007,
+    "number": 7,
+    "title": "Draft the first chapter",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "role/writer",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "state/blocked",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-01T09:00:00Z",
+    "closed_at": null,
+    "body": "Parent: #5",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/8",
+    "html_url": "https://github.com/owner-a/example/issues/8",
+    "id": 1008,
+    "number": 8,
+    "title": "Fix the flaky login test",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "kind/fix",
+      "color": "ededed"
+     },
+     {
+      "id": 2,
+      "name": "role/builder",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T12:00:00Z",
+    "updated_at": "2026-03-01T12:00:00Z",
+    "closed_at": null,
+    "body": "Parent: #5 (written before it moved)",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    }
+   },
+   {
+    "url": "https://api.github.com/repos/owner-a/example/issues/9",
+    "html_url": "https://github.com/owner-a/example/pull/9",
+    "id": 1009,
+    "number": 9,
+    "title": "A pull request, not an issue",
+    "user": {
+     "login": "owner-a",
+     "type": "User"
+    },
+    "labels": [
+     {
+      "id": 1,
+      "name": "role/builder",
+      "color": "ededed"
+     }
+    ],
+    "state": "open",
+    "state_reason": null,
+    "created_at": "2026-03-01T09:00:00Z",
+    "updated_at": "2026-03-01T09:00:00Z",
+    "closed_at": null,
+    "body": "Parent: #1",
+    "comments": 0,
+    "sub_issues_summary": {
+     "total": 0,
+     "completed": 0,
+     "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+     "blocked_by": 0,
+     "total_blocked_by": 0,
+     "blocking": 0,
+     "total_blocking": 0
+    },
+    "pull_request": {
+     "url": "https://api.github.com/repos/owner-a/example/pulls/9",
+     "html_url": "https://github.com/owner-a/example/pull/9"
+    }
+   }
+  ]
+ ],
+ "sub_issues": {
+  "1": [
+   {
+    "number": 8,
+    "title": "Fix the flaky login test"
+   }
+  ]
+ },
+ "blocked_by": {
+  "3": [
+   {
+    "number": 2,
+    "title": "Cache the dependency layer"
+   }
+  ]
+ }
+}

@@ -122,7 +122,7 @@ telemetry.
 ## How do I know the checkers work?
 
 Run `onloop selftest`. Each checker (the classifier, the gate, the audit, the identity guard, CODEOWNERS, the ledger,
-the watchdog) is given cases it must catch, such as a loosened policy, a stale-head approval, a merge by the wrong
+the watchdog, the detectors) is given cases it must catch, such as a loosened policy, a stale-head approval, a merge by the wrong
 identity or a rewritten changelog, and the command fails if any is let through. Run it in CI. If you write a checker
 of your own, give it a self-test that proves it bites.
 

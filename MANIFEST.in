@@ -1,1 +1,2 @@
 recursive-include onloop/templates *
+recursive-include src/onloop/ui *

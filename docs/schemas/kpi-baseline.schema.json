@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://onloop.invalid/schemas/kpi-baseline.schema.json",
+  "title": "onloop KPI baseline",
+  "description": "A team's own weekly aggregates, computed by the team itself with the fixed split method and imported with `onloop kpi baseline import FILE.json`. Counts only: no messages, logs or transcripts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "split_method", "weeks"],
+  "properties": {
+    "schema": { "const": "onloop.kpi.baseline/1" },
+    "split_method": {
+      "description": "How each message to the coordinator was split. fixed-origin-v1: mechanical when a timer, a detector or a relay sent it; judgment when a person or an ask did.",
+      "enum": ["fixed-origin-v1"]
+    },
+    "weeks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["week", "coordinator_messages", "asks_to_human"],
+        "properties": {
+          "week": {
+            "description": "The ISO week, Monday to Sunday, as 2026-W47.",
+            "type": "string",
+            "pattern": "^\\d{4}-W(0[1-9]|[1-4]\\d|5[0-3])$"
+          },
+          "coordinator_messages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mechanical", "judgment"],
+            "properties": {
+              "mechanical": { "type": "integer", "minimum": 0 },
+              "judgment": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "asks_to_human": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["count", "wait_s_total"],
+            "properties": {
+              "count": { "type": "integer", "minimum": 0 },
+              "wait_s_total": { "description": "The sum of every ask's wait, in seconds.", "type": "integer", "minimum": 0 },
+              "wait_s_max": { "description": "The longest wait, in seconds.", "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

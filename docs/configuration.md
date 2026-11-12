@@ -1,6 +1,7 @@
 # Configuration reference
 
-onloop reads two files from the root of the repository: `onloop.yaml` (the policy) and `ledger.yaml` (the ledger).
+onloop reads two files from the root of the repository: `onloop.yaml` (the policy) and `ledger.yaml` (the people's work queue,
+which the `onloop ledger` commands read; not the overlay ledger, `ledger.db`).
 Both are YAML and are parsed with a safe YAML parser. `onloop policy check` and `onloop ledger check` report every problem
 as a plain sentence and exit 1 if there is any.
 
@@ -31,6 +32,9 @@ A mapping from a role name to a mapping of settings. At least one role is requir
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `roles.<name>.charter` | string | none | Path of the role's charter. Documentation only; onloop does not read it. |
+| `roles.<name>.leads` | list of role names | `[]` | The roles this one coordinates. The stop anchor asks whether each has a next item. |
+| `roles.<name>.anchor` | `session` or `every_message` | `session` | `every_message` adds a short anchor before each incoming message (for coordinating roles). Not authority: changing it needs no approval. |
+| `roles.<name>.kpis` | list of names, or mapping of name to target | `[]` | The measures the full anchor shows this role. Not authority. |
 | `roles.<name>.codeowner` | string | none | The CODEOWNERS handle (`@user` or `@org/team`) for paths this role owns. Without it, the role's paths get no CODEOWNERS line. |
 
 Role names are matched case-insensitively against the authoring role in a pull request title (`[Builder]` and
@@ -106,6 +110,49 @@ Used only by `onloop as-app`. Keys are the identities `agents` and `reviewer`.
 
 The IDs are not secrets. The key never appears in the file, only the name of the variable that points to it.
 
+### slots and automation
+
+`slots:` names the scarce things one holder uses at a time; `automation:` holds the settings the watchdog and the pre-flight read.
+Every field of both, its default, and what counts as a loosening is in [automation.md](automation.md). A loosening of
+either block is classified `authority_widening`.
+
+### enforce
+
+Optional. Turns the two warnings pre-flight gives into gate refusals. With no `enforce:` block both stay warnings and the
+gate decides exactly as it did before.
+
+| Field | Values | Default | Meaning | Loosening |
+|---|---|---|---|---|
+| `line_endings` | `warn` or `refuse` | `warn` | `refuse` adds gate code `P004`: the change adds more lines ending in a carriage return than it removes (read from `git diff`, not from the host). A file that is merely touched, or whose CRLF lines are rewritten as CRLF, is not refused. The count is net per file, so one edit that removes a CRLF line and, elsewhere in the same file, adds a bare CR line nets to zero and is not found (a known limit). If the diff cannot be read, the gate refuses. | `refuse` to `warn`, or removing the field |
+| `uncovered_paths` | `warn` or `refuse` | `warn` | `refuse` adds gate code `P005`: a changed path no `paths:` entry matches. | `refuse` to `warn`, or removing the field |
+
+Both codes are form refusals, so pre-flight reports them as problems (not warnings) and the audit judges a past merge by
+the same table.
+
+### workbench
+
+The workbench was removed (decision 0009). The block is still accepted and checked, so an existing policy
+loads, and the classifier still flags a change that loosens it. Only `indent_sensitive` is still read.
+
+| Field | Type | Default | Meaning | Loosening |
+|---|---|---|---|---|
+| `indent_sensitive` | list of extensions or file names | `.py .yaml .yml .md .mk Makefile` | Files where an indentation-only push counts as substantive in the GitHub ingest. | dropping an entry |
+| `stale_days`, `allowed_origins`, `human_roles` | as before | | Accepted, not read. | as before |
+
+### post_merge
+
+The convention for a step that must happen after a merge (publish a package, run a migration). Read by onloopd's
+GitHub ingest when a pull request is merged. Each line of the pull request's body that the pattern matches becomes a
+follow-up item owned by the named role, which needs evidence; the pull request stays blocked, waiting on that role
+with reason `missing_evidence`, until every follow-up has its evidence (`onloop item evidence <id> <ref>`).
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `pattern` | regular expression | `^Post-merge:\s*(?P<role>[a-z][a-z0-9_-]{0,39}):\s*(?P<step>\S.*?)\s*$` | Matched against each line of the body. It must name the groups `role` and `step`. Point it at a section of your pull request template to use that instead. |
+
+With the default, a body line `Post-merge: operator: publish the package to the registry` makes one follow-up for
+`operator`. At most 20 steps are read from one body.
+
 ### Complete example
 
 ```yaml
@@ -146,7 +193,7 @@ apps:
   reviewer: {app_id: 333333, installation_id: 444444, slug: rev-bot,   key_env: ONLOOP_REVIEWER_KEY}
 ```
 
-## ledger.yaml
+## ledger.yaml: the people's work queue
 
 `onloop ledger check` validates the file. Passing `--policy` (the default is `onloop.yaml`) makes unknown role names a
 problem; if the policy cannot be read, role names are not checked. Every `id` in the file must be unique across
@@ -154,6 +201,7 @@ workstreams, decisions and queue items together.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
+| `north_star` | string | none | One sentence the full anchor opens with. |
 | `focus` | string | required | One sentence: what matters now. |
 | `workstreams` | list | `[]` | What is under way. Fields below. |
 | `decisions` | list | `[]` | Questions waiting for the human. Fields below. |
@@ -182,6 +230,41 @@ workstreams, decisions and queue items together.
 | `status` | `pending` or `decided` | required | A `pending` decision is shown under "Waiting for the human". |
 | `asked` | date | none | When it was put to the human. Not validated. |
 | `recommendation` | string | required while `pending` | The answer you recommend. A pending decision without one is a problem: ask for a yes or no with a default. |
+
+Optional attribution, checked by `onloop ledger check` (a ledger without them is valid):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `decided_by` | a role or the human | Who decided it. A decision the human made is shown in their own record, never in the lead's list. |
+| `decided_on` | date | When. |
+| `evidence` | https link or commit | Where the decision can be checked. |
+
+### deliverables
+
+What can be opened this week. Optional; checked by `onloop ledger check`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | Unique across the whole ledger. |
+| `title` | string | Required. |
+| `owner` | role name | Required. |
+| `state` | `planned`, `building`, `ready` or `blocked` | Required. |
+| `link` | https URL | The live link. A ready deliverable without one is red. |
+| `fallback` | string | What is shown if the live link fails. Required when `ready`. |
+| `due` | date | Sorts the page; overdue and not ready is red. |
+| `verified` | `{on, by, evidence}` | Who looked, when, and where it can be checked. `by` must be a role **other than the owner**. This is a recorded claim, not telemetry: onloop cannot see a person open a page. |
+
+
+### questions
+
+Facts only the human can supply. Optional.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `title` | string | Required. |
+| `status` | `open` or `answered` | Default `open`. |
+| `asked` | date | The inbox shows the age. |
+| `why_it_matters` | string | Free text. |
 
 ### queues
 
@@ -212,10 +295,104 @@ queue item that has a `since` date and is in a state that has a limit. Workstrea
 `blocked` and `done`; queue item states are `todo`, `doing`, `blocked` and `done`. So by default only `blocked`
 workstreams and `doing` or `blocked` queue items are watched; add `active: 14` to watch active workstreams.
 
+## onloopd.yaml: what onloopd watches
+
+onloopd's own file, next to the ledger (`.onloop/onloopd.yaml`), or named with `onloop daemon run --config FILE`. It is
+checked whole when onloopd starts: any problem is reported as a sentence and onloopd does not start. An unknown key is
+a problem, so a typo cannot silently turn a check off.
+
+### port
+
+Optional. onloopd's port on the loopback address, a whole number from 1024 to 65535. The default is 8790; `onloop
+daemon run --port N` overrides both. If another program holds the port, onloopd does not start and says which port
+and how to choose another; it never moves to a different port by itself, because the hooks and the jobs post to this
+one.
+
+### schedules
+
+The scheduled jobs onloopd expects to hear from. Each is declared in the ledger when onloopd starts (again only when
+its settings change, keeping its results).
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | string | required | Lowercase letters, digits, `.`, `_` or `-`, at most 64. The id in the job's ping URL. |
+| `name` | string | the id | A name for people, and what a Healthchecks webhook may name the check by. |
+| `period` | duration | required | How often the job runs: a number and a unit (`s`, `m`, `h`, `d`, `w`), as in `15m` or `1h30m`. At least `1m`. |
+| `grace` | duration | `1h` | How late a run may be before it counts as missed. |
+| `owner` | role name | required | The role an alert about the job goes to. |
+
+A job reports its runs in one of two ways, both with the token in `onloopd.token` as `Authorization: Bearer <token>`
+and a JSON object as the body (`{}` at least):
+
+- `POST /sources/schedules/<id>/ping`, `/fail`, `/start` or `/<exit code>` (0 is a success), with an optional
+  `{"log": "..."}`. Send the **last** 10,000 bytes of the job's log: onloopd keeps 10,000 bytes, and Healthchecks
+  keeps only the first 10,000 bytes of a ping body, so the tail is what both keep;
+- `POST /sources/healthchecks`, a Healthchecks webhook whose body is set to
+  `{"check": "$NAME", "status": "$STATUS", "now": "$NOW"}`. `$NOW` is the check's due time, not the time it was
+  sent; onloopd keeps it as such and stamps its own receive time.
+
+After a sleep or an outage, results arrive in bursts. A result that repeats the schedule's last status within a
+quarter of its period (at least 15 s, at most 15 min) is answered and not logged again; a `start`, or a change of
+status, always counts.
+
+A result for a schedule that is not declared is refused with 404.
+
+### monitors
+
+Optional. What a turn's `outcome: continue ... waker=monitor:<id>` names. On every tick onloopd probes each waker that
+something waits on; a monitor is alive while its URL answers 2xx within 2 s. A `pid:` waker is alive while that
+process runs, and a `cron:` waker while the schedule of that id is declared above and is not overdue (its last
+success, plus its period and grace). A dead waker is one alert naming every item that waits on it.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | string | required | Lowercase letters, digits, `.`, `_` or `-`, at most 64. |
+| `url` | URL | required | `http` or `https` on the loopback address (`localhost`, or a loopback IP address); any other is refused. |
+
+### github
+
+Optional. The repository onloopd reads into the ledger on its tick, by GETs only (`gh api`, with the `gh` login of
+the user onloopd runs as). It gives the same events under the same ids as `onloop intake`, so the two can run side by
+side: an event already imported from `onloop.db` is not logged again.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `repo` | `owner/name` | required | The repository. |
+| `base` | branch name | `main` | The base branch whose tip is followed. |
+| `every` | duration | `1m` | How often it reads; at least `30s`. An unchanged list costs no rate limit (a conditional request). |
+| `workdir` | path | none | A clone to take patch ids in, so a push that only merges the base is not substantive. Without one, every push counts as substantive (fail closed). |
+| `policy` | path | none | The `onloop.yaml` whose required checks and identities the read uses. onloopd does not start if it does not load. |
+
+### heartbeat_schedule
+
+Optional. The id of one of the schedules above that is onloop's own heartbeat: a job outside onloopd pings it, so
+the schedule detector sees onloopd going quiet (the dead-man switch, decision 0008). onloopd logs it as a `config.set`
+event (source `config`), and the Now view's health card shows that schedule's state. Without it, the card says
+"dead-man not configured", a neutral note, never OK. A name that is not a declared schedule stops onloopd at start.
+
+```yaml
+schedules:
+  - id: nightly-backup
+    name: Nightly backup
+    period: 1d
+    grace: 1h
+    owner: ops
+  - id: onloop-heartbeat
+    period: 1m
+    owner: ops
+heartbeat_schedule: onloop-heartbeat
+monitors:
+  - id: build-watch
+    url: http://localhost:9000/health
+github:
+  repo: example-org/example-repo
+  every: 1m
+```
+
 ## Command reference
 
-Every command accepts `--help`. `--policy PATH` (default `onloop.yaml`) is accepted by every command except `init`
-and `selftest`. Commands that talk to GitHub accept `--repo OWNER/NAME`; the default is `$GITHUB_REPOSITORY`, else
+Every command accepts `--help`. `--policy PATH` (default `onloop.yaml`) is accepted by every command that reads the
+policy. Commands that talk to GitHub accept `--repo OWNER/NAME`; the default is `$GITHUB_REPOSITORY`, else
 the repository `gh` finds from the current directory. They run `gh`, so `gh` must be installed and authenticated.
 
 | Command | Flags | Exit code |
@@ -232,8 +409,30 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop ledger render` | `--file`, `--policy`, `--html` | 0 |
 | `onloop ledger next` | `--file`, `--policy`, `--role R` (required) | 0 an item, 1 empty queue |
 | `onloop watchdog` | `--file`, `--no-github`, `--repo` | 0 nothing stuck, 1 findings |
-| `onloop dashboard` | `--out DIR` (required), `--file`, `--github`, `--base`, `--since`, `--limit N` (default 15), `--title`, `--repo` | 0 |
-| `onloop demo` | `--out DIR` (required), `--example DIR` (default `examples/minimal`) | 0, 2 no example |
+| `onloop events` | `--ledger FILE` (read-only), `--kind`, `--subject`, `--source`, `--actor`, `--since TIME` and `--until TIME` (the ledger's own time), `--after SEQ`, `--limit N` (up to 500), `--json`: the ledger's events, oldest first, with the filters `/api/events` takes | 0, 1 a filter that is not valid or no ledger |
+| `onloop preflight N` | `--post`, `--json`, `--repo` | 0 |
+| `onloop slot` | `need`, `request`, `wait`, `grant`, `renew`, `release`, `status`; see [automation.md](automation.md) | `wait`: 0 granted, 3 expired, 4 timed out |
+| `onloop anchor` | `--role R` (required), `--kind full\|short\|hardstop\|stop` (default `full`), `--ledger` | 0, 2 unknown role |
+| `onloop hooks` | `--role R` (required), `--ledger`, `--command` | 0 (prints the hooks configuration, writes nothing), 2 |
+| `onloop liveness record` | `--event E` (required), `--dir` (default `$ONLOOP_LIVENESS_DIR`, else `./liveness`), `--only-under ROOT` (repeatable): read a hook payload on stdin and rewrite that session's record. See [design/liveness-and-authority.md](design/liveness-and-authority.md) | always 0: it never fails a session |
+| `onloop kpi` | `--ledger FILE` (read-only), `--since`, `--until`, `--policy`, `--json`: lead time, idle time with work waiting and reverts, each with its definition, counted from the overlay ledger's events | 0, 1 |
+| `onloop overlay import` | `--ledger FILE` (default `$ONLOOP_LEDGER`, else `.onloop/ledger.db`), `--store FILE` (the legacy `onloop.db`), `--workgraph FILE` (the legacy work-graph store); at least one of the last two. Read-only on the legacy stores, by cursor, idempotent. The upgrade path from an install that used them; run it once | 0, 1 a store could not be read, 2 nothing named or a ledger error |
+| `onloop overlay replay` | `--ledger FILE`, `--check` (rebuild into a scratch copy and compare, leaving the ledger unchanged). Prints whether the projections are byte-identical, with their sha256 | 0 identical, 1 different, 2 a ledger error |
+| `onloop overlay status` | `--ledger FILE` | 0, 2 no ledger |
+| `onloop daemon run` | `--ledger FILE`, `--port N` (default: `port` in onloopd.yaml, else 8790; 0 picks a free one; a port in use stops it with an error naming the port and this override, never a fallback to another port), `--host` (the loopback address; any other is refused), `--tick SECONDS` (default 10), `--config FILE` (default: `onloopd.yaml` next to the ledger, if there is one). Runs onloopd in the foreground and serves the UI at `http://localhost:<port>` ([ui.md](ui.md)). See [decision 0008](decisions/0008-resident-service-and-dead-man-switch.md) | 0 stopped cleanly, 2 refused (another host, already running on this ledger, or an `onloopd.yaml` with a problem) |
+| `onloop ingest github --once` | `--repo owner/name` (required; any repository the `gh` login can read), `--base` (default `main`), `--workdir` (a clone for patch ids), `--policy`, `--ledger FILE`: one read of the repository into the ledger, as onloopd's tick does. It reads only: REST GETs, plus the GraphQL query for review threads, never a mutation, and never pushes or writes to the remote | 0, 1 the read failed (nothing written), 2 a bad repository or branch |
+| `onloop kpi weekly` | `--coordinator ROLE` (default `lead`), `--json`, `--ledger FILE`: per ISO week, the asks to the human (every wait on the human, with its wait: open ones to now) and the messages onloop delivered to the coordinator, split into mechanical (timer, detector, relay), judgment (human, ask) and unclassified; beside it, the imported baseline for that week | 0 |
+| `onloop kpi baseline import` | `FILE.json`, `--ledger FILE`: import a team's own weekly aggregates. The shape is [schemas/kpi-baseline.schema.json](schemas/kpi-baseline.schema.json), with an [example](schemas/kpi-baseline.example.json); the file is checked whole and refused with every problem listed. Counts only: onloop never reads a team's logs or transcripts. Importing the same file again adds nothing; a week imported again with other numbers replaces it | 0, 2 not UTF-8 JSON, or not the shape |
+| `onloop report observe` | `--since TIME` (a date or a UTC time), `--until TIME` (default now), `--json`, `--ledger FILE`: each thing onloop would have done (`would.*`), next to what happened then (the role's next turn and how it ended, or the schedule's next success), and each role's turns with how many had no valid outcome. All times are the ledger's. Also `GET /api/report/observe?since=&until=` | 0, 2 a bad time |
+| `onloop role pause` / `resume` | `ROLE`, `--ledger FILE`: pause a role, so every item it owns that is not done waits on the human (reason `paused_by_human`) until it is resumed; its own turns do not end the pause | 0 (also when it already was), 2 a bad role name |
+| `onloop item evidence` | `ID REF`, `--ledger FILE`: attach the evidence (a URL, a pull request, a log line) a follow-up such as `pr#12/post-merge/1` needs. The follow-up is then done, and its pull request too once no follow-up lacks evidence | 0, 1 no such item, no evidence asked, or evidence already attached, 2 a bad reference |
+| `onloop daemon hook` | `--event stop\|session-start\|notification`, `--role ROLE`, `--ledger FILE`, `--timeout SECONDS` (default 2): post the hook's payload (stdin) to onloopd. For a role's Claude Code hook settings | always 0; a failure is a line in `hook-errors.log` next to the ledger |
+| `onloop daemon stop` | `--ledger FILE`, `--timeout SECONDS` (default 30): ask onloopd to stop and wait for its pid to exit | 0 stopped cleanly, 1 not running, 3 stopped by its process tree after the timeout |
+| `onloop daemon status` | `--ledger FILE`: the last heartbeat and the `/health` answer | 0, 1 no heartbeat or no answer |
+| `onloop supervise` | `--config FILE` and `--once` (both required): print the command of every role step that would start now; starts nothing, writes nothing. See [supervisor.md](supervisor.md) | 0, 1 the source could not be read, 2 a configuration error |
+| `onloop step` | `--config FILE`, `--role R`, `--pr N` (all required), `--live` (run the step; refused with a metered credential or an unlogged CLI; default: print it), `--state DIR` (the step's output and `last-step.json`), `--out DIR` (where `result_file` goes). See [supervisor.md](supervisor.md#one-step-from-a-ci-job) | 0 ran ok or not due, 1 the step failed, 2 refused or a configuration error |
+| `onloop digest` | `--config FILE` (required), `--since`, `--hours` (default 24), `--refresh` (read the source instead of the last snapshot), `--mark`, `--json` | 0, 1 no snapshot or the source could not be read |
+| `onloop attention` | `--config FILE` (required), `--notify` (send and log; default print only) | 0 nothing to tell, 1 a rule fired |
 | `onloop selftest` | | 0 every checker bites, 1 one does not |
 
 Notes:

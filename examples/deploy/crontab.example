@@ -1,0 +1,4 @@
+# cron: the outside check, run on a schedule by the host. Set attention.heartbeat_stale.threshold above the interval at
+# which whatever writes heartbeat.json writes it.
+# m h dom mon dow   command
+*/15 * * * *  cd /srv/onloop/instance && /srv/onloop/venv/bin/onloop attention --config supervisor.yaml --notify

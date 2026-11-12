@@ -1,0 +1,32 @@
+@import "@xyflow/react/dist/style.css";
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { @apply bg-bg font-sans text-fg antialiased; margin: 0; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid hsl(var(--accent)); outline-offset: 2px; }
+}
+
+/* React Flow reads its own variables; point them at the tokens so the canvas follows a restyle. */
+.react-flow {
+  --xy-background-color: hsl(var(--bg));
+  --xy-edge-stroke-default: hsl(var(--muted) / 0.55);
+  --xy-minimap-background-color-default: hsl(var(--surface));
+  --xy-minimap-mask-background-color-default: hsl(var(--bg) / 0.7);
+  --xy-controls-button-background-color-default: hsl(var(--surface));
+  --xy-controls-button-color-default: hsl(var(--fg));
+  --xy-controls-button-border-color-default: hsl(var(--line));
+  --xy-attribution-background-color-default: transparent;
+}
+.react-flow__attribution { display: none; }
+
+/* The lines from a waiting card to what it waits on: amber to the human, red to the constraint, neutral otherwise. */
+.react-flow__edge.edge-wait-human path { stroke: hsl(var(--state-human)); stroke-dasharray: 2 4; }
+.react-flow__edge.edge-wait-constraint path { stroke: hsl(var(--state-blocked)); }
+.react-flow__edge.edge-wait path { stroke: hsl(var(--muted) / 0.6); stroke-dasharray: 2 4; }
+.react-flow__edge.edge-wait-human .react-flow__arrowhead polyline { stroke: hsl(var(--state-human)); fill: hsl(var(--state-human)); }

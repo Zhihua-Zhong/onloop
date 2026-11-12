@@ -1,4 +1,5 @@
 """After the merge: the clone must fetch the merge GitHub made before it checks or reverts anything."""
+
 import subprocess
 
 import pytest
@@ -17,6 +18,7 @@ def sh(cwd, *args):
 
 # -- with fakes ---------------------------------------------------------------------------------------------------
 
+
 class FetchBreaksAfterTheMerge(FakeGit):
     """The first fetch (the pull request head) works; the one after the merge does not."""
 
@@ -26,7 +28,9 @@ class FetchBreaksAfterTheMerge(FakeGit):
         return super()._run(*args)
 
 
-def _world_with(raw, git_class=FakeGit, **facts_over):
+def _world_with(raw, git_class=FakeGit, post_merge_checks=True, **facts_over):
+    if post_merge_checks:
+        raw = {**raw, "post_merge_checks": [{"name": "smoke", "run": "true"}]}
     git, client = _world(raw, ["src/a.py"], **facts_over)
     if git_class is not FakeGit:
         other = git_class(git.commits, git.changed, git.order)
@@ -40,7 +44,17 @@ def test_the_merge_is_fetched_before_the_post_merge_checks_run(raw):
     seen = []
     code, _ = gate.run(7, client, git, post_merge=lambda p, sha: seen.append(sha) or [])
     assert code == 0 and seen == ["m" * 40]
-    assert [c for c in git.calls if c[0] == "fetch"][-1] == ("fetch", "origin", "main")       # after the merge
+    assert [c for c in git.calls if c[0] == "fetch"][-1] == ("fetch", "origin", "main")  # after the merge
+
+
+def test_with_no_post_merge_checks_the_merge_is_not_fetched_at_all(raw):
+    git, client = _world_with(raw, post_merge_checks=False, merge_sha=None)
+    ran = []
+    code, notes = gate.run(7, client, git, post_merge=lambda p, sha: ran.append(sha) or ["x"])
+    assert code == 0 and ran == [] and notes == ["merged #7 at " + "a" * 7]
+    assert (
+        len([c for c in git.calls if c[0] == "fetch"]) == 1
+    )  # only the pull request's head, before the merge
 
 
 def test_no_merge_commit_means_nothing_is_checked_or_reverted(raw):
@@ -63,6 +77,7 @@ def test_a_merge_still_absent_after_the_fetch_is_not_reverted_blind(raw):
     class MergeNeverArrives(FakeGit):
         def has_commit(self, sha):
             return sha != "m" * 40
+
     git, client = _world_with(raw, MergeNeverArrives)
     code, notes = gate.run(7, client, git, post_merge=lambda p, sha: ["x"])
     assert code == 3 and "not available locally" in notes[-1]
@@ -112,22 +127,39 @@ def merge_world(tmp_path, post_merge_command):
     sh(b, "push", "-q", "origin", "HEAD:refs/pull/7/head")
     sh(b, "checkout", "-q", "main")
     a = tmp_path / "operator"
-    sh(tmp_path, "clone", "-q", str(origin), str(a))                       # cloned BEFORE the merge exists
+    sh(tmp_path, "clone", "-q", str(origin), str(a))  # cloned BEFORE the merge exists
     sh(a, "config", "user.email", "tester")
     sh(a, "config", "user.name", "t")
 
     class Hub(FakeGitHub):
-        def merge(self, number, head_sha):                                 # GitHub makes the merge, somewhere else
+        def merge(self, number, head_sha):  # GitHub makes the merge, somewhere else
             sh(b, "merge", "-q", "--no-ff", "-m", "Merge pull request #7", "feature")
             sh(b, "push", "-q", "origin", "HEAD:main")
             self.prs[7]["merge_sha"] = sh(b, "rev-parse", "HEAD")
             self.merged.append((number, head_sha))
 
-    facts = {"number": 7, "state": "OPEN", "draft": False, "base": "main", "head": head, "title": "[builder] change",
-             "body": "", "commit_messages": [], "dismissals": [], "merge_sha": None,
-             "reviews": [{"id": 1, "author": {"login": "rev-bot", "type": "Bot"}, "state": "APPROVED",
-                          "commit": head, "submitted_at": "2026-01-01T00:00:00Z"}],
-             "checks": [{"name": "ci", "conclusion": "SUCCESS"}]}
+    facts = {
+        "number": 7,
+        "state": "OPEN",
+        "draft": False,
+        "base": "main",
+        "head": head,
+        "title": "[builder] change",
+        "body": "",
+        "commit_messages": [],
+        "dismissals": [],
+        "merge_sha": None,
+        "reviews": [
+            {
+                "id": 1,
+                "author": {"login": "rev-bot", "type": "Bot"},
+                "state": "APPROVED",
+                "commit": head,
+                "submitted_at": "2026-01-01T00:00:00Z",
+            }
+        ],
+        "checks": [{"name": "ci", "conclusion": "SUCCESS"}],
+    }
     return origin, a, Hub({7: facts}), before
 
 
@@ -140,6 +172,7 @@ def test_post_merge_checks_see_a_merge_that_was_pushed_from_another_clone(tmp_pa
     def post_merge(base, merge_sha):
         seen["sha"] = merge_sha
         return gate.run_post_merge_checks(git, base, merge_sha)
+
     code, notes = gate.run(7, hub, git, post_merge=post_merge)
     assert code == 0, notes
     assert seen["sha"] != before_merge and seen["sha"] == sh(origin, "rev-parse", "main")
@@ -149,7 +182,44 @@ def test_post_merge_checks_see_a_merge_that_was_pushed_from_another_clone(tmp_pa
 def test_a_failing_post_merge_check_reverts_a_merge_made_elsewhere(tmp_path):
     origin, a, hub, before = merge_world(tmp_path, "exit 1")
     git = Git(cwd=str(a))
-    code, notes = gate.run(7, hub, git, post_merge=lambda base, sha: gate.run_post_merge_checks(git, base, sha))
+    code, notes = gate.run(
+        7, hub, git, post_merge=lambda base, sha: gate.run_post_merge_checks(git, base, sha)
+    )
     assert code == 2, notes
     assert sh(origin, "rev-parse", "main^{tree}") == sh(origin, "rev-parse", f"{before}^{{tree}}")
     assert "Gate-Revert: #7 " in sh(origin, "log", "-1", "--format=%B", "main")
+
+
+# -- standalone `onloop gate` on an ordinary clone (0.1/0.2 users, no runner) -----------------------------------------
+
+
+def test_standalone_gate_on_an_ordinary_clone_fetches_decides_and_merges(tmp_path):
+    origin, a, hub, before = merge_world(tmp_path, "exit 0")
+    assert sh(a, "rev-parse", "--is-bare-repository") == "false"  # a clone with a working tree
+    refs_before = set(sh(a, "for-each-ref", "--format=%(refname)").split())
+    branch, tree_before = sh(a, "rev-parse", "--abbrev-ref", "HEAD"), sh(a, "status", "--porcelain")
+    git = Git(cwd=str(a))
+    code, notes = gate.run(
+        7, hub, git, post_merge=lambda base, sha: gate.run_post_merge_checks(git, base, sha)
+    )
+    assert code == 0, notes
+    assert hub.merged == [(7, hub.prs[7]["head"])]
+    new_refs = set(sh(a, "for-each-ref", "--format=%(refname)").split()) - refs_before
+    assert new_refs == {"refs/onloop/base", "refs/onloop/pr/7"}  # the read side lives in onloop's namespace
+    assert (
+        sh(a, "rev-parse", "--abbrev-ref", "HEAD") == branch and sh(a, "status", "--porcelain") == tree_before
+    )
+
+
+def test_a_revert_pushes_to_the_real_remote_base_branch_not_the_onloop_namespace(tmp_path):
+    origin, a, hub, before = merge_world(tmp_path, "exit 1")
+    git = Git(cwd=str(a))
+    code, notes = gate.run(
+        7, hub, git, post_merge=lambda base, sha: gate.run_post_merge_checks(git, base, sha)
+    )
+    assert code == 2, notes
+    assert sh(origin, "rev-parse", "refs/heads/main^{tree}") == sh(origin, "rev-parse", f"{before}^{{tree}}")
+    assert "Gate-Revert: #7 " in sh(origin, "log", "-1", "--format=%B", "refs/heads/main")
+    assert (
+        sh(origin, "for-each-ref", "--format=%(refname)", "refs/onloop") == ""
+    )  # nothing of ours was pushed

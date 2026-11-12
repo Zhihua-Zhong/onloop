@@ -1,0 +1,1085 @@
+# onloop's architecture as one C4 model: the single source of truth for every diagram in docs/architecture/.
+#
+# Edit this file, then run `python tools/diagrams/c4.py --export` (see docs/architecture.md, "Diagrams").
+# Vocabulary (C4, https://c4model.com): person, software_system, container, component, deployment_node,
+# infrastructure_node, container_instance. Every element carries name, type, technology, a one-line description,
+# owner (onloop | team | external) and status (built: on main | r2: on the R2 branch, not yet on main | planned).
+# Components carry their code path. Views list their elements with hand-placed coordinates (x, y, w, h, in px);
+# nothing is laid out automatically except the code view, which is generated from the import graph.
+# Lines that name the loopback address carry the confidentiality scan's opt-out marker.
+
+meta:
+  system: onloop
+  as_of: 2026-11-09
+  sources:
+    - "docs/decisions/: 0004 onloop hosts the conversation, 0005 package layout, 0006 overlay ledger, 0007 disposition contract, 0008 resident service and dead-man switch, 0009 one read-only UI"
+    - docs/architecture.md
+
+# Facts that live in the code. `value` is what the diagrams show; `file` and `name` say where the code defines it.
+# `c4.py` prints a note when the work tree's code differs, and `--params-from-code` shows the code's value instead.
+# Regenerated on feat/r3-ui (R3, 2026-11-09): the UI is built; the legacy stores, the workbench, the work graph's
+# panel, the dashboard and the demo are gone. Every parameter matched the code.
+params:
+  onloopd_port: {value: 8790, file: src/onloop/daemon/server.py, name: DEFAULT_PORT}
+  ledger_schema: {value: 5, file: src/onloop/overlay/schema.py, name: MIGRATIONS, len: true}
+
+elements:
+  # ------------------------------------------------------------------------------------------------ people, systems
+  - id: lead
+    name: Project lead
+    type: person
+    technology: Human, in a browser on the workstation
+    description: Sets goals, reads what is stuck, answers typed asks and approves one-way doors with a passkey.
+    owner: team
+    status: built
+
+  - id: onloop
+    name: onloop
+    type: software_system
+    technology: Python 3.12, SQLite, Claude Code CLI
+    description: >-
+      Human-on-the-loop overlay for a team of AI roles: turns events from the team's own tools into owned items,
+      waits and wakes, and names the constraint.
+    owner: onloop
+    status: built
+    facts: [one Windows workstation · loopback only · subscription only, no API key]
+
+  - id: roles
+    name: The team's AI roles
+    type: software_system
+    technology: Claude Code sessions, headless
+    description: >-
+      Builder, reviewer, lead and other roles. Each is a session id that onloop resumes; every turn ends with an
+      outcome line (decision 0007).
+    owner: team
+    status: built
+
+  - id: github
+    name: GitHub
+    type: software_system
+    technology: SaaS, REST API
+    description: "Repositories, pull requests, reviews, checks and rulesets: the record of the work."
+    owner: external
+    status: built
+
+  - id: anthropic
+    name: Anthropic
+    type: software_system
+    technology: Claude subscription, reached only through the Claude Code CLI
+    description: Model inference for every role turn. Subscription login; no API key is ever set.
+    owner: external
+    status: built
+
+  - id: jobs
+    name: Team's scheduled jobs
+    type: software_system
+    technology: Any scheduler, curl
+    description: Nightly checks, rebuilds and backups. Each run pings its start, success or failure with its log tail.
+    owner: team
+    status: built
+
+  - id: notify
+    name: Off-machine notification
+    type: software_system
+    technology: "E-mail, push or chat: the team's choice"
+    description: Receives the dead-man alert when onloopd and its watchdog are both gone. Never routed through onloopd.
+    owner: external
+    status: planned
+
+  # ------------------------------------------------------------------------------------------------ containers
+  - id: onloopd
+    name: onloopd
+    type: container
+    parent: onloop
+    technology: Python 3.12, stdlib HTTP server
+    description: >-
+      The resident service. Ticks every 10 s: ingests GitHub, probes wakers, runs the detectors, writes its
+      heartbeat. Serves the UI, read-only JSON and SSE; takes writes only on /hooks and /sources with a token.
+    owner: onloop
+    status: built
+    port: "127.0.0.1:${onloopd_port}"  # scan:allow
+    interval: tick 10 s · GitHub every 1 min
+    facts: ["127.0.0.1:${onloopd_port} · REST + SSE · tick 10 s · GitHub every 1 min"]  # scan:allow
+
+  - id: ledger
+    name: ledger.db
+    type: container
+    parent: onloop
+    shape: database
+    technology: SQLite, WAL
+    description: >-
+      Append-only event log and its projections: items, waits, resources, leases, roles, deliveries, schedules,
+      turns. Replay rebuilds them byte for byte.
+    owner: onloop
+    status: built
+    facts: [".onloop/ledger.db · schema v${ledger_schema}", "sources incl. config, gate · wait reasons incl. blocked, handoff"]
+
+  - id: ui
+    name: onloop UI
+    type: container
+    parent: onloop
+    technology: React 18, React Flow + ELK, built by Vite; in the browser
+    description: >-
+      Now, Flow, Team, Schedules and Audit over the ledger API. Read-only: an action is shown as the command to copy.
+      Served by onloopd (decision 0009).
+    owner: onloop
+    status: built
+    facts: ["http://localhost:${onloopd_port}"]
+
+  - id: approval
+    name: Approval page
+    type: container
+    parent: onloop
+    technology: WebAuthn passkey, Windows Hello
+    description: Signs one decision, bound to a head SHA or a scope hash. Spike passed; not built.
+    owner: onloop
+    status: planned
+    facts: ["http://localhost:${onloopd_port} (an IP literal cannot be a WebAuthn RP id)"]
+
+  - id: claude_proc
+    name: claude -p --resume
+    type: container
+    parent: onloop
+    technology: Claude Code CLI 2.1.223, headless
+    description: >-
+      One process per wake, under onloop's lease. stream-json in and out; --tools and --allowedTools; the result line
+      carries is_error and permission_denials.
+    owner: external
+    status: planned
+    phase: R4
+    facts: [environment scrubbed of CLAUDE* and ANTHROPIC*]
+
+  - id: hooks
+    name: Per-role hooks
+    type: container
+    parent: onloop
+    technology: Claude Code --settings, onloop daemon hook
+    description: Stop, SessionStart and Notification hooks post their payload to onloopd and never fail the session.
+    owner: onloop
+    status: built
+    facts: [exits 0 within 2 s, whatever happens]
+
+  - id: transcripts
+    name: Transcripts
+    type: container
+    parent: onloop
+    shape: database
+    technology: JSONL, one file per session id
+    description: Written by Claude Code; a resume appends. onloop keeps no message text.
+    owner: external
+    status: built
+
+  - id: healthchecks
+    name: Healthchecks
+    type: container
+    parent: onloop
+    technology: Healthchecks v5.0.3, Docker in WSL2
+    description: >-
+      Expects each schedule's pings; goes down at period plus grace and posts a webhook to onloopd and the
+      off-machine channel.
+    owner: external
+    status: planned
+    facts: ["127.0.0.1:8000 · deadline to webhook 1–3 s"]  # scan:allow
+
+  - id: tasksched
+    name: Windows Task Scheduler
+    type: container
+    parent: onloop
+    technology: Windows 11 tasks, current user, no admin
+    description: >-
+      Starts onloopd at logon and every 1 min (an instance already running is skipped). A 5-min watchdog task ends
+      and reruns a hung onloopd.
+    owner: external
+    status: planned
+    facts: [respawn 43–53 s · hang recovery 114 s]
+
+  - id: config
+    name: Team config repository
+    type: container
+    technology: Git repository, YAML, Python plugins
+    description: >-
+      onloop.yaml (roles, resources, policy), onloopd.yaml (schedules, monitors, GitHub) and plugins such as the
+      gate checks.
+    owner: team
+    status: built
+
+  # ------------------------------------------------------------------------------------------------ components (onloopd)
+  - id: server
+    name: HTTP surface
+    type: component
+    parent: onloopd
+    technology: http.server, threads
+    description: >-
+      Loopback only; refuses other Hosts. GET /health and /api/items, waits, leases, constraint, turns, alerts,
+      schedules, roles, events, report/observe; SSE on /api/stream. POST only on /hooks and /sources.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/server.py
+
+  - id: main
+    name: Process and tick
+    type: component
+    parent: onloopd
+    technology: Python, signals, pid file
+    description: >-
+      Runs the server and the tick every 10 s: GitHub, waker probes, detectors, heartbeat. Stops cleanly
+      on a stop file or Ctrl+C.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/main.py
+
+  - id: dconfig
+    name: onloopd.yaml
+    type: component
+    parent: onloopd
+    technology: PyYAML safe_load
+    description: Schedules, monitors and the GitHub repository to watch. Checked whole; an unknown key stops the start.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/config.py
+
+  - id: token
+    name: Write token
+    type: component
+    parent: onloopd
+    technology: secrets, file ACL check
+    description: Drawn at every start, written beside the ledger. Keeps other programs off the write routes; not a boundary against agents.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/token.py
+
+  - id: routes
+    name: Write routes
+    type: component
+    parent: onloopd
+    technology: Python
+    description: Dispatches a POST by path to its handler, under the one writer lock; every event gets the ledger's time.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/routes.py
+
+  - id: hook_receiver
+    name: Hook receiver
+    type: component
+    parent: onloopd
+    technology: Python
+    description: >-
+      /hooks/stop, session-start, notification. A Stop parses the outcome line and records a turn; message text
+      is not stored.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/hook_receiver.py
+
+  - id: sources
+    name: Schedule sources
+    type: component
+    parent: onloopd
+    technology: Python, ScheduleSource interface
+    description: >-
+      /sources/healthchecks (webhook) and /sources/schedules/<id>/ping, fail, start. An undeclared schedule
+      is refused.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/sources.py
+
+  - id: disposition
+    name: Outcome-line parser
+    type: component
+    parent: onloopd
+    technology: Python, pure
+    description: "Reads the last line of a turn, outcome: <value> [key=value ...]; an error names the rule that failed."
+    owner: onloop
+    status: built
+    code: src/onloop/disposition.py
+
+  - id: ingest_github
+    name: GitHub ingest
+    type: component
+    parent: onloopd
+    technology: Python, gh, GETs only
+    description: Intake's polls written to the ledger directly, under the same event ids, so both paths deduplicate.
+    owner: onloop
+    status: built
+    code: src/onloop/ingest/github.py
+
+  - id: intake
+    name: Intake diff
+    type: component
+    parent: onloopd
+    technology: Python, conditional requests
+    description: Snapshot diff of pull requests into events; a 304 costs no rate limit. Reused, not ported.
+    owner: onloop
+    status: built
+    code: src/onloop/intake.py
+
+  - id: detect_core
+    name: Detector tick
+    type: component
+    parent: onloopd
+    technology: Python
+    description: >-
+      Each finding becomes one keyed alert item, opened, updated or closed; logs would.wake, escalate or restart.
+      Acts on nothing until R4.
+    owner: onloop
+    status: built
+    code: src/onloop/detect/core.py
+
+  - id: no_outcome
+    name: Missing-outcome detector
+    type: component
+    parent: onloopd
+    technology: Python
+    description: A role's latest turn without a valid outcome line; one alert per turn.
+    owner: onloop
+    status: built
+    code: src/onloop/detect/no_outcome.py
+
+  - id: wakers
+    name: Waker probes
+    type: component
+    parent: onloopd
+    technology: Python, pid / schedule / loopback URL
+    description: >-
+      Probes each waker that has an open wait: pid alive, schedule not overdue, monitor answers 2xx in 2 s.
+      A dead one opens an alert.
+    owner: onloop
+    status: built
+    code: src/onloop/detect/wakers.py
+
+  - id: schedules_detect
+    name: Schedule detector
+    type: component
+    parent: onloopd
+    technology: Python
+    description: A declared schedule whose last result failed, or with no success within period plus grace.
+    owner: onloop
+    status: built
+    code: src/onloop/detect/schedules.py
+
+  - id: ledger_api
+    name: Ledger
+    type: component
+    parent: onloopd
+    technology: Python, sqlite3, one transaction per append
+    description: Appends an event and applies it to the projections in one transaction; replay; reads the projections.
+    owner: onloop
+    status: built
+    code: src/onloop/overlay/ledger.py
+
+  - id: projections
+    name: Projections
+    type: component
+    parent: onloopd
+    technology: Python, pure
+    description: What each event kind does to the projection tables; times come from the event, never a clock.
+    owner: onloop
+    status: built
+    code: src/onloop/overlay/projections.py
+
+  - id: schema
+    name: Schema and migrations
+    type: component
+    parent: onloopd
+    technology: SQLite DDL, PRAGMA user_version
+    description: The tables and their forward-only migrations; a newer ledger is refused.
+    owner: onloop
+    status: built
+    code: src/onloop/overlay/schema.py
+
+  - id: constraint
+    name: Constraint query
+    type: component
+    parent: onloopd
+    technology: Python, pure
+    description: Groups open waits by what they wait on, direct and downstream; the largest is the constraint.
+    owner: onloop
+    status: built
+    code: src/onloop/overlay/constraint.py
+
+  - id: observe
+    name: Observe report
+    type: component
+    parent: onloopd
+    technology: Python, read-only
+    description: What onloop would have done next to what happened afterwards, for GET /api/report/observe.
+    owner: onloop
+    status: built
+    code: src/onloop/report/observe.py
+
+  - id: ui_host
+    name: UI host
+    type: component
+    parent: onloopd
+    technology: Python, static files, strict CSP
+    description: >-
+      Serves the built UI from package data, GET only, under the same Host check, with a strict Content-Security-Policy
+      (decision 0009). The approval page is planned.
+    owner: onloop
+    status: built
+    code: src/onloop/daemon/ui.py
+
+  - id: conductor
+    name: Conductor
+    type: component
+    parent: onloopd
+    technology: Python
+    description: Turns would.* into deliveries; escalates; reserves gaps. Acts where onloopd now only records.
+    owner: onloop
+    status: planned
+    phase: R4
+    code: not yet created
+
+  - id: sessions
+    name: Sessions
+    type: component
+    parent: onloopd
+    technology: Python, subprocess
+    description: One lease per session id; scrubs the environment, checks the login, counts budgets, reads each result line.
+    owner: onloop
+    status: planned
+    phase: R4
+    code: not yet created
+
+  - id: waker
+    name: A waker
+    type: container
+    technology: A process, a schedule or a monitor URL
+    description: What a continue turn names to wake the role again, such as a background build's pid.
+    owner: team
+    status: built
+
+  # ------------------------------------------------------------------------------------------------ deployment
+  - id: host
+    name: Windows 11 workstation
+    type: deployment_node
+    technology: Windows 11 Pro 10.0.26200, desktop, no battery
+    description: One machine, one OS user. Every listener binds the loopback address; nothing is installed machine-wide.
+    owner: team
+    status: built
+
+  - id: usersession
+    name: Interactive user session
+    type: deployment_node
+    technology: One OS user, Medium integrity, not an administrator
+    description: Every onloop process runs as this user; the tasks use its logon token, so they run while it is logged on.
+    owner: team
+    status: built
+
+  - id: tsnode
+    name: Task Scheduler
+    type: deployment_node
+    technology: Windows Task Scheduler, InteractiveToken, Limited
+    description: Two tasks for the current user, registered without elevation.
+    owner: external
+    status: planned
+
+  - id: task_onloopd
+    name: onloopd task
+    type: infrastructure_node
+    technology: Triggers at logon + every 1 min
+    description: MultipleInstances IgnoreNew, ExecutionTimeLimit PT0S, StartWhenAvailable, battery flags off.
+    owner: onloop
+    status: planned
+    facts: [respawn after an exit 43.0 / 48.9 / 52.9 s · after a kill 52.6 s]
+
+  - id: task_watchdog
+    name: Watchdog task
+    type: infrastructure_node
+    technology: Trigger every 5 min
+    description: Heartbeat older than 30 s → schtasks /End + /Run, then pings /fail with the reason.
+    owner: onloop
+    status: planned
+    facts: [hang to new pid heartbeating 114 s · bound 5.5 min]
+
+  - id: pynode
+    name: pythonw.exe
+    type: deployment_node
+    technology: Python 3.12.10, no console window
+    description: Owner, the logged-on user.
+    owner: external
+    status: built
+
+  - id: i_onloopd
+    name: onloopd
+    type: container_instance
+    instance_of: onloopd
+    technology: Python 3.12
+    description: The resident service; one instance at a time.
+    owner: onloop
+    status: built
+    facts: ["127.0.0.1:${onloopd_port} · tick 10 s · stop by pid", "Host must be 127.0.0.1:${onloopd_port} or localhost:${onloopd_port}"]  # scan:allow
+
+  - id: statenode
+    name: State folder
+    type: deployment_node
+    technology: NTFS folder, .onloop/
+    description: Beside the ledger, onloopd writes onloopd.pid, onloopd.heartbeat.json (every tick), onloopd.token and onloopd.stop.
+    owner: onloop
+    status: built
+
+  - id: i_ledger
+    name: ledger.db
+    type: container_instance
+    instance_of: ledger
+    shape: database
+    technology: SQLite, WAL
+    description: The overlay ledger; onloop's one record, and the only one onloopd serves.
+    owner: onloop
+    status: built
+
+  - id: ccnode
+    name: Claude Code CLI
+    type: deployment_node
+    technology: npm, claude.cmd 2.1.223
+    description: One process per wake (R4).
+    owner: external
+    status: built
+
+  - id: i_claude
+    name: claude -p --resume <id>
+    type: container_instance
+    instance_of: claude_proc
+    technology: stream-json in and out
+    description: First output 0.9 s; a one-line answer in 3.5–4.7 s (Haiku). A second process on the same id forks the session silently.
+    owner: external
+    status: planned
+
+  - id: i_hooks
+    name: onloop daemon hook
+    type: container_instance
+    instance_of: hooks
+    technology: Python, one process per hook event
+    description: Reads the hook's JSON on stdin, posts it with the token, exits 0 within 2 s.
+    owner: onloop
+    status: built
+
+  - id: i_transcripts
+    name: Transcripts
+    type: container_instance
+    instance_of: transcripts
+    shape: database
+    technology: JSONL
+    description: "%USERPROFILE%\\.claude\\projects\\<slug>\\<session id>.jsonl"
+    owner: external
+    status: built
+
+  - id: browser
+    name: Browser
+    type: deployment_node
+    technology: Edge or Chrome
+    description: The project lead's own browser on the same machine.
+    owner: team
+    status: built
+
+  - id: i_ui
+    name: onloop UI
+    type: container_instance
+    instance_of: ui
+    technology: React 18, from the wheel's package data
+    description: Served from http://localhost:${onloopd_port}. The approval page (planned) adds passkey prompts from Windows Hello.
+    owner: onloop
+    status: built
+
+  - id: jobsnode
+    name: Team's job runner
+    type: deployment_node
+    technology: Any scheduler on the host
+    description: Runs the team's scheduled jobs.
+    owner: team
+    status: built
+
+  - id: i_jobs
+    name: Scheduled job
+    type: container_instance
+    instance_of: jobs
+    technology: curl
+    description: Pings /start, then /0 or /fail; sends the tail of its log (Healthchecks keeps the first 10,000 bytes).
+    owner: team
+    status: built
+
+  - id: wsl
+    name: WSL2
+    type: deployment_node
+    technology: WSL 2.7.8, kernel 6.18, NAT mode
+    description: Distros Ubuntu-24.04 and docker-desktop.
+    owner: external
+    status: built
+
+  - id: docker
+    name: Docker Desktop
+    type: deployment_node
+    technology: Docker engine 29.8.0, started at logon
+    description: Shared with other containers; onloop touches only its own container by name and never restarts Docker Desktop.
+    owner: external
+    status: built
+
+  - id: hccontainer
+    name: healthchecks container
+    type: deployment_node
+    technology: "healthchecks/healthchecks:v5.0.3 (sha256:5eb96eb7…479c)"
+    description: About 229 MiB RAM, 0.02 % CPU idle.
+    owner: external
+    status: planned
+
+  - id: i_hc
+    name: Healthchecks
+    type: container_instance
+    instance_of: healthchecks
+    technology: Django, SQLite in a named volume
+    description: Checks with period + grace; webhook on down; second integration for the dead-man alert.
+    owner: external
+    status: planned
+
+  - id: i_github
+    name: GitHub
+    type: container_instance
+    instance_of: github
+    technology: HTTPS 443
+    description: github.com, read by onloopd with GETs and written by the roles' own tools.
+    owner: external
+    status: built
+
+  - id: i_anthropic
+    name: Anthropic
+    type: container_instance
+    instance_of: anthropic
+    technology: HTTPS 443
+    description: Reached only by the Claude Code CLI, with the subscription login.
+    owner: external
+    status: built
+
+  - id: i_notify
+    name: Off-machine channel
+    type: container_instance
+    instance_of: notify
+    technology: SMTP, ntfy or chat
+    description: The team's choice; outside the machine so it outlives it.
+    owner: external
+    status: planned
+
+relationships:
+  # ------------------------------------------------------------------------------------------------ L1
+  - {id: lead_onloop, from: lead, to: onloop, description: "Reads what is stuck, what waits on them and what stalled", technology: "Browser, http://localhost:${onloopd_port}", status: built}
+  - {id: onloop_roles, from: onloop, to: roles, description: Wakes a role with a delivery; one lease per session id, technology: "claude -p --resume, stream-json", status: planned}
+  - {id: roles_onloop, from: roles, to: onloop, description: Report each turn's end and its outcome line, technology: "Claude Code hooks, HTTP POST", status: built}
+  - {id: roles_anthropic, from: roles, to: anthropic, description: Model inference for every turn, technology: "HTTPS, subscription login", status: built}
+  - {id: roles_github, from: roles, to: github, description: Push branches; open and review pull requests, technology: "git, gh", status: built}
+  - {id: onloop_github, from: onloop, to: github, description: Reads pull requests, reviews and checks, technology: "REST via gh, GETs only, every 1 min", status: built}
+  - {id: jobs_onloop, from: jobs, to: onloop, description: Ping each run's start and result, technology: "HTTP, Healthchecks-style pings", status: built}
+  - {id: onloop_notify, from: onloop, to: notify, description: Dead-man alert when onloopd is gone, technology: Healthchecks integration, status: planned}
+  - {id: notify_lead, from: notify, to: lead, description: Alerts the project lead, technology: "E-mail, push or chat", status: planned}
+
+  # ------------------------------------------------------------------------------------------------ L2
+  - {id: lead_ui, from: lead, to: ui, description: Reads the constraint and what waits on them; copies commands, technology: "HTTP, localhost", status: built}
+  - {id: lead_approval, from: lead, to: approval, description: Approves with a PIN, face or fingerprint, technology: "WebAuthn, Windows Hello", status: planned}
+  - {id: ui_onloopd, from: ui, to: onloopd, description: Reads the read models; follows the event stream, technology: "GET /api/*, SSE", status: built}
+  - {id: approval_onloopd, from: approval, to: onloopd, description: Posts the signed decision, technology: "HTTP POST, WebAuthn assertion", status: planned}
+  - {id: config_onloopd, from: onloopd, to: config, description: "Reads onloopd.yaml, onloop.yaml at start", technology: "YAML, fail closed", status: built}
+  - {id: ts_onloopd, from: tasksched, to: onloopd, description: Starts; reruns it if hung, technology: "pythonw.exe, schtasks /End /Run", status: planned}
+  - {id: ts_hc, from: tasksched, to: healthchecks, description: Watchdog ping every 5 min, technology: "HTTP GET /ping/<uuid>", status: planned}
+  - {id: jobs_hc, from: jobs, to: healthchecks, description: "Ping /start, /0, /fail", technology: "HTTP, curl", status: planned}
+  - {id: hc_onloopd, from: healthchecks, to: onloopd, description: Webhook on down and up, technology: "POST /sources/healthchecks", status: planned}
+  - {id: onloopd_hc, from: onloopd, to: healthchecks, description: Dead-man ping every 60 s, technology: HTTP GET, status: planned}
+  - {id: hc_notify, from: healthchecks, to: notify, description: Dead-man alert, technology: "E-mail or push integration", status: planned}
+  - {id: onloopd_ledger, from: onloopd, to: ledger, description: Appends events; reads projections, technology: "sqlite3, WAL", status: built}
+  - {id: onloopd_claude, from: onloopd, to: claude_proc, description: Starts one turn under the lease, technology: "subprocess, stream-json", status: planned}
+  - {id: onloopd_github, from: onloopd, to: github, description: Reads PRs, reviews, checks, technology: "gh api, ETag, every 1 min", status: built}
+  - {id: claude_github, from: claude_proc, to: github, description: Pushes; opens and reviews PRs, technology: "git, gh", status: built}
+  - {id: claude_anthropic, from: claude_proc, to: anthropic, description: Inference, technology: "HTTPS, subscription", status: built}
+  - {id: claude_hooks, from: claude_proc, to: hooks, description: Runs on Stop, SessionStart, Notification, technology: hook JSON on stdin, status: built}
+  - {id: claude_transcripts, from: claude_proc, to: transcripts, description: Appends the turn, technology: JSONL, status: built}
+  - {id: hooks_onloopd, from: hooks, to: onloopd, description: Posts the hook payload, technology: "POST /hooks/*, Bearer token", status: built}
+
+  # ------------------------------------------------------------------------------------------------ L3
+  - {id: c_ui_server, from: ui, to: server, description: Reads; follows SSE, technology: "GET /api/*, SSE", status: built}
+  - {id: c_hooks_server, from: hooks, to: server, description: Posts hook payloads, technology: "POST /hooks/*, Bearer", status: built}
+  - {id: c_hc_server, from: healthchecks, to: server, description: Posts down and up, technology: "POST /sources/healthchecks", status: planned}
+  - {id: c_ts_main, from: tasksched, to: main, description: Starts at logon and every 1 min, technology: pythonw.exe, status: planned}
+  - {id: c_main_server, from: main, to: server, description: Runs the server in a thread, technology: Python call, status: built}
+  - {id: c_main_config, from: main, to: dconfig, description: Loads at start, technology: Python call, status: built}
+  - {id: c_main_token, from: main, to: token, description: Draws a new token, technology: Python call, status: built}
+  - {id: c_main_ingest, from: main, to: ingest_github, description: Every 1 min, technology: Python call, status: built}
+  - {id: c_main_detect, from: main, to: detect_core, description: Every tick, after the probes, technology: Python call, status: built}
+  - {id: c_server_routes, from: server, to: routes, description: Hands over each POST, technology: Writer, status: built}
+  - {id: c_server_uihost, from: server, to: ui_host, description: Serves the bundle, technology: HTTP GET, status: built}
+  - {id: c_server_ledger, from: server, to: ledger_api, description: Reads, own read-only connection, technology: Python call, status: built}
+  - {id: c_routes_hook, from: routes, to: hook_receiver, description: "/hooks/*", technology: Python call, status: built}
+  - {id: c_routes_sources, from: routes, to: sources, description: "/sources/*", technology: Python call, status: built}
+  - {id: c_hook_disp, from: hook_receiver, to: disposition, description: Parses the outcome line, technology: Python call, status: built}
+  - {id: c_hook_ledger, from: hook_receiver, to: ledger_api, description: "Appends hook.* and the turn", technology: Python call, status: built}
+  - {id: c_sources_ledger, from: sources, to: ledger_api, description: Appends schedule.result, technology: Python call, status: built}
+  - {id: c_ingest_intake, from: ingest_github, to: intake, description: "Reuses compute, the diff", technology: Python call, status: built}
+  - {id: c_ingest_github, from: ingest_github, to: github, description: Reads PRs and checks, technology: "gh api, GETs", status: built}
+  - {id: c_ingest_ledger, from: ingest_github, to: ledger_api, description: "Appends pr.* events", technology: Python call, status: built}
+  - {id: c_core_nooutcome, from: detect_core, to: no_outcome, description: Runs, technology: "(ledger, now)", status: built}
+  - {id: c_core_wakers, from: detect_core, to: wakers, description: Runs, technology: "(ledger, now)", status: built}
+  - {id: c_core_schedules, from: detect_core, to: schedules_detect, description: Runs, technology: "(ledger, now)", status: built}
+  - {id: c_core_ledger, from: detect_core, to: ledger_api, description: Opens and closes alerts; logs would.*, technology: Python call, status: built}
+  - {id: c_conductor_sessions, from: conductor, to: sessions, description: Delivers, technology: Python call, status: planned}
+  - {id: c_conductor_ledger, from: conductor, to: ledger_api, description: Reads would.*; writes delivery states, technology: Python call, status: planned}
+  - {id: c_sessions_claude, from: sessions, to: claude_proc, description: Starts one turn, technology: "subprocess, stream-json", status: planned}
+  - {id: c_server_observe, from: server, to: observe, description: Builds the report on request, technology: Python call, status: built}
+  - {id: c_observe_ledger, from: observe, to: ledger_api, description: Reads events, technology: Python call, status: built}
+  - {id: c_ledger_proj, from: ledger_api, to: projections, description: Applies each event, technology: same transaction, status: built}
+  - {id: c_ledger_schema, from: ledger_api, to: schema, description: Opens and migrates, technology: Python call, status: built}
+  - {id: c_ledger_constraint, from: ledger_api, to: constraint, description: Computes over open waits, technology: Python call, status: built}
+  - {id: c_ledger_db, from: ledger_api, to: ledger, description: Reads and writes, technology: "sqlite3, WAL", status: built}
+
+  # ------------------------------------------------------------------------------------------------ deployment
+  - {id: d_task_onloopd, from: task_onloopd, to: i_onloopd, description: Starts it; skips while one runs, technology: "pythonw.exe, IgnoreNew", status: planned}
+  - {id: d_wd_onloopd, from: task_watchdog, to: i_onloopd, description: Reruns it if hung, technology: "schtasks /End, /Run", status: planned}
+  - {id: d_wd_hc, from: task_watchdog, to: i_hc, description: "Ping every 5 min; /fail with the reason", technology: "HTTP :8000", status: planned}
+  - {id: d_onloopd_hc, from: i_onloopd, to: i_hc, description: Dead-man ping every 60 s, technology: "HTTP :8000", status: planned}
+  - {id: d_hc_onloopd, from: i_hc, to: i_onloopd, description: Webhook on down and up, technology: "host.docker.internal:${onloopd_port}", status: planned}
+  - {id: d_hc_notify, from: i_hc, to: i_notify, description: Dead-man alert, technology: SMTP or push, status: planned}
+  - {id: d_jobs_hc, from: i_jobs, to: i_hc, description: Pings each run, technology: "HTTP :8000", status: planned}
+  - {id: d_onloopd_ledger, from: i_onloopd, to: i_ledger, description: Reads and writes, technology: "sqlite3, WAL", status: built}
+  - {id: d_onloopd_claude, from: i_onloopd, to: i_claude, description: Starts one turn under the lease, technology: "claude.cmd, stdin", status: planned}
+  - {id: d_claude_hooks, from: i_claude, to: i_hooks, description: Runs the hook, technology: stdin JSON, status: built}
+  - {id: d_claude_transcripts, from: i_claude, to: i_transcripts, description: Appends, technology: JSONL, status: built}
+  - {id: d_hooks_onloopd, from: i_hooks, to: i_onloopd, description: Posts the payload, technology: "HTTP :${onloopd_port}, Bearer", status: built}
+  - {id: d_claude_anthropic, from: i_claude, to: i_anthropic, description: Inference, technology: HTTPS 443, status: built}
+  - {id: d_claude_github, from: i_claude, to: i_github, description: Pushes and reviews, technology: "HTTPS 443, git, gh", status: built}
+  - {id: d_onloopd_github, from: i_onloopd, to: i_github, description: Reads PRs and checks, technology: "HTTPS 443, gh", status: built}
+  - {id: d_ui_onloopd, from: i_ui, to: i_onloopd, description: Reads; follows the event stream, technology: "HTTP :${onloopd_port}, SSE", status: built}
+
+views:
+  # ================================================================================================ L1
+  - key: system-context
+    name: L1 System Context
+    level: Level 1 · System Context
+    title: "[System Context] onloop"
+    subtitle: >-
+      Who uses onloop and what it depends on. One Windows workstation; every listener on the loopback address; the
+      Claude subscription is reached only through the Claude Code CLI.
+    size: [1700, 1060]
+    elements:
+      lead: {x: 680, y: 150, w: 280, h: 250}
+      notify: {x: 1180, y: 170, w: 320, h: 170}
+      roles: {x: 120, y: 470, w: 320, h: 180}
+      onloop: {x: 660, y: 470, w: 320, h: 180}
+      jobs: {x: 1180, y: 470, w: 320, h: 180}
+      anthropic: {x: 120, y: 790, w: 320, h: 160}
+      github: {x: 660, y: 790, w: 320, h: 160}
+    relationships:
+      lead_onloop: {exit: [0.5, 1], entry: [0.5, 0]}
+      onloop_roles: {exit: [0, 0.28], entry: [1, 0.28]}
+      roles_onloop: {exit: [1, 0.74], entry: [0, 0.74]}
+      roles_anthropic: {exit: [0.5, 1], entry: [0.5, 0]}
+      roles_github: {exit: [1, 0.94], entry: [0, 0.5], points: [[540, 639], [540, 870]]}
+      onloop_github: {exit: [0.5, 1], entry: [0.5, 0]}
+      jobs_onloop: {exit: [0, 0.5], entry: [1, 0.5]}
+      onloop_notify: {exit: [1, 0.2], entry: [0, 0.75], points: [[1080, 506], [1080, 297]]}
+      notify_lead: {exit: [0, 0.3], entry: [1, 0.26]}
+    legend: {x: 1180, y: 700, w: 330}
+
+  # ================================================================================================ L2
+  - key: container
+    name: L2 Container
+    level: Level 2 · Container
+    title: "[Container] onloop"
+    subtitle: >-
+      The deployable and runnable parts of onloop and the adopted products it runs with. onloopd is the only process
+      onloop owns; everything reaches it on the loopback address.
+    size: [2400, 1420]
+    boundaries:
+      onloop: {x: 420, y: 390, w: 1540, h: 930}
+    elements:
+      config: {x: 40, y: 170, w: 300, h: 170}
+      lead: {x: 1105, y: 140, w: 260, h: 240}
+      ui: {x: 880, y: 440, w: 300, h: 160}
+      approval: {x: 1300, y: 440, w: 300, h: 160}
+      tasksched: {x: 470, y: 650, w: 320, h: 180}
+      onloopd: {x: 950, y: 700, w: 450, h: 200}
+      claude_proc: {x: 1560, y: 700, w: 340, h: 200}
+      healthchecks: {x: 470, y: 1040, w: 320, h: 200}
+      ledger: {x: 930, y: 1050, w: 240, h: 230}
+      hooks: {x: 1460, y: 1020, w: 230, h: 200}
+      transcripts: {x: 1720, y: 1020, w: 220, h: 170}
+      jobs: {x: 40, y: 860, w: 300, h: 160}
+      notify: {x: 40, y: 1110, w: 300, h: 170}
+      github: {x: 2050, y: 700, w: 280, h: 160}
+      anthropic: {x: 2050, y: 1000, w: 280, h: 170}
+    relationships:
+      lead_ui: {exit: [0, 0.75], entry: [0.5, 0], points: [[1030, 320]], label_pos: 0.74}
+      lead_approval: {exit: [1, 0.75], entry: [0.5, 0], points: [[1450, 320]], label_pos: 0.74}
+      ui_onloopd: {exit: [0.55, 1], entry: [0.21, 0]}
+      approval_onloopd: {exit: [0.25, 1], entry: [0.94, 0]}
+      config_onloopd: {exit: [0.11, 0], entry: [1, 0.5], points: [[999, 650], [820, 650], [820, 255]]}
+      ts_onloopd: {exit: [1, 0.44], entry: [0, 0.145], wrap: 14}
+      ts_hc: {exit: [0.5, 1], entry: [0.5, 0]}
+      jobs_hc: {exit: [1, 0.5], entry: [0.28, 0], points: [[560, 940]]}
+      hc_onloopd: {exit: [1, 0.05], entry: [0, 0.95], points: [[900, 1050], [900, 890]], wrap: 14, label_pos: 0.19, label_offset: [-52, 0]}
+      onloopd_hc: {exit: [0, 0.8], entry: [0.85, 0], points: [[742, 860]], wrap: 16, label_pos: 0.45}
+      hc_notify: {exit: [0, 0.6], entry: [1, 0.29]}
+      onloopd_ledger: {exit: [0.1, 1], entry: [0.27, 0]}
+      onloopd_claude: {exit: [1, 0.5], entry: [0, 0.5], wrap: 18}
+      onloopd_github: {exit: [1, 0.08], entry: [0.5, 0], points: [[1480, 716], [1480, 660], [2190, 660]]}
+      claude_github: {exit: [1, 0.3], entry: [0, 0.375], wrap: 14}
+      claude_anthropic: {exit: [1, 0.85], entry: [0, 0.47], points: [[2000, 870], [2000, 1080]]}
+      claude_hooks: {exit: [0.2, 1], entry: [0.73, 0]}
+      claude_transcripts: {exit: [0.8, 1], entry: [0.5, 0]}
+      hooks_onloopd: {exit: [0.1, 0], entry: [0.89, 1], points: [[1483, 960], [1350, 960]]}
+    legend: {x: 2040, y: 150, w: 320, boundary_label: "software system boundary"}
+
+  # ================================================================================================ L3
+  - key: component-onloopd
+    name: L3 Component onloopd
+    level: Level 3 · Component
+    title: "[Component] onloop · onloopd"
+    subtitle: >-
+      The packages and modules inside onloopd, read from src/onloop/ on feat/r3-ui (R3: the UI built, the legacy stores gone).
+      Planned components have no code yet. Every arrow is a Python call unless it says otherwise.
+    size: [2800, 1660]
+    boundaries:
+      onloopd: {x: 380, y: 320, w: 2040, h: 1240}
+    elements:
+      ui: {x: 40, y: 400, w: 260, h: 150}
+      hooks: {x: 40, y: 640, w: 260, h: 150}
+      healthchecks: {x: 40, y: 880, w: 260, h: 170}
+      tasksched: {x: 1120, y: 150, w: 260, h: 140}
+      github: {x: 1800, y: 150, w: 240, h: 140}
+      claude_proc: {x: 2490, y: 960, w: 260, h: 200}
+      ledger: {x: 2490, y: 1180, w: 260, h: 220}
+      server: {x: 440, y: 400, w: 240, h: 165}
+      ui_host: {x: 780, y: 400, w: 240, h: 172}
+      main: {x: 1120, y: 400, w: 240, h: 140}
+      dconfig: {x: 1460, y: 400, w: 240, h: 140}
+      ingest_github: {x: 1800, y: 400, w: 240, h: 140}
+      routes: {x: 780, y: 600, w: 240, h: 140}
+      token: {x: 1120, y: 600, w: 240, h: 140}
+      detect_core: {x: 1460, y: 600, w: 240, h: 140}
+      intake: {x: 1800, y: 600, w: 240, h: 140}
+      hook_receiver: {x: 780, y: 800, w: 240, h: 140}
+      no_outcome: {x: 1120, y: 800, w: 240, h: 140}
+      wakers: {x: 1460, y: 800, w: 240, h: 140}
+      schedules_detect: {x: 1800, y: 800, w: 240, h: 140}
+      disposition: {x: 780, y: 1000, w: 240, h: 140}
+      sources: {x: 1120, y: 1000, w: 240, h: 140}
+      conductor: {x: 1460, y: 1000, w: 240, h: 140}
+      sessions: {x: 1800, y: 1000, w: 240, h: 140}
+      ledger_api: {x: 480, y: 1200, w: 1900, h: 100}
+      observe: {x: 440, y: 1370, w: 260, h: 140}
+      projections: {x: 780, y: 1370, w: 240, h: 120}
+      schema: {x: 1120, y: 1370, w: 240, h: 120}
+      constraint: {x: 1460, y: 1370, w: 240, h: 120}
+    relationships:
+      c_ui_server: {exit: [1, 0.47], entry: [0, 0.428]}
+      c_hooks_server: {exit: [1, 0.5], entry: [0, 0.594], points: [[340, 715], [340, 498]], label_pos: 0.15}
+      c_hc_server: {exit: [1, 0.5], entry: [0, 0.764], points: [[410, 965], [410, 526]], label_pos: -0.72}
+      c_ts_main: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_main_server: {exit: [0.2, 0], entry: [0.5, 0], points: [[1168, 362], [560, 362]]}
+      c_main_config: {exit: [1, 0.5], entry: [0, 0.5]}
+      c_main_token: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_main_ingest: {exit: [0.92, 1], entry: [0.15, 1], points: [[1341, 562], [1836, 562]]}
+      c_main_detect: {exit: [1, 0.85], entry: [0.5, 0], points: [[1410, 519], [1410, 575], [1580, 575]]}
+      c_server_routes: {exit: [0.5, 1], entry: [0, 0.5], points: [[560, 670]]}
+      c_server_uihost: {exit: [1, 0.424], entry: [0, 0.5]}
+      c_server_ledger: {exit: [0.35, 1], entry: [0.0232, 0]}
+      c_routes_hook: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_routes_sources: {exit: [1, 0.85], entry: [0, 0.5], points: [[1070, 719], [1070, 1070]]}
+      c_hook_disp: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_hook_ledger: {exit: [0, 0.8], entry: [0.1526, 0], points: [[730, 912]], label_pos: 0.72, wrap: 40}
+      c_sources_ledger: {exit: [0.5, 1], entry: [0.387, 0]}
+      c_ingest_intake: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_ingest_github: {exit: [0.5, 0], entry: [0.5, 1]}
+      c_ingest_ledger: {exit: [1, 0.8], entry: [0.826, 0], points: [[2090, 512]]}
+      c_core_nooutcome: {exit: [0.2, 1], entry: [0.5, 0], points: [[1508, 770], [1240, 770]]}
+      c_core_wakers: {exit: [0.5, 1], entry: [0.5, 0]}
+      c_core_schedules: {exit: [0.8, 1], entry: [0.5, 0], points: [[1652, 770], [1920, 770]]}
+      c_core_ledger: {exit: [1, 0.8], entry: [0.673, 0], points: [[1750, 712]], label_pos: 0.78, wrap: 40}
+      c_conductor_sessions: {exit: [1, 0.5], entry: [0, 0.5]}
+      c_conductor_ledger: {exit: [0.5, 1], entry: [0.558, 0]}
+      c_sessions_claude: {exit: [1, 0.5], entry: [0, 0.55]}
+      c_ledger_proj: {exit: [0.2158, 1], entry: [0.5, 0]}
+      c_ledger_schema: {exit: [0.3945, 1], entry: [0.5, 0]}
+      c_ledger_constraint: {exit: [0.573, 1], entry: [0.5, 0]}
+      c_ledger_db: {exit: [1, 0.5], entry: [0, 0.318]}
+      c_server_observe: {exit: [0.05, 1], entry: [0.0462, 0], label_pos: 0.35}
+      c_observe_ledger: {exit: [0.6, 0], entry: [0.061, 1], label_pos: 0, label_offset: [70, 0], wrap: 14}
+    legend: {x: 40, y: 1130, w: 320, boundary_label: "container boundary (onloopd)"}
+    wrap: 18
+
+  # ================================================================================================ L4
+  - key: code
+    name: L4 Code
+    level: Level 4 · Code (generated)
+    kind: code
+    title: "[Code] onloopd's packages: import graph"
+    subtitle: >-
+      Generated from the source by tools/diagrams/c4.py, not drawn: every module of onloop.daemon, onloop.detect
+      and onloop.overlay, and every import between onloop modules.
+    code:
+      ref: main
+      packages: [daemon, detect, overlay]
+      collapse: [onloop, events, procs, fsutil, sqlitedb, policy, github, gitutil]
+      colours: ["#85BBF0", "#B9D7F5", "#DCEBFA"]
+
+  # ================================================================================================ deployment
+  - key: deployment
+    name: Deployment
+    level: Deployment · one workstation
+    title: "[Deployment] onloop · the project lead's Windows 11 workstation"
+    subtitle: >-
+      Where each part runs, who starts it and what was measured on this host (resident-service and session-primitives
+      spikes, 2026-11-05 and 2026-11-09). Ports are on the loopback address unless marked.
+    size: [2540, 1900]
+    wrap: 26
+    boundaries:
+      host: {x: 40, y: 160, w: 1960, h: 1660, fill: "#FCFCFC", facts: ["onloop listens on: onloopd ${onloopd_port} (the API and the UI) · Healthchecks 8000", "Reserved by another program on this host, never bind: 8765 · 8766 · 8767 · 8443"]}
+      usersession: {x: 70, y: 290, w: 1910, h: 1060, fill: "#F5F5F5"}
+      tsnode: {x: 100, y: 400, w: 360, h: 560, fill: "#FFFFFF"}
+      browser: {x: 100, y: 1000, w: 360, h: 320, fill: "#FFFFFF"}
+      pynode: {x: 520, y: 400, w: 370, h: 300, fill: "#FFFFFF"}
+      statenode: {x: 520, y: 740, w: 370, h: 340, fill: "#FFFFFF", label_at: bottom}
+      ccnode: {x: 960, y: 400, w: 720, h: 580, fill: "#FFFFFF"}
+      jobsnode: {x: 1720, y: 440, w: 240, h: 330, fill: "#FFFFFF"}
+      wsl: {x: 520, y: 1390, w: 1450, h: 400, fill: "#F5F5F5"}
+      docker: {x: 550, y: 1470, w: 1390, h: 300, fill: "#FFFFFF"}
+      hccontainer: {x: 580, y: 1550, w: 1330, h: 200, fill: "#FAFAFA", facts: ["-p 127.0.0.1:8000:8000 · named volume (SQLite)", "--restart unless-stopped (the default, no, does not survive a reboot)", "REGISTRATION_OPEN=False · INTEGRATIONS_ALLOW_PRIVATE_IPS=True"]}  # scan:allow
+    elements:
+      task_onloopd: {x: 125, y: 500, w: 310, h: 200}
+      task_watchdog: {x: 125, y: 730, w: 310, h: 200}
+      i_ui: {x: 125, y: 1100, w: 310, h: 190}
+      i_onloopd: {x: 545, y: 480, w: 320, h: 190}
+      i_ledger: {x: 535, y: 770, w: 165, h: 200}
+      i_claude: {x: 985, y: 480, w: 330, h: 220}
+      i_transcripts: {x: 1400, y: 480, w: 260, h: 220}
+      i_hooks: {x: 985, y: 780, w: 330, h: 170}
+      i_jobs: {x: 1735, y: 540, w: 210, h: 210}
+      i_hc: {x: 1250, y: 1575, w: 630, h: 160}
+      i_github: {x: 2060, y: 290, w: 420, h: 130}
+      i_anthropic: {x: 2060, y: 470, w: 420, h: 130}
+      i_notify: {x: 2060, y: 690, w: 420, h: 130}
+    relationships:
+      d_task_onloopd: {exit: [1, 0.3], entry: [0, 0.42], wrap: 12, label_pos: -0.05}
+      d_wd_onloopd: {exit: [1, 0.15], entry: [0, 0.9], points: [[490, 760], [490, 651]], wrap: 14, label_pos: 0.1, label_offset: [-1, 30]}
+      d_wd_hc: {exit: [1, 0.75], entry: [0, 0.78], points: [[500, 880], [500, 1700]], label_pos: 0.6}
+      d_ui_onloopd: {exit: [1, 0.3], entry: [0.05, 1], points: [[510, 1157], [510, 718], [561, 718]], wrap: 14, label_pos: -0.61}
+      d_onloopd_ledger: {exit: [0.3, 1], entry: [0.64, 0], wrap: 12}
+      d_onloopd_claude: {exit: [1, 0.25], entry: [0, 0.216], wrap: 14}
+      d_claude_hooks: {exit: [0.5, 1], entry: [0.5, 0]}
+      d_claude_transcripts: {exit: [1, 0.5], entry: [0, 0.5], wrap: 10}
+      d_hooks_onloopd: {exit: [0, 0.5], entry: [1, 0.74], points: [[935, 865], [935, 621]], wrap: 14, label_pos: -0.2, label_offset: [0, 40]}
+      d_onloopd_hc: {exit: [1, 0.9], entry: [0.3, 0], points: [[920, 651], [920, 1375], [1439, 1375]], label_pos: 0.55}
+      d_hc_onloopd: {exit: [0.15, 0], entry: [1, 0.99], points: [[1344, 1385], [905, 1385], [905, 668]], label_pos: -0.32}
+      d_jobs_hc: {exit: [0.5, 1], entry: [0.94, 0], label_pos: -0.4}
+      d_hc_notify: {exit: [1, 0.5], entry: [0, 0.5], points: [[2030, 1655], [2030, 755]], label_pos: -0.86, wrap: 14}
+      d_onloopd_github: {exit: [0.78, 0], entry: [0, 0.5], points: [[795, 355]], label_pos: -0.37}
+      d_claude_github: {exit: [1, 0.1], entry: [0, 0.77], points: [[1340, 502], [1340, 390]], label_pos: -0.19}
+      d_claude_anthropic: {exit: [1, 0.25], entry: [0, 0.5], points: [[1370, 535], [1370, 410], [2030, 410], [2030, 535]], label_pos: 0.33}
+    notes:
+      - x: 2060
+        y: 880
+        w: 420
+        h: 215
+        size: 11
+        text: >-
+          <b>Measured on this host</b><br>
+          • onloopd exit(1) → respawn by the 1-min trigger: <b>43.0, 48.9, 52.9 s</b>; kill → respawn 52.6 s<br>
+          • Restart-on-failure alone never restarted an exit(1) in 240 s: the 1-min trigger is required<br>
+          • Hang (alive, heartbeat stopped) → watchdog End + Run → new pid heartbeating: <b>114 s</b><br>
+          • onloopd and watchdog both gone → dead-man webhook: <b>163 s</b> after the kill (bound 240 s)<br>
+          • Healthchecks deadline → webhook on Windows: <b>1.2–2.8 s</b> (n = 4)<br>
+          • Claude Code cold start: 0.9 s to init; 3.5–4.7 s to a one-line answer<br>
+          • Not yet tested: sleep and resume, reboot, the logon trigger firing
+    legend: {x: 2060, y: 1140, w: 420, boundary_label: "deployment node (dashed: planned)"}
+
+  # ================================================================================================ dynamic (a)
+  - key: dynamic-wake
+    name: Dynamic wake and ack
+    level: Dynamic · target flow (R4)
+    title: "[Dynamic] A wake, acknowledged only by a valid outcome"
+    subtitle: >-
+      How one delivery to a role is tracked from created to acknowledged. Steps 7–10 run on main today; the conductor
+      and sessions that drive steps 1–6 and 11 are R4.
+    size: [2240, 1180]
+    wrap: 30
+    elements:
+      conductor: {x: 80, y: 190, w: 280, h: 170}
+      sessions: {x: 600, y: 190, w: 300, h: 190}
+      claude_proc: {x: 1180, y: 190, w: 320, h: 200}
+      anthropic: {x: 1820, y: 200, w: 300, h: 170}
+      ledger: {x: 80, y: 660, w: 280, h: 190}
+      hook_receiver: {x: 600, y: 650, w: 300, h: 160}
+      disposition: {x: 600, y: 900, w: 300, h: 150}
+      hooks: {x: 1180, y: 650, w: 320, h: 170}
+    steps:
+      - {from: conductor, to: ledger, description: "Delivery created; lease taken for the session id", technology: ledger append, status: planned, layout: {exit: [0.3, 1], entry: [0.3, 0]}}
+      - {from: conductor, to: sessions, description: "Wake role R with delivery D", technology: Python call, status: planned, layout: {exit: [1, 0.5], entry: [0, 0.45], wrap: 20}}
+      - {from: sessions, to: claude_proc, description: "Start claude -p --resume <id>; write the message: delivered", technology: "subprocess, stream-json stdin", status: planned, layout: {exit: [1, 0.15], entry: [0, 0.15]}}
+      - {from: claude_proc, to: sessions, description: "Replays the message when its turn starts: processing", technology: "--replay-user-messages", status: planned, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: claude_proc, to: anthropic, description: Inference for the turn, technology: "HTTPS, subscription", status: built, layout: {exit: [1, 0.5], entry: [0, 0.5]}}
+      - {from: claude_proc, to: sessions, description: "Result line: is_error false, permission_denials empty", technology: stream-json result, status: planned, layout: {exit: [0, 0.85], entry: [1, 0.85]}}
+      - {from: claude_proc, to: hooks, description: "Stop hook with last_assistant_message", technology: hook JSON on stdin, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0]}}
+      - {from: hooks, to: hook_receiver, description: "POST /hooks/stop", technology: "HTTP :${onloopd_port}, Bearer, ≤ 2 s", status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: hook_receiver, to: disposition, description: "Parses the outcome line: valid", technology: Python call, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0]}}
+      - {from: hook_receiver, to: ledger, description: "Turn recorded; delivery acknowledged", technology: ledger append, status: built, layout: {exit: [0, 0.5], entry: [1, 0.48], wrap: 22}}
+      - {from: sessions, to: ledger, description: Lease released, technology: ledger append, status: planned, layout: {exit: [0.15, 1], entry: [0.8, 0], points: [[645, 530], [304, 530]]}}
+    notes:
+      - x: 1560
+        y: 470
+        w: 600
+        h: 250
+        size: 12
+        text: >-
+          <b>Steps</b><br>
+          <b>1</b> The conductor creates delivery D (state <i>created</i>) and takes the lease on R's session id. Two
+          processes on one id fork the session silently, so the lease is mandatory.<br>
+          <b>2–3</b> Sessions starts the CLI with a scrubbed environment and writes D to stdin: <i>delivered</i>.<br>
+          <b>4</b> The CLI replays a message only when its turn starts: <i>processing</i>. The replay acknowledges
+          processing, not receipt; receipt is onloop's own queue.<br>
+          <b>6</b> Every result line is checked. <i>is_error</i> true, or any <i>permission_denials</i>, fails the
+          delivery although the exit code is 0.<br>
+          <b>7–10</b> The Stop hook carries the final message. Only a valid outcome line acknowledges D; a missing or
+          invalid one opens a missing-outcome alert instead.<br>
+          <b>11</b> The lease is released, so the next wake may resume the session.
+    legend: {x: 1560, y: 840, w: 420}
+
+  # ================================================================================================ dynamic (b)
+  - key: dynamic-dead-waker
+    name: Dynamic dead waker
+    level: Dynamic · built
+    title: "[Dynamic] A dead waker behind a continue becomes the constraint"
+    subtitle: >-
+      A role ends its turn with outcome: continue and names what will wake it. The waker dies. On the next tick
+      onloopd finds it, alerts once, and the constraint query names it. Built on main.
+    size: [2260, 1320]
+    wrap: 22
+    elements:
+      claude_proc: {x: 60, y: 190, w: 300, h: 200, description: "Role R's turn ends: … outcome: continue ref=item-42 waker=pid:4242"}
+      waker: {x: 540, y: 200, w: 300, h: 180, description: "pid 4242, a background build. It exits; nothing will wake R."}
+      wakers: {x: 1020, y: 200, w: 300, h: 180}
+      main: {x: 1500, y: 190, w: 300, h: 190}
+      hooks: {x: 60, y: 560, w: 300, h: 180}
+      hook_receiver: {x: 540, y: 560, w: 300, h: 180}
+      ledger: {x: 1020, y: 550, w: 300, h: 200}
+      detect_core: {x: 1500, y: 560, w: 300, h: 190}
+      server: {x: 1960, y: 560, w: 240, h: 190, description: "GET /api/constraint"}
+      disposition: {x: 540, y: 900, w: 300, h: 160}
+      constraint: {x: 1500, y: 900, w: 300, h: 160}
+      lead: {x: 1960, y: 880, w: 240, h: 260}
+    steps:
+      - {from: claude_proc, to: hooks, description: Stop hook with the final message, technology: hook JSON on stdin, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0], wrap: 34}}
+      - {from: hooks, to: hook_receiver, description: "POST /hooks/stop", technology: "HTTP, Bearer", status: built, layout: {exit: [1, 0.5], entry: [0, 0.5]}}
+      - {from: hook_receiver, to: disposition, description: "continue, ref=item-42, waker=pid:4242", technology: Python call, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0], wrap: 40}}
+      - {from: hook_receiver, to: ledger, description: "Turn row; item-42 waits on waker pid:4242", technology: ledger append, status: built, layout: {exit: [1, 0.5], entry: [0, 0.5]}}
+      - {from: main, to: wakers, description: "Next tick (≤ 10 s): probe each waker with an open wait", technology: Python call, status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: wakers, to: waker, description: "pid_alive(4242): false", technology: procs.pid_alive, status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: wakers, to: ledger, description: "resource.checked: dead (on a change only)", technology: ledger append, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0], wrap: 40}}
+      - {from: main, to: detect_core, description: "Runs the detectors", technology: Python call, status: built, layout: {exit: [0.5, 1], entry: [0.5, 0], wrap: 40}}
+      - {from: detect_core, to: ledger, description: "One alert naming every stranded item and role; would.wake logged", technology: ledger append, status: built, layout: {exit: [0, 0.5], entry: [1, 0.5]}}
+      - {from: lead, to: server, description: Asks what holds the work up, technology: "GET /api/constraint", status: built, layout: {exit: [0.5, 0], entry: [0.5, 1], wrap: 34}}
+      - {from: server, to: constraint, description: "Computes over open waits: pid:4242, reason dead_waker", technology: Python call, status: built, layout: {exit: [0, 0.85], entry: [1, 0.3], points: [[1880, 721], [1880, 948]], label_pos: 0.1}}
+    notes:
+      - x: 60
+        y: 900
+        w: 420
+        h: 120
+        size: 11
+        text: >-
+          <b>Why this matters</b><br>
+          A continue with a dead waker waits for ever while every role looks idle. The probe logs a state change, not
+          every tick; the alert is one item per waker, updated as more items strand, and closed on the first tick the
+          condition is gone. Today the would.wake is only recorded; R4 acts on it.
+    legend: {x: 960, y: 880, w: 420}

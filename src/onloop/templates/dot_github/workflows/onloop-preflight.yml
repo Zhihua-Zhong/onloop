@@ -1,0 +1,33 @@
+name: onloop pre-flight
+
+# Tells the author of a pull request, before the gate runs, what the gate would refuse for form (no authoring role, an
+# unknown role, a path owned by another role without its Cross-owner line) and which slots the change needs. It keeps
+# one comment current and fails only on a form problem. The job is not in `required_checks`: the gate decides, this
+# only reports. It reads the policy from the base branch, so a pull request cannot change the rules it is judged by.
+# Under `pull_request` GitHub runs the workflow file as it is on the pull request's head, so `.github/` must stay
+# reserved to a human in the policy; do not switch this to `pull_request_target`, which would hand a write token to
+# whatever the pull request changes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "__INSTALL_SPEC__"
+      - name: Report the form problems and the slots needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: onloop preflight ${{ github.event.pull_request.number }} --repo "${{ github.repository }}" --post

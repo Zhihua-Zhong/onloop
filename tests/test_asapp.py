@@ -3,25 +3,45 @@ import pytest
 from onloop import asapp
 
 
-@pytest.mark.parametrize("argv,identity", [
-    (["git", "push", "origin", "b"], "agents"), (["gh", "pr", "create"], "agents"),
-    (["onloop", "gate", "7"], "agents"), (["onloop", "audit"], "agents"),
-    (["gh", "pr", "review", "1", "--approve"], "reviewer"), (["gh", "pr", "comment", "1", "-b", "x"], "reviewer"),
-])
+@pytest.mark.parametrize(
+    "argv,identity",
+    [
+        (["git", "push", "origin", "b"], "agents"),
+        (["gh", "pr", "create"], "agents"),
+        (["onloop", "gate", "7"], "agents"),
+        (["onloop", "audit"], "agents"),
+        (["gh", "pr", "review", "1", "--approve"], "reviewer"),
+        (["gh", "pr", "comment", "1", "-b", "x"], "reviewer"),
+    ],
+)
 def test_allowed_commands_pass_through_unchanged(argv, identity):
     assert asapp.check_command(argv, identity) == argv
 
 
-@pytest.mark.parametrize("argv,identity", [
-    (["gh", "auth", "token"], "agents"), (["gh", "pr", "merge", "7"], "agents"), (["gh", "auth", "status", "--show-token"], "agents"),
-    (["gh", "auth", "login"], "agents"), (["git", "credential", "fill"], "agents"),
-    (["git", "-c", "credential.helper=x", "push"], "agents"), (["git", "--config-env=a=B", "push"], "agents"),
-    (["curl", "x"], "agents"), ([], "agents"), (["onloop", "as-app", "--", "git"], "agents"),
-    (["onloop", "init"], "agents"), (["onloop", "gate", "7"], "reviewer"), (["onloop"], "agents"), (["git", "status"], "root"),
-    (["git", "push"], "reviewer"), (["gh", "pr", "merge", "1"], "reviewer"), (["gh", "api", "x"], "reviewer"),
-    (["gh", "pr", "comment", "1", "--edit-last"], "reviewer"),
-    (["gh", "pr", "comment", "1", "--delete-last=true"], "reviewer"),
-])
+@pytest.mark.parametrize(
+    "argv,identity",
+    [
+        (["gh", "auth", "token"], "agents"),
+        (["gh", "pr", "merge", "7"], "agents"),
+        (["gh", "auth", "status", "--show-token"], "agents"),
+        (["gh", "auth", "login"], "agents"),
+        (["git", "credential", "fill"], "agents"),
+        (["git", "-c", "credential.helper=x", "push"], "agents"),
+        (["git", "--config-env=a=B", "push"], "agents"),
+        (["curl", "x"], "agents"),
+        ([], "agents"),
+        (["onloop", "as-app", "--", "git"], "agents"),
+        (["onloop", "init"], "agents"),
+        (["onloop", "gate", "7"], "reviewer"),
+        (["onloop"], "agents"),
+        (["git", "status"], "root"),
+        (["git", "push"], "reviewer"),
+        (["gh", "pr", "merge", "1"], "reviewer"),
+        (["gh", "api", "x"], "reviewer"),
+        (["gh", "pr", "comment", "1", "--edit-last"], "reviewer"),
+        (["gh", "pr", "comment", "1", "--delete-last=true"], "reviewer"),
+    ],
+)
 def test_refused_commands_raise_before_any_token_exists(argv, identity):
     with pytest.raises(asapp.AppError):
         asapp.check_command(argv, identity)
@@ -31,10 +51,12 @@ def test_the_gates_own_child_merge_is_not_blocked_by_the_wrapper(monkeypatch):
     """`onloop as-app -- onloop gate N` is allowed; the merge it makes is a child process of onloop, not argv here."""
     assert asapp.check_command(["onloop", "gate", "7"], "agents") == ["onloop", "gate", "7"]
     from onloop.github import GitHub
+
     seen = []
 
     class Done:
         returncode, stdout, stderr = 0, "", ""
+
     GitHub("org/repo", lambda argv: (seen.append(argv), Done())[1]).merge(7, "h" * 40)
     assert seen[0][:3] == ["gh", "pr", "merge"]
 
@@ -45,7 +67,7 @@ def test_the_command_environment_carries_the_token_only_in_the_environment():
     assert env["GH_TOKEN"] == "tok123" and env["GIT_AUTHOR_NAME"] == "agent-bot[bot]"
     assert env["GIT_AUTHOR_EMAIL"].startswith("42+agent-bot[bot]@")
     assert "tok123" not in "".join(v for k, v in env.items() if k.startswith("GIT_CONFIG_VALUE"))
-    assert env["GIT_CONFIG_VALUE_0"] == ""                                  # every stored helper is cleared first
+    assert env["GIT_CONFIG_VALUE_0"] == ""  # every stored helper is cleared first
 
 
 def test_identity_config_must_be_complete():
@@ -57,6 +79,7 @@ def test_identity_config_must_be_complete():
 
 def test_a_key_inside_a_git_work_tree_is_refused(tmp_path):
     import subprocess
+
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     key = tmp_path / "k.pem"
     key.write_text("x", encoding="utf-8")
@@ -69,7 +92,7 @@ def test_a_key_outside_any_work_tree_is_accepted(tmp_path):
     key.write_text("x", encoding="utf-8")
     try:
         asapp.key_outside_work_tree(str(key))
-    except asapp.AppError as e:                       # tmp_path itself may sit inside a work tree on a CI runner
+    except asapp.AppError as e:  # tmp_path itself may sit inside a work tree on a CI runner
         assert "work tree" in str(e)
 
 
@@ -94,10 +117,12 @@ def test_run_signs_exchanges_and_runs_with_the_token(monkeypatch, tmp_path):
         return Done()
 
     raw = {"apps": {"agents": {"app_id": 11, "installation_id": 22, "slug": "agent-bot", "key_env": "K"}}}
-    code = asapp.run(["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={"K": str(key)})
+    code = asapp.run(
+        ["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={"K": str(key)}
+    )
     assert code == 0 and seen["token"] == "installation-token" and seen["cmd"] == ["git", "status"]
     assert seen["url"].endswith("/app/installations/22/access_tokens")
-    assert seen["body"] == {"repositories": ["repo"]}                        # scoped to the one repository
+    assert seen["body"] == {"repositories": ["repo"]}  # scoped to the one repository
     assert seen["auth"] == "Bearer jwt-for-11-PEM-PLACEHOLDER"
     with pytest.raises(asapp.AppError):
         asapp.run(["git", "status"], "agents", raw, "org/repo", http=http, runner=runner, environ={})
@@ -106,18 +131,24 @@ def test_run_signs_exchanges_and_runs_with_the_token(monkeypatch, tmp_path):
 def test_a_signed_jwt_verifies_with_the_public_key_and_carries_the_app_id_and_a_short_life():
     import base64
     import json
+
     pytest.importorskip("cryptography", exc_type=ImportError)
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
     key = rsa.generate_private_key(65537, 2048)
-    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                            serialization.NoEncryption()).decode()
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
     token = asapp.mint_jwt("123", pem, now=1_000_000)
     head, claims, sig = token.split(".")
 
     def unb64(s):
         return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-    key.public_key().verify(unb64(sig), f"{head}.{claims}".encode(), padding.PKCS1v15(), hashes.SHA256())   # raises if bad
+
+    key.public_key().verify(
+        unb64(sig), f"{head}.{claims}".encode(), padding.PKCS1v15(), hashes.SHA256()
+    )  # raises if bad
     assert json.loads(unb64(head)) == {"alg": "RS256", "typ": "JWT"}
     body = json.loads(unb64(claims))
     assert body["iss"] == "123" and body["exp"] - body["iat"] <= 600 and body["iat"] < 1_000_000

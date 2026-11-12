@@ -1,0 +1,60 @@
+/*
+ * The design tokens: the ONLY place a colour, radius or font is chosen. Everything else (tailwind.config.ts, the components) reads these by name.
+ * Values are HSL channels ("H S% L%") so Tailwind can add alpha. A restyle edits this file; the project lead picks the look from the prototype,
+ * then this file freezes it.
+ *
+ * State colours carry meaning and are the only saturated colours on the canvas: blue open, red blocked, amber waiting on the human,
+ * violet waiting on someone else, magenta stalled (a turn that ended with nobody holding the next step), green done, grey cancelled
+ * or missing.
+ */
+:root {
+  --bg: 210 25% 97%;
+  --surface: 0 0% 100%;
+  --raised: 210 30% 99%;
+  --line: 214 20% 87%;
+  --fg: 222 30% 14%;
+  --muted: 218 12% 42%;
+  --accent: 221 83% 48%;
+  --zone: 214 40% 94%;
+
+  --state-open: 217 85% 52%;
+  --state-blocked: 358 75% 52%;
+  --state-human: 32 95% 46%;
+  --state-external: 262 55% 56%;
+  --state-stall: 326 72% 46%;
+  --state-done: 150 45% 38%;
+  --state-void: 218 10% 62%;
+
+  --radius-node: 10px;
+  --radius-zone: 16px;
+  --radius-ui: 8px;
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: 224 24% 9%;
+    --surface: 224 22% 13%;
+    --fg: 210 25% 94%;
+  }
+}
+
+[data-theme="dark"] {
+  --bg: 224 24% 9%;
+  --surface: 224 22% 13%;
+  --raised: 224 22% 16%;
+  --line: 222 16% 24%;
+  --fg: 210 25% 94%;
+  --muted: 215 14% 66%;
+  --accent: 217 90% 66%;
+  --zone: 224 22% 12%;
+
+  --state-open: 217 90% 64%;
+  --state-blocked: 358 80% 64%;
+  --state-human: 36 95% 58%;
+  --state-external: 262 70% 72%;
+  --state-stall: 326 78% 68%;
+  --state-done: 150 50% 52%;
+  --state-void: 218 10% 52%;
+}

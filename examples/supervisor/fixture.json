@@ -1,0 +1,48 @@
+{
+  "open": [
+    {"number": 12, "title": "Add a retry to the importer", "state": "open", "draft": false, "pull_request": {},
+     "html_url": "https://github.com/example-org/example-repo/pull/12", "updated_at": "2026-11-01T09:00:00Z",
+     "labels": []},
+    {"number": 13, "title": "Draft: rework the settings page", "state": "open", "draft": true, "pull_request": {},
+     "html_url": "https://github.com/example-org/example-repo/pull/13", "updated_at": "2026-11-01T10:00:00Z",
+     "labels": []},
+    {"number": 20, "title": "The nightly job failed twice", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/20", "updated_at": "2026-11-01T11:00:00Z",
+     "labels": [{"name": "ops"}]},
+    {"number": 21, "title": "Add a CSV export to the report page", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/21", "updated_at": "2026-11-01T12:00:00Z",
+     "labels": [{"name": "kind/ask"}, {"name": "role/author"}]},
+    {"number": 22, "title": "Fix the broken link in the README", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/22", "updated_at": "2026-11-02T08:00:00Z",
+     "labels": [{"name": "kind/ask"}, {"name": "role/author"}]},
+    {"number": 23, "title": "Choose the date of the demo", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/23", "updated_at": "2026-11-02T07:00:00Z",
+     "labels": [{"name": "kind/ask"}, {"name": "state/waiting-human"}, {"name": "role/author"}]}
+  ],
+  "asks": [
+    {"number": 19, "title": "Rename the timeout setting", "state": "closed", "state_reason": "completed",
+     "html_url": "https://github.com/example-org/example-repo/issues/19", "created_at": "2026-10-30T09:00:00Z",
+     "updated_at": "2026-11-02T06:00:00Z", "closed_at": "2026-11-02T06:00:00Z",
+     "labels": [{"name": "kind/ask"}, {"name": "role/author"}],
+     "body": "Done when: the old name is accepted with a warning for one release"},
+    {"number": 21, "title": "Add a CSV export to the report page", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/21", "created_at": "2026-10-31T09:00:00Z",
+     "updated_at": "2026-11-01T12:00:00Z", "labels": [{"name": "kind/ask"}, {"name": "role/author"}],
+     "body": "Done when: the report page has a CSV button and a test covers it\nDepends on: #12"},
+    {"number": 22, "title": "Fix the broken link in the README", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/22", "created_at": "2026-11-02T08:00:00Z",
+     "updated_at": "2026-11-02T08:00:00Z", "labels": [{"name": "kind/ask"}, {"name": "role/author"}],
+     "body": "Done when: the link resolves and the link check passes"},
+    {"number": 23, "title": "Choose the date of the demo", "state": "open",
+     "html_url": "https://github.com/example-org/example-repo/issues/23", "created_at": "2026-11-01T09:00:00Z",
+     "updated_at": "2026-11-02T07:00:00Z",
+     "labels": [{"name": "kind/ask"}, {"name": "state/waiting-human"}, {"name": "role/author"}],
+     "body": "Default: the 14th, if there is no answer by Friday"}
+  ],
+  "pulls": [
+    {"number": 12, "draft": false, "head": {"sha": "1111111111111111111111111111111111111111"}, "updated_at": "2026-11-01T09:00:00Z"},
+    {"number": 13, "draft": true, "head": {"sha": "2222222222222222222222222222222222222222"}, "updated_at": "2026-11-01T10:00:00Z"}
+  ],
+  "reviews": {},
+  "comments": {}
+}

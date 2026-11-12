@@ -3,7 +3,16 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+src/onloop/ui/
+web/node_modules/
+web/test-results/
+web/playwright-report/
+web/.demo/
 .pytest_cache/
 .ruff_cache/
 *.pem
 *.key
+.onloop/
+*.db
+*.db-wal
+*.db-shm
