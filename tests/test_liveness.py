@@ -150,13 +150,13 @@ def test_a_session_outside_the_roots_leaves_no_trace(tmp_path, monkeypatch):
     assert not d.exists()  # no file, no directory, no _errors.log, no path
 
 
-def test_a_session_inside_a_root_is_recorded_in_a_subfolder_and_with_other_case(tmp_path):
+def test_a_session_inside_a_root_is_recorded_in_a_subfolder(tmp_path):
     root = tmp_path / "Work"
     sub = root / "a" / "b"
     path = liveness.record(
         "Stop",
         str(tmp_path / "rec"),
-        json.dumps({"session_id": "cli-1", "cwd": str(sub).upper()}),
+        json.dumps({"session_id": "cli-1", "cwd": str(sub)}),
         env={},
         only_under=[str(root)],
     )
@@ -171,3 +171,20 @@ def test_a_session_inside_a_root_is_recorded_in_a_subfolder_and_with_other_case(
         )
         is not None
     )
+
+
+def test_another_case_of_the_root_is_the_same_folder_only_where_the_platform_says_so(tmp_path):
+    """Windows paths ignore case, so the root written in upper case is still the root. On POSIX another case is
+    another folder, and a session there is outside the root. The rule is the platform's own (os.path.normcase)."""
+    root = tmp_path / "Work"
+    path = liveness.record(
+        "Stop",
+        str(tmp_path / "rec"),
+        json.dumps({"session_id": "cli-1", "cwd": str(root / "a").upper()}),
+        env={},
+        only_under=[str(root)],
+    )
+    if os.path.normcase("A") == "a":
+        assert path is not None and os.path.exists(path)
+    else:
+        assert path is None

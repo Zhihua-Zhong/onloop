@@ -76,7 +76,10 @@ def test_the_setup_token_credential_is_taken_without_asking_auth_status():
     )
 
 
-def test_the_command_line_writes_last_step_json(tmp_path, capsys):
+def test_the_command_line_writes_last_step_json(tmp_path, capsys, monkeypatch):
+    # Outside GitHub Actions. There the step also prints its CI lines after the JSON line (ci_report's tests).
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     cfg = fixture_cfg(tmp_path, [pr(12)], [pull(12, A)], raw=gated_raw())
     code = cli.main(
         [
