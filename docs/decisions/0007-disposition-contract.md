@@ -1,6 +1,6 @@
 # Decision 0007: the disposition contract
 
-- **Status:** Accepted on 2026-11-09
+- **Status:** Accepted on 2026-11-09; its grammar is amended by [decision 0012](0012-outcome-line-version-2.md) (2026-11-16)
 - **Date:** number reserved 2026-11-09; written 2026-11-09
 - **Decided by:** the project lead, approving the technical design of 2026-11-09; the contract's details come from the
   first customer's answer of 2026-11-09, which accepted it with the changes recorded here
