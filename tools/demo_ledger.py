@@ -726,9 +726,10 @@ def _asks(s: _Story) -> None:
                     led.append(e) for e in goals.link_events(led, pr, f"Goal: {goal}", opened)
                 ],
             )
+        merged_at = s.ts(-days_ago * DAY)
         s.step(
             days_ago * DAY,
-            lambda led, pr=pr, at=s.ts(-days_ago * DAY): led.append(
+            lambda led, pr=pr, at=merged_at: led.append(
                 {
                     "id": f"demo-{pr}-m",
                     "source": "github",
