@@ -42,6 +42,11 @@ re-parses. A new grammar therefore cannot change how an old event reads.
    they are kept on the turn and make no task.
 3. **A missing effect is not a parse error.** The line is valid, and the task is marked incomplete by a separate check.
    Rejecting at the parser would bury an urgent ask. The same holds for a stated cost of delay without `holds`.
+   - **`holds` is required whenever an ask states any cost of delay**: `cost_from`, `days=<n>` and `days=?` alike (the
+     lead's ruling on Q16, 2026-11-16). `days=?` means "it costs, the date is not known", so something slips, and
+     `holds` is what the person reads to see what.
+   - An ask whose delay never costs states no cost of delay at all (and is weighted `skippable`), so it needs no
+     `holds`.
 4. **`days` is converted once, at ingest,** to `cost_from` = the ingest day + n. The ingest day is the calendar day of
    the event's ledger time (never a time the sender claims), in `kpi.timezone`. The converted date and the key as
    written (`cost_given`) are frozen in the event. **No count of days is ever stored or sorted on.** Days are computed
@@ -54,12 +59,23 @@ re-parses. A new grammar therefore cannot change how an old event reads.
    - onloop checks the event through its adapter. It is **alive** while pending, **fires** when complete, and is
      **dead** when the source says it does not exist, or when no adapter for the kind is configured. It is **unknown**
      on a network error or a rate limit, never read as dead.
+   - Until spike R5-S2 has run on a test repository the project lead approves, the three GitHub kinds are checked by
+     no adapter and read as **unknown**, with that reason, not dead.
 6. **One narrowing:** `pid:0` is refused (no process has pid 0). It is the only line that version 1 accepted and
    version 2 refuses.
 7. **The `hook.stop` payload gains `grammar: 2`** and an `ask` object with the keys above. A payload without `grammar`
    is version 1.
-8. **`onloop ask` is the primary way to ask the person** (spike R5-S4b: 8 of 11 one-line asks were complete on Haiku,
-   under the agreed threshold of 9).
+8. **`onloop ask` is the primary way to ask the person; the keys on the outcome line are the secondary way.**
+   The evidence is spike R5-S4b (2026-11-16): 11 calls on Haiku, with the shared paragraph delivered as a file, scored
+   against the rule as it stood before the run.
+   - **8 of 11 passed, under the threshold of 9 agreed before the run.**
+   - Two of the three failures were `days=?` without `holds`, on asks with no deadline. The paragraph had told roles to
+     write `days=?` when the delay never costs; it now tells them to state no cost of delay.
+   - The third failure was an unquoted value with a space, which breaks version 1's quoting rule.
+   - Both forms of the cost of delay were used correctly: `cost_from` in 3 of 3 dated answers (one converted from "in
+     2 days"), and `days=0` and `days=4`. `holds` was given in 6 of 8 asks that stated a cost of delay, and in all 5
+     with a date or a number of days. Every ask carried an effect, and both outside waits used `event:`.
+   - Haiku is weaker than the models roles usually run, so this is a conservative result.
    - `onloop ask --owner human --ref … --effect … [--goal …] [--weight …] [--cost-from … | --days …] [--holds …]
      [--default …]` checks every field when it is asked, and prints the task id.
    - The turn then ends with `outcome: blocked owner=human ref=task:<id>`.
