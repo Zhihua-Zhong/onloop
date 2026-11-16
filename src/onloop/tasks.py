@@ -346,3 +346,24 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
         "event": event["id"],
         "verified": False,
     }
+
+
+def quiet(ledger: Ledger, now: str) -> dict[str, Any] | None:
+    """When nothing has happened for a day: is the team idle, or is someone waiting on someone?"""
+    last = ledger.select("SELECT MAX(ts_system) AS t FROM events WHERE kind NOT IN ('config.set')")[0]["t"]
+    if not last or (ev.parse_ts(now) - ev.parse_ts(last)).total_seconds() < 86400:
+        return None
+    latest = ledger.select(
+        "SELECT t.role, t.outcome FROM turns t WHERE NOT EXISTS (SELECT 1 FROM turns u WHERE u.role = t.role AND "
+        "(u.ended_at > t.ended_at OR (u.ended_at = t.ended_at AND u.last_seq > t.last_seq))) ORDER BY t.role"
+    )
+    waits = ledger.select(
+        "SELECT waiter, on_kind, on_ref, since FROM waits WHERE cleared_at IS NULL AND on_kind IN ('role', 'human') "
+        "ORDER BY since"
+    )
+    idle = bool(latest) and all(r["outcome"] == "idle" for r in latest) and not waits
+    return {
+        "since": last,
+        "state": "idle" if idle else "waiting",
+        "waits": [{"waiter": w["waiter"], "on": w["on_ref"], "since": w["since"]} for w in waits],
+    }

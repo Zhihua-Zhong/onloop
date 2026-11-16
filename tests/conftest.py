@@ -27,6 +27,17 @@ BASE = {
 HEAD = "a" * 40
 
 
+@pytest.fixture(autouse=True)
+def _calendar_days_in_utc():
+    """Every test counts calendar days in UTC unless it sets a zone itself, so no test depends on this machine's
+    offset (kpi.timezone defaults to it in onloopd)."""
+    from onloop import localday
+
+    localday.set_zone(dt.UTC)
+    yield
+    localday.set_zone(None)
+
+
 @pytest.fixture
 def raw():
     return copy.deepcopy(BASE)

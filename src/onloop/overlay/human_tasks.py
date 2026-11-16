@@ -276,22 +276,76 @@ def on_node(conn: sqlite3.Connection, e: Event, item_id: str, waiting: bool) -> 
     wid = f"{item_id}/human"
     open_ = _open_ids(conn, "origin = 'node' AND wait_id = ?", (wid,))
     if waiting and not open_:
-        row = conn.execute("SELECT title, detail FROM items WHERE id = ?", (item_id,)).fetchone()
-        detail = json.loads(row[1]) if row and row[1] else {}
+        ask, title = _item_ask(conn, item_id)
         open_task(
             conn,
             e,
             origin="node",
             origin_ref=e["id"],
-            ask={"default": detail.get("default")} if detail.get("default") else {},
+            ask=ask,
             author_role=None,
             ref=item_id,
             wait_id=wid,
-            title=row[0] if row else item_id,
+            title=title or item_id,
         )
     elif not waiting:
         for tid in open_:
             resolve(conn, e, tid, "done", evidence=f"event:{e['id']}", by="work-graph")
+
+
+def _item_ask(conn: sqlite3.Connection, item_id: str | None) -> tuple[dict[str, Any], str | None]:
+    """What an item that waits on the person already says: its default, and when the default applies (its `expires`,
+    the day the delay starts to cost)."""
+    row = (
+        conn.execute("SELECT title, detail FROM items WHERE id = ?", (item_id,)).fetchone()
+        if item_id
+        else None
+    )
+    detail = json.loads(row[1]) if row and row[1] else {}
+    ask: dict[str, Any] = {}
+    if detail.get("default"):
+        ask["default"] = str(detail["default"])[:120]
+    if detail.get("expires"):
+        try:
+            ask["cost_from"] = (ev.norm_ts(detail["expires"]) or "")[:10]
+            ask["cost_given"] = "expires"
+        except ev.EventError:
+            pass
+    return ask, (row[0] if row else None)
+
+
+def on_wait_opened(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """Any other wait on the person (a `needs_human` from a slot or an import): a task, so nothing waits on the person
+    without being on the list. It ends when its wait clears, as `superseded` by that event (resolved without you)."""
+    if p.get("on_kind") != "human" or p.get("reason") in ("paused_by_human", "permission", "blocked"):
+        return
+    if _open_ids(conn, "wait_id = ?", (p["id"],)):
+        return
+    ask, title = _item_ask(conn, p.get("item_id"))
+    open_task(
+        conn,
+        e,
+        origin="wait",
+        origin_ref=e["id"],
+        ask=ask,
+        author_role=None,
+        ref=p.get("item_id"),
+        wait_id=p["id"],
+        title=title or p.get("waiter"),
+    )
+
+
+def on_wait_cleared(conn: sqlite3.Connection, e: Event, wait_id: str) -> None:
+    for tid in _open_ids(conn, "origin = 'wait' AND wait_id = ?", (wait_id,)):
+        resolve(
+            conn,
+            e,
+            tid,
+            "superseded",
+            evidence=f"event:{e['id']}",
+            by="ledger",
+            superseded_by=f"event:{e['id']}",
+        )
 
 
 def on_paused(conn: sqlite3.Connection, e: Event, role: str) -> None:

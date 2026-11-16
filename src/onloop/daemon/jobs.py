@@ -37,6 +37,7 @@ from typing import Any
 from .. import events as ev
 from .. import localday
 from ..overlay.ledger import Ledger
+from ..tasks import quiet as _tasks_quiet
 
 RUNS = ("report-daily",)
 _AT = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
@@ -256,22 +257,4 @@ def boot_gap(
     return payload
 
 
-def quiet(ledger: Ledger, now: str) -> dict[str, Any] | None:
-    """When nothing has happened for a day: is the team idle, or is someone waiting on someone?"""
-    last = ledger.select("SELECT MAX(ts_system) AS t FROM events WHERE kind NOT IN ('config.set')")[0]["t"]
-    if not last or (ev.parse_ts(now) - ev.parse_ts(last)).total_seconds() < QUIET_S:
-        return None
-    latest = ledger.select(
-        "SELECT t.role, t.outcome FROM turns t WHERE NOT EXISTS (SELECT 1 FROM turns u WHERE u.role = t.role AND "
-        "(u.ended_at > t.ended_at OR (u.ended_at = t.ended_at AND u.last_seq > t.last_seq))) ORDER BY t.role"
-    )
-    waits = ledger.select(
-        "SELECT waiter, on_kind, on_ref, since FROM waits WHERE cleared_at IS NULL AND on_kind IN ('role', 'human') "
-        "ORDER BY since"
-    )
-    idle = bool(latest) and all(r["outcome"] == "idle" for r in latest) and not waits
-    return {
-        "since": last,
-        "state": "idle" if idle else "waiting",
-        "waits": [{"waiter": w["waiter"], "on": w["on_ref"], "since": w["since"]} for w in waits],
-    }
+quiet = _tasks_quiet  # the reading lives with the task list (layer 2), so the views can use it

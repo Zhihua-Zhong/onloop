@@ -29,6 +29,10 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
                                 ?plain=1 leaves out the `event:` line, so a browser's EventSource sees every event
+    GET /api/tasks              the person's task list, in its one order (decision 0013)
+    GET /api/digest             since the last visit (?since=last, the default, or a time): added, resolved, resolved
+                                without you, returned, goal ticks, onloopd's gaps; then the list
+    GET /api/kpi                the outcome KPIs over a window (?window=7d; 1d to 90d), each with its denominator
     GET /api/conversation       the Conversation view: the carried roles and one role's thread (?role=R)
     GET /api/ui/csrf            the page's CSRF token, for a request that carries the page's session cookie
     POST /ui/messages           the UI's one write (decision 0011): {"role", "text"}, a person's message to a role. It
@@ -468,6 +472,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
+            elif url.path == "/api/tasks":
+                body = views.tasks_view(reader, ev.now_ts())
+            elif url.path == "/api/digest":
+                try:
+                    body = views.digest_view(reader, ev.now_ts(), query.get("since", ["last"])[0])
+                except views.QueryError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
+            elif url.path == "/api/kpi":
+                try:
+                    body = views.kpi_view(reader, ev.now_ts(), query.get("window", ["7d"])[0])
+                except views.QueryError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
             elif url.path == "/api/conversation":
                 kill = bool(self.server.heartbeat) and (self.server.heartbeat.parent / "carrier.off").exists()
                 body = views.conversation(

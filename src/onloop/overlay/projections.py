@@ -116,6 +116,8 @@ WAIT_FIELDS = ("item_id", "waiter", "on_kind", "on_ref", "reason", "ref")
 def _wait_opened(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     row = {"id": p["id"], **_pick(p, WAIT_FIELDS), "since": p.get("since") or when(e), "cleared_at": None}
     _insert(conn, "waits", {**row, "last_seq": e["seq"]})
+    if _HAS_TASKS(conn):
+        human_tasks.on_wait_opened(conn, e, p)
 
 
 def _wait_cleared(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
@@ -123,6 +125,8 @@ def _wait_cleared(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> N
         "UPDATE waits SET cleared_at = ?, last_seq = ? WHERE id = ? AND cleared_at IS NULL",
         (when(e), e["seq"], p["id"]),
     )
+    if _HAS_TASKS(conn):
+        human_tasks.on_wait_cleared(conn, e, p["id"])
 
 
 def _resource_checked(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:

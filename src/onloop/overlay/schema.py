@@ -107,7 +107,7 @@ MESSAGE_CHANNELS = ("ui", "cli", "carrier")
 CARRIER_PAUSES = ("kill_switch", "usage_limit", "not_logged_in", "overage")
 
 # Version 7 value sets (decisions 0012, 0013 and 0014).
-TASK_ORIGINS = ("outcome", "cli", "gate", "adapter", "notification", "node", "pause")
+TASK_ORIGINS = ("outcome", "cli", "gate", "adapter", "notification", "node", "pause", "wait")
 TASK_STAGES = ("open", "returned_author", "returned_coordinator", "resolved")
 TASK_RESOLUTIONS = ("done", "declined", "superseded", "expired")
 WEIGHTS = ("critical", "supporting", "skippable")

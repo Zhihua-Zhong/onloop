@@ -97,21 +97,28 @@ def test_without_a_concrete_move_there_is_no_next_move(tmp_path):
         assert n["constraint"]["on_ref"] == "q" and n["next"] is None  # nothing a person can do names itself
 
 
-def test_now_lists_what_waits_on_the_human_with_the_default_and_the_time_left(led):
+def test_now_lists_what_waits_on_the_human_as_the_task_list(led):
+    """Now's "Waiting on you" is the task list in its one order (decision 0013): the pause the person made has its
+    effect and comes first; the two asks that state no effect are listed last, marked, with their defaults and the
+    day their delay starts to cost, computed when read."""
+    from onloop import tasks
+
     cards = views.now(led, NOW)["waiting_on_you"]
-    first, second, paused = cards
-    assert (first["title"], first["default"], first["left_s"]) == (
+    assert [c["id"] for c in cards] == [c["id"] for c in tasks.open_tasks(led, NOW)]
+    paused, merge, date = cards
+    assert (paused["origin"], paused["band"], paused["title"]) == (
+        "pause",
+        "unweighted",
+        "Resume reviewer, which you paused",
+    )
+    assert paused["effect"] == "resume reviewer, so the work it holds moves again"
+    assert (merge["title"], merge["default"], merge["band"]) == (
         "Merge the change only you may merge",
         "the next gap is held for it, at most 20 min",
-        20 * 60,
-    )  # what runs out first comes first
-    assert (second["title"], second["default"], second["left_s"]) == (
-        "Pick the release date",
-        "next Monday",
-        2 * 86400,
+        "incomplete",
     )
-    assert paused["kind"] == "paused_role" and paused["owner_role"] == "reviewer" and paused["queued"] == 4
-    assert paused["command"] == "onloop role resume reviewer"  # read-only: the command to copy, never a write
+    assert merge["cost_text"] == "costing now" and "no_effect" in merge["incomplete_reasons"]
+    assert (date["title"], date["default"], date["days_left"]) == ("Pick the release date", "next Monday", 2)
 
 
 def test_now_lists_the_stalls_with_their_age_the_would_be_wake_and_no_acknowledgement(led):

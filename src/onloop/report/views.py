@@ -461,11 +461,87 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
         "now": now_ts,
         "constraint": top,
         "related": related,
-        "next": _next_move(top, items, waits, ledger.leases()),
-        "waiting_on_you": _waiting_on_you(waits, items, now_ts),
+        "next": _first_task_move(ledger, top, now_ts) or _next_move(top, items, waits, ledger.leases()),
+        "waiting_on_you": _tasks_or_waits(ledger, waits, items, now_ts),
         "stalls": _stalls(ledger, alerts, now_ts),
         "health": _health(ledger, alerts, now_ts, heartbeat),
+        "quiet": _quiet(ledger, now_ts),
     }
+
+
+# -- the task list, the digest, the outcome KPIs (decisions 0013, 0014) --------------------------------------------------
+
+
+def _has_tasks(ledger: Any) -> bool:
+    return bool(ledger.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'human_tasks'"))
+
+
+def _tasks_or_waits(ledger: Any, waits: list[dict[str, Any]], items: Mapping[str, Any], now_ts: str) -> list:
+    """Now's "Waiting on you" is the task list, in its one order (the same function as /api/tasks)."""
+    if not _has_tasks(ledger):
+        return _waiting_on_you(waits, items, now_ts)
+    from .. import tasks
+
+    return [{**c, "kind": "task"} for c in tasks.open_tasks(ledger, now_ts)]
+
+
+def _first_task_move(ledger: Any, top: Mapping[str, Any] | None, now_ts: str) -> dict[str, Any] | None:
+    """When the constraint is the person, the next move is the first task of the one order."""
+    if not top or top.get("on_kind") != "human" or not _has_tasks(ledger):
+        return None
+    from .. import tasks
+
+    first = next(iter(tasks.open_tasks(ledger, now_ts)), None)
+    if first is None:
+        return None
+    return _move(
+        f"Answer: {first.get('effect') or first.get('title') or first['id']}",
+        item={"id": first["id"], "ref": first.get("ref")},
+    )
+
+
+def _quiet(ledger: Any, now_ts: str) -> dict[str, Any] | None:
+    from .. import tasks
+
+    try:
+        return tasks.quiet(ledger, now_ts)
+    except Exception:  # noqa: BLE001 - a reading that cannot be made is not shown
+        return None
+
+
+def tasks_view(ledger: Any, now_ts: str) -> dict[str, Any]:
+    from .. import tasks
+
+    cards = tasks.open_tasks(ledger, now_ts) if _has_tasks(ledger) else []
+    return {"now": now_ts, "tasks": cards, "bands": list(tasks.BANDS), "count": len(cards)}
+
+
+def digest_view(ledger: Any, now_ts: str, since: str) -> dict[str, Any]:
+    from .. import tasks
+
+    if since == "last":
+        mark = tasks.last_visit(ledger)
+    else:
+        try:
+            mark = ev.norm_ts(since)
+        except ev.EventError as e:
+            raise QueryError(f"since is last or a time: {e}") from e
+    return tasks.digest(ledger, mark, now_ts)
+
+
+def kpi_view(ledger: Any, now_ts: str, window: str) -> dict[str, Any]:
+    from .. import kpi
+
+    try:
+        seconds = ev.parse_duration(window)
+    except ev.EventError as e:
+        raise QueryError(str(e)) from e
+    if not 86400 <= seconds <= 90 * 86400:
+        raise QueryError("window is 1d to 90d")
+    since = ev.shift_ts(now_ts, -seconds)
+    out = kpi.outcome(ledger, since=since, until=now_ts)
+    out["window"] = window
+    return out
 
 
 # -- Flow --------------------------------------------------------------------------------------------------------------
