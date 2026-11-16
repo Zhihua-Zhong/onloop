@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
-import { DigestBand, TaskList } from "@/views/Tasks";
+import { DigestBand, TaskList, TaskRows } from "@/views/Tasks";
 import { ago, clock, duration, plural, reason } from "@/lib/format";
 import { href } from "@/lib/route";
 import { Card, Command, Dot, Empty, Loading, Meta, Pill, Problem, Section, Ticks, tone, type Tone } from "@/components/kit";
@@ -85,6 +85,42 @@ function Banner({ m }: { m: NowModel }) {
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+// When tasks wait on the person, the list is Now's primary area and the constraint is one line above it (vision round 3).
+function CompactBanner({ m }: { m: NowModel }) {
+  const c = m.constraint;
+  if (!c) return null;
+  const what = c.on_kind === "human" ? "you" : c.on_ref;
+  const n = c.waiters.length;
+  return (
+    <section
+      data-testid="constraint"
+      aria-label="Biggest constraint"
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-ui border border-state-blocked/45 bg-state-blocked/[0.07] px-3 py-1.5 text-[13px] dark:bg-state-blocked/[0.12]"
+    >
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-state-blocked">Constraint</span>
+      <span className="font-semibold" data-testid="constraint-headline">
+        <span className="font-mono">{what}</span> holds {plural(n, c.on_kind === "human" ? "item" : "change")}
+        {c.on_kind === "resource" ? " in its queue" : ""}
+      </span>
+      <span className="text-muted max-sm:hidden">{duration(c.direct_wait_s)} waiting in total</span>
+      {m.next && (
+        <span className="min-w-0 truncate max-sm:hidden" data-testid="next-move">
+          <span className="text-muted">next: </span>
+          <span data-testid="next-text">{m.next.text}</span>
+          {m.next.ref && (
+            <a href={m.next.ref} target="_blank" rel="noopener noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 text-accent hover:underline" data-testid="next-link">
+              open <ExternalLink className="h-3 w-3" aria-hidden />
+            </a>
+          )}
+        </span>
+      )}
+      <a href={href("flow")} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline max-sm:hidden">
+        Flow <ArrowRight className="h-3 w-3" aria-hidden />
+      </a>
     </section>
   );
 }
@@ -241,6 +277,32 @@ function Glance({ m }: { m: NowModel }) {
   );
 }
 
+// Tasks first: the one-line constraint, the one-line digest, then the list in its order as the primary area (about two
+// thirds of the width), with Stalled and Health in the narrow column beside it, or below it on a phone.
+function TasksFirst({ m }: { m: NowModel }) {
+  const tasks = m.waiting_on_you as TaskCard[];
+  const healthCount = m.health.schedules.length + (!m.health.onloopd || m.health.onloopd.stale ? 1 : 0);
+  return (
+    <>
+      <CompactBanner m={m} />
+      <DigestBand />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-5">
+        <Section title="Waiting on you" count={tasks.length} t="human" testid="col-waiting" note={<span className="max-sm:hidden">in order: weight, then when the delay costs, then age</span>}>
+          <TaskRows tasks={tasks} now={m.now} />
+        </Section>
+        <div className="flex min-w-0 flex-col gap-6">
+          <Section title="Stalled" count={m.stalls.length} t="stall" testid="col-stalls">
+            {m.stalls.length ? m.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
+          </Section>
+          <Section title="Health" count={healthCount} t={m.health.schedules.length ? "blocked" : "done"} testid="col-health">
+            <Health h={m.health} now={m.now} quiet={m.quiet} />
+          </Section>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function NowView() {
   const q = useQuery({ queryKey: ["now"], queryFn: api.now, refetchInterval: 30_000 });
   return (
@@ -250,6 +312,9 @@ export function NowView() {
       ) : q.isError ? (
         <Problem error={q.error} />
       ) : (
+        q.data.waiting_on_you.length > 0 && q.data.waiting_on_you[0].kind === "task" ? (
+          <TasksFirst m={q.data} />
+        ) : (
         <>
           <DigestBand />
           <Banner m={q.data} />
@@ -279,6 +344,7 @@ export function NowView() {
             </Section>
           </div>
         </>
+        )
       )}
     </div>
   );

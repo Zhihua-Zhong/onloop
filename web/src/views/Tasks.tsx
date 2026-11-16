@@ -152,6 +152,7 @@ export function TaskList({ tasks, now }: { tasks: TaskCard[]; now: string }) {
 // "Since you were away": what changed on the list since the last visit. The visit is recorded once the page has been
 // open for a few seconds, at most once per 15 minutes (a local reminder only; the ledger keeps the visit itself).
 const VISIT_KEY = "onloop.visit.posted";
+const SEEN_KEY = "onloop.digest.seen";
 
 function useRecordVisit() {
   useEffect(() => {
@@ -186,12 +187,23 @@ function sinceText(d: DigestModel): string {
 export function DigestBand() {
   useRecordVisit();
   const q = useQuery({ queryKey: ["digest"], queryFn: tasksApi.digest, staleTime: Infinity });
-  const [open, setOpen] = useState(false);
   const d = q.data;
+  // The band opens with what changed the first time this absence is seen in this browser, and is one line after that.
+  const [open, setOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!d?.since || open !== null) return;
+    let seen = false;
+    try {
+      seen = window.localStorage.getItem(SEEN_KEY) === d.since;
+      window.localStorage.setItem(SEEN_KEY, d.since);
+    } catch {
+      /* no storage: open it */
+    }
+    setOpen(!seen);
+  }, [d?.since, open]);
   if (!d) return null;
   const away = d.since ? (Date.parse(d.now) - Date.parse(d.since)) / 1000 : Infinity;
   if (away < 8 * 3600) return null;
-  const first = d.open.slice(0, 3);
   const facts = [
     `${d.added.length} added`,
     `${d.resolved.length} resolved`,
@@ -201,42 +213,123 @@ export function DigestBand() {
     ...(d.gaps.length ? [`onloop was down ${plural(d.gaps.length, "time")}`] : []),
   ];
   return (
-    <section data-testid="digest" aria-label="Since you were away" className="rounded-zone border border-line bg-surface px-4 py-3">
-      <button type="button" className="flex w-full flex-wrap items-baseline gap-x-2 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span className="text-sm font-semibold">{sinceText(d)}:</span>
-        <span className="text-sm">{facts.join(" · ")}</span>
-        <span className="ml-auto text-[13px] text-accent">{open ? "hide" : "show what changed"}</span>
+    <section data-testid="digest" aria-label="Since you were away" className="rounded-ui border border-line bg-surface px-3 py-1.5">
+      <button type="button" className="flex w-full items-baseline gap-x-2 text-left" onClick={() => setOpen(!open)} aria-expanded={!!open}>
+        <span className="shrink-0 text-[13px] font-semibold">{sinceText(d)}:</span>
+        <span className="min-w-0 truncate text-[13px]">{facts.join(" · ")}</span>
+        <span className="ml-auto shrink-0 text-[12.5px] text-accent">{open ? "hide" : "what changed"}</span>
       </button>
-      {first.length > 0 && (
-        <ol className="mt-2 grid gap-1 text-[13.5px] leading-snug" data-testid="digest-first" aria-label="Start with">
-          {first.map((t, i) => (
-            <li key={t.id} className="flex items-baseline gap-2">
-              <span className="w-4 shrink-0 text-right font-semibold tabular-nums text-muted">{i + 1}</span>
-              <span className={cn("h-2 w-2 shrink-0 translate-y-[-1px] rounded-full", tone(BAND[t.band].t).dot)} aria-hidden />
-              <span className="min-w-0">
-                <span className="font-medium">{t.effect ?? t.title}</span>
-                {costText(t) && <span className={t.days_left === 0 ? "text-state-blocked" : "text-muted"}> · {costText(t)}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
       {open && (
-        <div className="mt-2 grid gap-1 text-[13px] leading-snug" data-testid="digest-detail">
+        <div className="mt-1 grid gap-0.5 pb-1 text-[12.5px] leading-snug" data-testid="digest-detail">
           {d.resolved_without_you.map((t) => (
             <p key={t.id}><span className="font-medium">Resolved without you:</span> {t.effect ?? t.title} <span className="text-muted">({t.resolution}, {t.evidence})</span></p>
           ))}
           {d.returned.map((t) => (
             <p key={t.id}><span className="font-medium">Returned:</span> {t.effect ?? t.title} <span className="text-muted">({t.stage.replace("_", " to the ")})</span></p>
           ))}
-          {d.added.map((t) => (
-            <p key={t.id}><span className="font-medium">Added:</span> {t.effect ?? t.title}</p>
-          ))}
           {d.gaps.map((g) => (
             <p key={g.from}><span className="font-medium">onloop was down</span> {duration(g.seconds)} from {new Date(g.from).toLocaleString()} ({g.cause ?? "cause unknown"})</p>
           ))}
+          <p className="text-muted">The {d.added.length} added are in the list below, in its order.</p>
         </div>
       )}
     </section>
+  );
+}
+
+
+// The compact row form (vision round 3): one line per task, in the one order, so a person plans the next hour from the
+// first screen. A row gives the weight, the effect, what waits, when the delay costs, the age and where it came from;
+// opening it shows the full card with its actions.
+export function costShort(t: TaskCard): string {
+  if (t.days_left != null && t.cost_from) return t.days_left === 0 ? "costing now" : `in ${t.days_left} d`;
+  return t.cost_unknown ? "date unknown" : "";
+}
+
+function originShort(t: TaskCard): string {
+  switch (t.origin) {
+    case "outcome":
+    case "cli":
+      return t.author_role ?? "asked";
+    case "adapter":
+      return "tracker";
+    case "gate":
+      return "merge gate";
+    case "notification":
+      return `${t.author_role} prompt`;
+    case "pause":
+      return "your pause";
+    default:
+      return "waits";
+  }
+}
+
+function shortAge(seconds: number): string {
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
+  return `${Math.round(seconds / 86400)} d`;
+}
+
+export function TaskRows({ tasks, now }: { tasks: TaskCard[]; now: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const shown = tasks.filter((t) => !hidden.has(t.id));
+  return (
+    <div className="flex flex-col">
+      <ol className="divide-y divide-line overflow-hidden rounded-ui border border-line bg-surface" data-testid="task-rows">
+        {shown.map((t, i) => {
+          const band = BAND[t.band];
+          const cost = costShort(t);
+          const isOpen = open === t.id;
+          return (
+            <li key={t.id} data-testid={`row-${t.id}`} className={cn(isOpen && "bg-raised/40")}>
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : t.id)}
+                aria-expanded={isOpen}
+                className="grid w-full grid-cols-[1.25rem_5.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 px-3 py-[7px] text-left hover:bg-raised/60 max-sm:grid-cols-[1.1rem_minmax(0,1fr)_auto] max-sm:py-2"
+              >
+                <span className="text-right text-[12px] font-semibold tabular-nums text-muted">{i + 1}</span>
+                <span className={cn("inline-flex items-center gap-1.5 text-[12px] font-medium max-sm:hidden", tone(band.t).text)} data-testid="row-band">
+                  <span className={cn("h-2 w-2 shrink-0 rounded-full", tone(band.t).dot)} aria-hidden />
+                  {t.weight === "critical" && t.incomplete ? "critical!" : band.label}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className={cn("h-2 w-2 shrink-0 translate-y-[-1px] rounded-full sm:hidden", tone(band.t).dot)} aria-hidden />
+                    <span className={cn("min-w-0 shrink truncate text-[14px] font-medium", !t.effect && "text-state-stall")} data-testid="row-effect" title={t.effect ?? t.title ?? undefined}>
+                      {t.effect ?? `Incomplete: ${t.title ?? t.id}`}
+                    </span>
+                    {t.holds && <span className="hidden max-w-[32%] shrink-[3] truncate text-[12.5px] text-muted xl:inline">{t.holds}</span>}
+                  </span>
+                  <span className="mt-0.5 flex gap-2 text-[12px] text-muted sm:hidden">
+                    {cost && <span className={t.days_left === 0 ? "font-semibold text-state-blocked" : ""}>{cost}</span>}
+                    <span>{originShort(t)}</span>
+                    <span>{shortAge(t.age_s)}</span>
+                    {t.goal && <span className="font-mono">{t.goal}</span>}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-baseline gap-3 text-[12.5px] tabular-nums max-sm:hidden">
+                  {t.goal && <span className="font-mono text-[11.5px] text-muted">{t.goal}</span>}
+                  <span className={cn("w-[5.5rem] text-right", t.days_left === 0 ? "font-semibold text-state-blocked" : "text-muted")} data-testid="row-cost">{cost || "—"}</span>
+                  <span className="w-[4.5rem] truncate text-right text-muted">{originShort(t)}</span>
+                  <span className="w-10 text-right text-muted">{shortAge(t.age_s)}</span>
+                </span>
+              </button>
+              {isOpen && (
+                <div className="px-3 pb-3">
+                  <TaskCardView t={t} now={now} onHide={(id) => { setHidden(new Set([...hidden, id])); setOpen(null); }} />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {hidden.size > 0 && (
+        <button type="button" className="mt-1.5 px-1 text-left text-[13px] text-accent hover:underline" onClick={() => setHidden(new Set())} data-testid="show-hidden">
+          {plural(hidden.size, "task")} set aside for this hour: show
+        </button>
+      )}
+    </div>
   );
 }

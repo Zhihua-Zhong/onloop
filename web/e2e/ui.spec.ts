@@ -37,18 +37,18 @@ async function visibleCard(page: Page, selector: string) {
 test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
-  await expect(page.getByTestId("constraint-numbers")).toHaveText(/^5 changes queued\s*·\s*.+ waiting in total\s*·\s*oldest .+$/);
-  await expect(page.getByTestId("constraint-related")).toContainText("3 changes conflict with main");
+  // with tasks waiting, the constraint is one line above the list (vision round 3)
   await expect(page.getByTestId("next-text")).toHaveText(/^Merge the change only you may merge: it holds merge-check/);
   await expect(page.getByTestId("next-link")).toHaveAttribute("href", /\/pull\/99$/);
   const waiting = page.getByTestId("col-waiting");
-  await expect(waiting.locator("article")).toHaveCount(10); // the task list (decision 0013), in its one order
-  await expect(waiting.locator("article").first().getByTestId("effect")).toHaveText("approve the schema change, so the import can run on real data");
-  await expect(waiting.locator("article").first().getByTestId("cost")).toContainText("costing now");
-  await expect(waiting).toContainText("If nobody answers: next Monday");
-  await expect(waiting).toContainText("Incomplete: no effect stated");
-  await expect(waiting).toContainText("onloop role resume reviewer");
-  await expect(page.getByTestId("digest-first").locator("li")).toHaveCount(3);
+  const rows = waiting.getByTestId("task-rows").locator("li");
+  await expect(rows).toHaveCount(10); // the task list (decision 0013), one row each, in its one order
+  await expect(rows.first().getByTestId("row-effect")).toHaveText("approve the schema change, so the import can run on real data");
+  await expect(rows.first().getByTestId("row-cost")).toHaveText("costing now");
+  await expect(rows.last()).toBeInViewport(); // every task on the first screen
+  await rows.first().locator("button").first().click(); // a row opens to its card, with the default and the actions
+  await expect(waiting).toContainText("If nobody answers: nothing merges");
+  await expect(waiting.getByTestId("mark-done")).toBeVisible();
   const stalls = page.getByTestId("col-stalls");
   await expect(stalls.locator("article")).toHaveCount(4);
   await expect(stalls.getByTestId("would").first()).toContainText("would wake (observe only)");
@@ -63,13 +63,11 @@ test("Now answers the three questions: the constraint, what waits on you, where 
 test("Now's first screen holds the banner and the first card of each question", async ({ page }, info) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint")).toBeInViewport();
-  // back after days away, the first three tasks open the page; on a phone they are the first screen's task list
-  await expect(page.getByTestId("digest-first")).toBeInViewport();
-  const first = page.getByTestId("col-waiting").locator("article").first();
-  if (!isPhone(info.project.name)) await expect(first).toBeInViewport();
+  // the list comes first, after a one-line constraint and the one-line band; on a phone, at least five rows show
+  const rows = page.getByTestId("task-rows").locator("li");
+  await expect(rows.nth(4)).toBeInViewport();
   if (!isPhone(info.project.name)) {
     await expect(page.getByTestId("col-stalls").locator("article").first()).toBeInViewport();
-    await expect(page.getByTestId("col-health").locator("article").first()).toBeInViewport();
   }
 });
 
