@@ -6,7 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
-The session carrier (decision 0010) and the Conversation view (decision 0011) are meant for 0.4.0.
+The session carrier (decision 0010) and the Conversation view (decision 0011) were meant for 0.4.0; `main` is now
+0.5.0.dev0, and R4 and R5 are to be released together (the project lead's call).
 Act modes are off by default.
 
 ### Upgrading
