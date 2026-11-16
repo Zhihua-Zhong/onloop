@@ -5,6 +5,7 @@ import { href, useRoute, VIEW_LABEL, VIEWS, type View } from "@/lib/route";
 import { cn } from "@/lib/utils";
 import { Loading } from "@/components/kit";
 import { NowView } from "@/views/Now";
+import { OutcomeView } from "@/views/Outcome";
 import { TeamView } from "@/views/Team";
 import { SchedulesView } from "@/views/Schedules";
 import { AuditView } from "@/views/Audit";
@@ -109,11 +110,13 @@ export default function App() {
           <LiveBadge live={live} />
           <span
             className="inline-flex items-center gap-1 text-xs text-muted"
-            title="This page only reads, except the message box on Conversation. Where you can act, it shows the command to copy."
+            title="This page only reads, except the message box on Conversation and a task's Done or Decline. Each is a request from a local user, not verified, never an approval. Where you can act otherwise, it shows the command to copy."
             data-testid="read-only"
           >
             <Eye className="h-3.5 w-3.5" aria-hidden />
-            <span className="max-lg:sr-only">{route.view === "conversation" ? "Read-only except messages" : "Read-only"}</span>
+            <span className="max-lg:sr-only">
+              {route.view === "conversation" ? "Read-only except messages" : route.view === "now" ? "Read-only except Done and Decline" : "Read-only"}
+            </span>
           </span>
           <button
             type="button"
@@ -139,6 +142,7 @@ export default function App() {
             <FlowView params={route.params} />
           </Suspense>
         )}
+        {route.view === "outcome" && <OutcomeView params={route.params} />}
         {route.view === "team" && <TeamView />}
         {route.view === "conversation" && <ConversationView params={route.params} />}
         {route.view === "schedules" && <SchedulesView params={route.params} />}

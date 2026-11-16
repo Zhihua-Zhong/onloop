@@ -1,5 +1,6 @@
 // The ledger API as onloopd serves it (src/onloop/daemon/server.py, src/onloop/report/views.py). Read-only: every
-// request here is a GET (decision 0009) but one: a message to a role (`sendMessage`, decision 0011), and the browser
+// request here is a GET (decision 0009) but the page's writes: a message to a role (`sendMessage`, decision 0011) and a
+// task's mark, keep or a visit (`uiPost`, decision 0013); the browser
 // tests fail on any other method.
 
 export type Seconds = number | null;
@@ -64,7 +65,8 @@ export interface NowModel {
   constraint: Bottleneck | null;
   related: { bottlenecks: { on_ref: string; on_kind: string; waiters: number }[]; conflicts: number; blocked_items: number } | null;
   next: { text: string; command: string | null; item_id: string | null; ref: string | null } | null;
-  waiting_on_you: WaitCard[];
+  waiting_on_you: (WaitCard | TaskCard)[];
+  quiet: { since: string; state: "idle" | "waiting"; waits: { waiter: string; on: string; since: string }[] } | null;
   stalls: Stall[];
   health: {
     schedules: ScheduleHealth[];
@@ -225,4 +227,104 @@ export async function sendMessage(role: string, text: string): Promise<{ deliver
     throw new ApiError(r.status, `The message was not taken: ${reason}`);
   }
   throw new ApiError(403, "The message was not taken: reload the page");
+}
+
+// The person's task list (decision 0013), the digest since the last visit, and the outcome KPIs (decision 0014).
+export type Band = "critical" | "supporting" | "unweighted" | "skippable" | "incomplete";
+export interface TaskCard {
+  kind?: "task";
+  id: string;
+  band: Band;
+  origin: "outcome" | "cli" | "gate" | "adapter" | "notification" | "node" | "pause" | "wait";
+  author_role: string | null;
+  ref: string | null;
+  title: string | null;
+  effect: string | null;
+  goal: string | null;
+  weight: string | null;
+  holds: string | null;
+  cost_from: string | null;
+  cost_unknown: boolean;
+  days_left: number | null;
+  cost_text: string | null;
+  default: string | null;
+  stage: "open" | "returned_author" | "returned_coordinator" | "resolved";
+  opened_at: string;
+  age_s: number;
+  return_author_at: string;
+  return_coordinator_at: string;
+  returned_at: string | null;
+  incomplete: boolean;
+  incomplete_reasons: string[];
+  flags: string[];
+  kept_reason: string | null;
+  resolution: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  evidence: string | null;
+  without_you: boolean;
+  action: string;
+}
+export interface DigestModel {
+  since: string | null;
+  now: string;
+  added: TaskCard[];
+  resolved: TaskCard[];
+  resolved_without_you: TaskCard[];
+  returned: TaskCard[];
+  ticks: { goal_id: string; number: number; kind: string; at: string }[];
+  gaps: { from: string; to: string; seconds: number; cause: string | null; at: string }[];
+  open: TaskCard[];
+}
+export interface GoalKpi {
+  title: string | null;
+  ticks: number;
+  unticks: number;
+  ticks_without_evidence: number;
+  denominator: number | null;
+  denominator_at: string | null;
+  denominators_in_window: { count: number; at: string }[];
+  per_merged_pr: number | null;
+}
+export interface Spread { n: number; median: number | null; p90: number | null }
+export interface KpiModel {
+  since: string;
+  until: string;
+  window: string;
+  merged_prs: number;
+  goals: Record<string, GoalKpi>;
+  linked_share: { merged: number; linked: number; none: number; unlinked: number };
+  fixed_cost: { queue_hours: Spread; review_rounds: Spread; human_touches: Spread; unmeasured: string[] };
+  flow_load: { open: number; idle_7d: number };
+  definitions: Record<string, string>;
+}
+export const tasksApi = {
+  digest: () => get<DigestModel>("/api/digest?since=last"),
+  kpi: (window = "7d") => get<KpiModel>(`/api/kpi?window=${encodeURIComponent(window)}`),
+};
+
+// The page's task writes (decision 0013): evidence from a local user, never an approval. Same rules as a message.
+export async function uiPost(path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/visits", body: Record<string, unknown>): Promise<unknown> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": await csrfToken() },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (r.ok) return r.json();
+    if (r.status === 403 && attempt === 0) {
+      csrf = null;
+      continue;
+    }
+    let reason = `${r.status}`;
+    try {
+      reason = ((await r.json()) as { error?: string }).error ?? reason;
+    } catch {
+      /* keep the status */
+    }
+    throw new ApiError(r.status, `Not taken: ${reason}`);
+  }
+  throw new ApiError(403, "Not taken: reload the page");
 }

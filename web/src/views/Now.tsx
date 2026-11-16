@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ExternalLink } from "lucide-react";
-import { api, type NowModel, type Stall, type WaitCard } from "@/lib/api";
+import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
+import { DigestBand, TaskList } from "@/views/Tasks";
 import { ago, clock, duration, plural, reason } from "@/lib/format";
 import { href } from "@/lib/route";
 import { Card, Command, Dot, Empty, Loading, Meta, Pill, Problem, Section, Ticks, tone, type Tone } from "@/components/kit";
@@ -155,7 +156,7 @@ function StallCard({ s }: { s: Stall }) {
   );
 }
 
-function Health({ h, now }: { h: NowModel["health"]; now: string }) {
+function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: NowModel["quiet"] }) {
   const beat = h.onloopd;
   const dm = h.dead_man;
   return (
@@ -194,6 +195,14 @@ function Health({ h, now }: { h: NowModel["health"]; now: string }) {
             {dm.configured ? `dead-man switch ${dm.state === "ok" ? "OK" : dm.state} (${dm.schedule})` : "dead-man not configured"}
           </span>
         </Meta>
+        {quiet && (
+          <p className="mt-1 text-[13px] leading-snug" data-testid="quiet">
+            Quiet since {clock(quiet.since, now, true)}:{" "}
+            {quiet.state === "idle"
+              ? "every role's last outcome is idle; nothing to do."
+              : `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`}
+          </p>
+        )}
       </Card>
       <p className="px-1 text-[13px] text-muted" data-testid="health-ok">
         {h.schedules_ok
@@ -242,11 +251,20 @@ export function NowView() {
         <Problem error={q.error} />
       ) : (
         <>
+          <DigestBand />
           <Banner m={q.data} />
           <Glance m={q.data} />
           <div className="grid gap-6 lg:grid-cols-3 lg:gap-5">
             <Section title="Waiting on you" count={q.data.waiting_on_you.length} t="human" testid="col-waiting">
-              {q.data.waiting_on_you.length ? q.data.waiting_on_you.map((w) => <Waiting key={w.id} w={w} />) : <Empty>Nothing waits on you.</Empty>}
+              {q.data.waiting_on_you.length ? (
+                q.data.waiting_on_you[0].kind === "task" ? (
+                  <TaskList tasks={q.data.waiting_on_you as TaskCard[]} now={q.data.now} />
+                ) : (
+                  (q.data.waiting_on_you as WaitCard[]).map((w) => <Waiting key={w.id} w={w} />)
+                )
+              ) : (
+                <Empty>Nothing waits on you.</Empty>
+              )}
             </Section>
             <Section title="Stalled" count={q.data.stalls.length} t="stall" testid="col-stalls" note="acknowledged: a later turn by that role">
               {q.data.stalls.length ? q.data.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
@@ -257,7 +275,7 @@ export function NowView() {
               t={q.data.health.schedules.length ? "blocked" : "done"}
               testid="col-health"
             >
-              <Health h={q.data.health} now={q.data.now} />
+              <Health h={q.data.health} now={q.data.now} quiet={q.data.quiet} />
             </Section>
           </div>
         </>

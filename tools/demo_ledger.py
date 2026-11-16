@@ -11,7 +11,10 @@ the UI blueprint's section 4, with generic names:
 - a failing nightly job and an overdue weekly one;
 - three directions of work on the canvas;
 - the session carrier (decision 0010): builder and designer carried and opted in, the reviewer carried but observe-only;
-  a person's message acknowledged, a corrective wake in flight, a refused run, and a message not sent.
+  a person's message acknowledged, a corrective wake in flight, a refused run, and a message not sent;
+- the person's task list (decisions 0012 to 0014): asks of every weight, one incomplete, one critical without an
+  effect, one returned to its author, one from a tracker; a visit three days ago and what changed since; a goal
+  checklist whose size moved from 12 to 18 items, and a week of merged pull requests, linked or not.
 
 The times are relative to `now` (default: the current time), so the ages read the same whenever it is built.
 """
@@ -499,6 +502,245 @@ def _carrier(s: _Story) -> None:
     )
 
 
+def _asks(s: _Story) -> None:
+    """R5 (decisions 0012 to 0014): the person's task list with every kind of card, a visit three days ago and what
+    changed since, a goal checklist with its edit history, and merged pull requests that link to it (or do not).
+
+    The asks are logged as `onloop ask` logs them (they open no wait, so the constraint above is the R3 story's); the
+    roles named are ones the carrier does not carry here, so their returns are only logged as would-deliver."""
+    from onloop import goals
+    from onloop.adapters import Edit, GoalSnapshot
+
+    n = [0]
+
+    def ask(ago: float, role: str | None, ref: str, title: str, origin: str = "cli", **fields) -> str:
+        n[0] += 1
+        eid = f"demo-ask-{n[0]:02d}"
+        tid = f"t-demo{n[0]:04d}"
+        payload = {
+            "id": tid,
+            "origin": origin,
+            "origin_ref": eid,
+            "author_role": role,
+            "ref": ref,
+            "title": title,
+            "ask": fields,
+        }
+        s.step(
+            ago,
+            lambda led: led.append(
+                {
+                    "id": eid,
+                    "source": "adapter" if origin == "adapter" else "cli",
+                    "kind": "task.opened",
+                    "subject_ref": f"task:{tid}",
+                    "actor": role,
+                    "payload": payload,
+                }
+            ),
+        )
+        return tid
+
+    def day(offset: float) -> str:
+        return s.ts(offset)[:10]
+
+    s.event(3 * DAY, "visit.recorded", "human", {"person": "human", "channel": "ui"})
+    ask(
+        5 * HOUR,
+        "operator",
+        "pr#204",
+        "Approve the schema change",
+        weight="critical",
+        cost_from=day(0),
+        effect="approve the schema change, so the import can run on real data",
+        holds="the import walk for demo/7",
+        goal="demo/7",
+        default="nothing merges",
+        cost_given="cost_from",
+    )
+    ask(
+        26 * HOUR,
+        "data-eng",
+        "issue#31",
+        "Register the CI runner",
+        weight="supporting",
+        cost_from=day(2 * DAY),
+        cost_given="days=3",
+        goal="demo/9",
+        effect="register the CI runner on your machine, so each change stops waiting an hour for shared runners",
+        holds="the performance walk (demo/9)",
+        default="changes keep using the shared runners",
+    )
+    ask(
+        30 * HOUR,
+        None,
+        "tracker#12",
+        "Sign the data provider's terms",
+        origin="adapter",
+        weight="supporting",
+        cost_from=day(4 * DAY),
+        cost_given="cost_from",
+        goal="demo/3",
+        effect="sign the provider's terms, so the data feed can start",
+        holds="the provider's onboarding",
+    )
+    ask(
+        2 * DAY,
+        "operator",
+        "docs/brand.md",
+        "Pick the chart palette",
+        weight="skippable",
+        goal="none",
+        effect="choose the chart palette, so the report pages stop using placeholder colours",
+        default="the placeholder palette stays",
+    )
+    ask(
+        50 * MIN,
+        "data-eng",
+        "issue#44",
+        "Approve the backfill",
+        weight="supporting",
+        cost_unknown=True,
+        cost_given="days=?",
+        effect="approve the backfill, so last month's figures are complete",
+    )
+    ask(
+        40 * MIN,
+        "operator",
+        "pr#205",
+        "Merge the release branch",
+        weight="critical",
+        cost_from=day(DAY),
+        cost_given="days=1",
+        holds="the demo build",
+    )
+    ask(
+        9 * DAY,
+        "lead",
+        "docs/plan.md",
+        "Decide the export",
+        weight="supporting",
+        cost_from=day(-2 * DAY),
+        cost_given="cost_from",
+        goal="demo/8",
+        effect="decide whether the export ships in this release, so the plan stops carrying both branches",
+        holds="the release plan",
+    )
+    # what changed since the visit: one resolved by the person, one closed by its author without them
+    done = ask(
+        4 * DAY,
+        "data-eng",
+        "issue#29",
+        "Approve the dashboard copy",
+        weight="skippable",
+        effect="approve the dashboard copy, so the page can ship",
+    )
+    gone = ask(
+        4 * DAY + HOUR,
+        "lead",
+        "issue#27",
+        "Choose the retention period",
+        weight="supporting",
+        effect="choose the retention period, so the cleanup job can be written",
+    )
+    s.event(
+        30 * HOUR,
+        "task.resolved",
+        f"task:{done}",
+        {"id": done, "resolution": "done", "evidence": "human:ui", "by": "human"},
+    )
+    s.event(
+        2 * DAY,
+        "task.resolved",
+        f"task:{gone}",
+        {
+            "id": gone,
+            "resolution": "superseded",
+            "evidence": "turn:demo-lead-retention",
+            "by": "lead",
+            "superseded_by": "turn:demo-lead-retention",
+        },
+    )
+    s.event(
+        2 * DAY + 2 * HOUR,
+        "daemon.gap",
+        "onloopd",
+        {
+            "from": s.ts(-(2 * DAY + 10 * HOUR + 23 * MIN)),
+            "to": s.ts(-(2 * DAY + 2 * HOUR)),
+            "seconds": 30180,
+            "cause": "unclean shutdown",
+        },
+        source="config",
+    )
+
+    # the goal checklist, read from its edit history: 12 items, then 18 after an append; ticks over the week
+    def items(total: int, ticked: set[int]) -> tuple:
+        return tuple((k, f"goal checklist item {k}", k in ticked) for k in range(1, total + 1))
+
+    edits = (
+        Edit("e1", s.ts(-12 * DAY), items(12, {1, 2})),
+        Edit("e2", s.ts(-8 * DAY), items(12, {1, 2, 3})),
+        Edit("e3", s.ts(-6 * DAY), items(18, {1, 2, 3})),
+        Edit("e4", s.ts(-4 * DAY), items(18, {1, 2, 3, 5})),
+        Edit("e5", s.ts(-1 * DAY), items(18, {1, 2, 3, 5, 6})),
+    )
+    snap = GoalSnapshot(
+        "Demo",
+        edits,
+        (("https://example.invalid/issues/42#c1", s.ts(-4 * DAY + HOUR), "walked demo/5 on real data"),),
+    )
+    s.step(13 * DAY, lambda led: led.append(goals.declare_event("demo", "tracker", "issue/42")))
+    s.step(MIN, lambda led: [led.append(e) for e in goals.edit_events("demo", snap, None)])
+
+    # merged pull requests over the week, some linked to the goal, one process, two saying nothing
+    merged = [
+        (211, 6.5, "demo/3"),
+        (212, 6.2, None),
+        (213, 5.0, "demo/5"),
+        (214, 4.4, "none"),
+        (215, 3.1, None),
+        (216, 2.0, "demo/6"),
+        (217, 1.2, "demo/6"),
+    ]
+    for num, days_ago, goal in merged:
+        pr = f"pr#{num}"
+        opened = s.ts(-(days_ago * DAY + 5 * HOUR))
+        s.step(
+            days_ago * DAY + 5 * HOUR,
+            lambda led, pr=pr, opened=opened: led.append(
+                {
+                    "id": f"demo-{pr}-o",
+                    "source": "github",
+                    "kind": "pr.opened",
+                    "subject_ref": pr,
+                    "at": opened,
+                    "payload": {"title": f"builder: change {pr}"},
+                }
+            ),
+        )
+        if goal:
+            s.step(
+                days_ago * DAY + 5 * HOUR,
+                lambda led, pr=pr, goal=goal, opened=opened: [
+                    led.append(e) for e in goals.link_events(led, pr, f"Goal: {goal}", opened)
+                ],
+            )
+        s.step(
+            days_ago * DAY,
+            lambda led, pr=pr, at=s.ts(-days_ago * DAY): led.append(
+                {
+                    "id": f"demo-{pr}-m",
+                    "source": "github",
+                    "kind": "pr.merged",
+                    "subject_ref": pr,
+                    "at": at,
+                    "payload": {},
+                }
+            ),
+        )
+
+
 def _url(num: int) -> str:
     return f"https://example.com/acme/app/pull/{num}"
 
@@ -523,8 +765,12 @@ def build(path: pathlib.Path, now: str | None = None) -> str:
     story = _Story(now)
     _story(story)
     _carrier(story)
+    _asks(story)
     with Ledger(path, clock=story) as led:
         story.write(led)
+        from onloop.daemon import task_returns
+
+        task_returns.tick(led, now)  # what onloopd's next tick logs: returns and would-deliver
     return now
 
 

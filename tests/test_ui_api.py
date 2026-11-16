@@ -98,27 +98,57 @@ def test_without_a_concrete_move_there_is_no_next_move(tmp_path):
 
 
 def test_now_lists_what_waits_on_the_human_as_the_task_list(led):
-    """Now's "Waiting on you" is the task list in its one order (decision 0013): the pause the person made has its
-    effect and comes first; the two asks that state no effect are listed last, marked, with their defaults and the
-    day their delay starts to cost, computed when read."""
+    """Now's "Waiting on you" is the task list in its one order (decision 0013): weight bands, then the days left
+    (computed when read; a passed date costs now), then age; an incomplete critical ask keeps its place; asks with no
+    effect, or a cost of delay with nothing said about what waits, come last."""
     from onloop import tasks
 
     cards = views.now(led, NOW)["waiting_on_you"]
     assert [c["id"] for c in cards] == [c["id"] for c in tasks.open_tasks(led, NOW)]
-    paused, merge, date = cards
-    assert (paused["origin"], paused["band"], paused["title"]) == (
-        "pause",
-        "unweighted",
-        "Resume reviewer, which you paused",
+    got = [(c["band"], c["origin"], c["days_left"]) for c in cards]
+    assert got == [
+        ("critical", "cli", 0),
+        ("critical", "cli", 1),  # no effect: flagged, in place
+        ("supporting", "cli", 0),  # its date passed: costing now
+        ("supporting", "cli", 2),
+        ("supporting", "adapter", 4),
+        ("unweighted", "pause", None),
+        ("skippable", "cli", None),
+        ("incomplete", "wait", 0),
+        ("incomplete", "node", 2),
+        ("incomplete", "cli", None),
+    ]
+    first = cards[0]
+    assert first["effect"] == "approve the schema change, so the import can run on real data"
+    assert (first["goal"], first["holds"], first["cost_text"], first["default"]) == (
+        "demo/7",
+        "the import walk for demo/7",
+        "costing now",
+        "nothing merges",
     )
-    assert paused["effect"] == "resume reviewer, so the work it holds moves again"
-    assert (merge["title"], merge["default"], merge["band"]) == (
-        "Merge the change only you may merge",
-        "the next gap is held for it, at most 20 min",
-        "incomplete",
-    )
-    assert merge["cost_text"] == "costing now" and "no_effect" in merge["incomplete_reasons"]
-    assert (date["title"], date["default"], date["days_left"]) == ("Pick the release date", "next Monday", 2)
+    assert cards[1]["incomplete_reasons"] == ["no_effect"] and "critical_incomplete" in cards[1]["flags"]
+    assert cards[2]["stage"] == "returned_author"  # nine days old: back with its author, still on the list
+    assert cards[6]["goal"] == "process"
+    assert cards[-1]["incomplete_reasons"] == ["no_holds"]
+
+
+def test_the_digest_says_what_changed_since_the_visit(led):
+    from onloop import tasks
+
+    d = tasks.digest(led, tasks.last_visit(led), NOW)
+    assert [c["id"] for c in d["resolved"]] == ["t-demo0008"]
+    assert [c["id"] for c in d["resolved_without_you"]] == ["t-demo0009"]
+    assert [g["cause"] for g in d["gaps"]] == ["unclean shutdown"]
+    assert len(d["added"]) >= 5 and any(t["kind"] == "tick" for t in d["ticks"])
+
+
+def test_the_outcome_kpis_of_the_demo_week(led):
+    from onloop import kpi
+
+    r = kpi.outcome(led, since="2026-11-02T14:52:00.000Z", until=NOW)
+    g = r["goals"]["demo"]
+    assert r["merged_prs"] == 7 and (g["ticks"], g["denominator"]) == (2, 18)  # e2 (8 days ago) is outside
+    assert r["linked_share"] == {"merged": 7, "linked": 4, "none": 1, "unlinked": 2}
 
 
 def test_now_lists_the_stalls_with_their_age_the_would_be_wake_and_no_acknowledgement(led):
