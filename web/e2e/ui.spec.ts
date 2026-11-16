@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // What a person does on each view, against onloopd's real server over the demo ledger (e2e/demo_server.py).
 // Every test fails on a console error (a CSP refusal shows up as one) and on any request that is not a GET: the UI is
-// read-only (decision 0009).
+// read-only (decision 0009), but for the visit the page records for "since you were away" (decision 0013), which is
+// allowed here, and the writes a test makes on purpose.
 
 type Watched = Page & { problems: string[]; writes: string[]; allow400?: boolean };
 
@@ -13,7 +14,7 @@ test.beforeEach(async ({ page }) => {
   // A refused stream request (the stale-banner test aborts it) is the network's error, not the page's.
   page.on("console", (m) => m.type() === "error" && !(m.location().url ?? "").includes("/api/stream") && p.problems.push(`${m.text()} ${m.location().url ?? ""}`));
   page.on("pageerror", (e) => p.problems.push(String(e)));
-  page.on("request", (r) => r.method() !== "GET" && p.writes.push(`${r.method()} ${r.url()}`));
+  page.on("request", (r) => r.method() !== "GET" && !r.url().endsWith("/ui/visits") && p.writes.push(`${r.method()} ${r.url()}`));
 });
 test.afterEach(async ({ page }) => {
   const p = page as Watched;
@@ -41,10 +42,13 @@ test("Now answers the three questions: the constraint, what waits on you, where 
   await expect(page.getByTestId("next-text")).toHaveText(/^Merge the change only you may merge: it holds merge-check/);
   await expect(page.getByTestId("next-link")).toHaveAttribute("href", /\/pull\/99$/);
   const waiting = page.getByTestId("col-waiting");
-  await expect(waiting.locator("article")).toHaveCount(3);
+  await expect(waiting.locator("article")).toHaveCount(10); // the task list (decision 0013), in its one order
+  await expect(waiting.locator("article").first().getByTestId("effect")).toHaveText("approve the schema change, so the import can run on real data");
+  await expect(waiting.locator("article").first().getByTestId("cost")).toContainText("costing now");
   await expect(waiting).toContainText("If nobody answers: next Monday");
-  await expect(waiting.getByTestId("left").first()).toContainText("min left");
-  await expect(waiting.getByTestId("command")).toContainText("onloop role resume reviewer");
+  await expect(waiting).toContainText("Incomplete: no effect stated");
+  await expect(waiting).toContainText("onloop role resume reviewer");
+  await expect(page.getByTestId("digest-first").locator("li")).toHaveCount(3);
   const stalls = page.getByTestId("col-stalls");
   await expect(stalls.locator("article")).toHaveCount(4);
   await expect(stalls.getByTestId("would").first()).toContainText("would wake (observe only)");
@@ -59,8 +63,10 @@ test("Now answers the three questions: the constraint, what waits on you, where 
 test("Now's first screen holds the banner and the first card of each question", async ({ page }, info) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint")).toBeInViewport();
+  // back after days away, the first three tasks open the page; on a phone they are the first screen's task list
+  await expect(page.getByTestId("digest-first")).toBeInViewport();
   const first = page.getByTestId("col-waiting").locator("article").first();
-  await expect(first).toBeInViewport();
+  if (!isPhone(info.project.name)) await expect(first).toBeInViewport();
   if (!isPhone(info.project.name)) {
     await expect(page.getByTestId("col-stalls").locator("article").first()).toBeInViewport();
     await expect(page.getByTestId("col-health").locator("article").first()).toBeInViewport();
