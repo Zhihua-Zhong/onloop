@@ -92,5 +92,45 @@ def tick(
             pattern = policy.post_merge_pattern if policy else pol.POST_MERGE_PATTERN
             if ledger.append(ledger_event(repo, e, facts.get(e.subject), pattern=pattern)) is not None:
                 res.appended.append(e.kind)
+        for pr, f in sorted(facts.items()):
+            for e in pr_goal_events(ledger, repo, pr, f or {}):
+                if ledger.append(e) is not None:
+                    res.appended.append(e["kind"])
         ledger.put_ingest_state(source_key(repo), values)
     return res
+
+
+def pr_goal_events(ledger: Ledger, repo: str, pr: str, facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """What a pull request's body says to R5 (decisions 0013, 0014), read whenever the pull request is read: its
+    `Goal:` links (seen, or withdrawn when the line goes), and an ask of the person (an `Effect:` line), which opens an
+    approval task that only the code host's approval resolves. Only the lines are kept, never the body."""
+    from .. import disposition, goals
+    from ..adapters.github_issues import body_fields
+
+    body = facts.get("body")
+    if body is None:
+        return []
+    at = None  # the ledger's own time: when onloop read the body
+    out = goals.link_events(ledger, pr, body, at)
+    fields = body_fields(body)
+    if fields.get("effect"):
+        keys = {k: v for k, v in fields.items() if k in disposition.ASK_KEYS}
+        if disposition._check_ask(keys, "") is not None:
+            keys = {"effect": keys["effect"]} if len(keys["effect"]) <= 200 else {}
+        got = disposition.Outcome(
+            "blocked", owner="human", ref=pr, **{k: keys.get(k) for k in disposition.ASK_KEYS}
+        )
+        ask = disposition.frozen_ask(got, ledger.now()) or {}
+        key = ev.body_hash("|".join(f"{k}={v}" for k, v in sorted(keys.items())))
+        out.append(
+            {
+                "id": ev.event_id(repo, "pr.ask_seen", pr, key),
+                "source": "github",
+                "kind": "pr.ask_seen",
+                "subject_ref": pr,
+                "actor": None,
+                "at": at,
+                "payload": {"repo": repo, "ask": ask, "title": facts.get("title")},
+            }
+        )
+    return out

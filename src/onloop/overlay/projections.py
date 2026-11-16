@@ -39,7 +39,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .. import events as ev
-from . import human_tasks, schema
+from . import goals_proj, human_tasks, schema
 
 Event = Mapping[str, Any]
 
@@ -259,6 +259,8 @@ def _pr(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     _set(conn, "items", ref, {"state": state[kind], "updated_at": when(e)}, e["seq"])
     if state[kind] == "done":
         _clear_pause_wait(conn, e, ref)
+        if _HAS_TASKS(conn):
+            human_tasks.on_pr_done(conn, e, ref, merged=kind == "pr.merged")
     if kind == "pr.merged" and p.get("post_merge"):
         _post_merge(conn, e, ref, p["post_merge"])
 
@@ -1000,6 +1002,7 @@ def _carrier_state(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
 
 RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]] = {
     **human_tasks.RULES,
+    **goals_proj.RULES,
     "item.opened": _item_opened,
     "item.changed": _item_changed,
     "item.closed": _item_closed,

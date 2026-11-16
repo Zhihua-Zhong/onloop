@@ -260,6 +260,7 @@ class GitHub:
             "merged_by": actor(raw.get("merged_by")) if raw.get("merged") else None,
             "merged_at": raw.get("merged_at"),
             "merge_sha": raw.get("merge_commit_sha"),
+            "changed_lines": int(raw.get("additions") or 0) + int(raw.get("deletions") or 0),
             **self._threads_facts(number),
         }
 

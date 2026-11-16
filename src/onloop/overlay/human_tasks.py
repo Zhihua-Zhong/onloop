@@ -388,7 +388,55 @@ def visit_recorded(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
     )
 
 
+def pr_ask_seen(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """A pull request asks the person (an `Effect:` line in its body, or a person asked to review): an approval at the
+    merge gate, which only the code host's approval resolves."""
+    pr = e["subject_ref"]
+    open_ = _open_ids(conn, "origin = 'gate' AND ref = ?", (pr,))
+    if open_:
+        amend(conn, e, open_[0], p.get("ask") or {}, title=p.get("title"))
+        return
+    open_task(
+        conn,
+        e,
+        origin="gate",
+        origin_ref=f"{pr}@{e['id']}",
+        ask=p.get("ask") or {},
+        author_role=p.get("role"),
+        ref=pr,
+        title=p.get("title") or f"approve {pr}",
+    )
+
+
+def _review_kind() -> str:
+    from .. import verdicts
+
+    return verdicts.KIND
+
+
+def review_submitted(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """A person's approving review on the code host is the evidence that resolves the pull request's approval task."""
+    from .. import verdicts
+
+    event = {"kind": e["kind"], "actor": e.get("actor"), "payload": dict(p)}
+    actor = str(verdicts._author(event) or "")
+    if verdicts.verdict_state(event, None) != "APPROVED" or not actor.endswith("/User"):
+        return
+    pr = e["subject_ref"]
+    for tid in _open_ids(conn, "origin = 'gate' AND ref = ?", (pr,)):
+        resolve(conn, e, tid, "done", evidence=f"gh:{pr}/review/{e['id']}", by=actor.split("/")[0])
+
+
+def on_pr_done(conn: sqlite3.Connection, e: Event, pr: str, *, merged: bool) -> None:
+    """A pull request merged or closed: an approval still asked of the person for it is no longer needed."""
+    for tid in _open_ids(conn, "origin = 'gate' AND ref = ?", (pr,)):
+        evidence = f"gh:{pr}/{'merged' if merged else 'closed'}/{e['id']}"
+        resolve(conn, e, tid, "superseded", evidence=evidence, by="code-host", superseded_by=evidence)
+
+
 RULES = {
+    "pr.ask_seen": pr_ask_seen,
+    _review_kind(): review_submitted,
     "task.opened": task_opened,
     "task.amended": task_amended,
     "task.returned": task_returned,
