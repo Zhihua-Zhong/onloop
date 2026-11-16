@@ -27,13 +27,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import __version__, fsutil, gitutil, localday, procs
+from .. import __version__, fsutil, gitutil, goals, localday, procs
 from .. import events as ev
+from ..adapters import EventProbe, set_registry
+from ..adapters import load as load_adapters
 from ..detect import core as detect
-from ..detect import no_outcome, schedules, wakers
+from ..detect import event_fired, no_outcome, pr_expiry, reconcile, same_goal, schedules, wakers
 from ..ingest import github as github_ingest
 from ..overlay.ledger import Ledger
-from . import hook_receiver, sources, token
+from . import hook_receiver, jobs, sources, task_returns, token
 from . import server as srv
 from .config import OnloopdConfig
 from .routes import Routes
@@ -50,6 +52,10 @@ DETECTORS: list[tuple[str, detect.Detector]] = [
     (no_outcome.NAME, no_outcome.detect),
     (wakers.NAME, wakers.detect),
     (schedules.NAME, schedules.detect),
+    (event_fired.NAME, event_fired.detect),
+    (pr_expiry.NAME, pr_expiry.detect),
+    (reconcile.NAME, reconcile.detect),
+    (same_goal.NAME, same_goal.detect),
 ]
 
 PID_FILE = "onloopd.pid"
@@ -67,6 +73,7 @@ class DaemonConfig:
     watch: OnloopdConfig = field(default_factory=OnloopdConfig)  # onloopd.yaml: what it watches
     detectors: list[tuple[str, Any]] | None = None  # for tests: in place of DETECTORS
     probes: dict[str, Any] | None = None  # for tests: in place of the default waker probes
+    adapters: dict[str, Any] | None = None  # for tests: in place of the adapters onloopd.yaml declares
 
     @property
     def state_dir(self) -> pathlib.Path:
@@ -150,16 +157,57 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
         if got is not None:
             res.imported.append(got)
     now = ledger.now()
-    probes = cfg.probes if cfg.probes is not None else wakers.default_probes(dict(cfg.watch.monitors))
+    if cfg.probes is not None:
+        probes = cfg.probes
+    else:
+        probes = {**wakers.default_probes(dict(cfg.watch.monitors)), "event": EventProbe()}
     try:
         res.detected["probed"] = wakers.probe(ledger, probes, now)
     except Exception as e:  # noqa: BLE001 - the probes failing must not stop the detectors
         res.errors.append(f"waker probes: {type(e).__name__}: {e}"[:300])
+    for step, fn in (
+        ("adapters", lambda: _read_adapters(ledger, cfg, now)),
+        ("task returns", lambda: task_returns.tick(ledger, now, _coordinator(cfg))),
+        ("jobs", lambda: jobs.run_due(ledger, cfg.watch.jobs, cfg.state_dir, now)),
+    ):
+        try:
+            got = fn()
+            if got:
+                res.detected[step.replace(" ", "_")] = got
+        except Exception as e:  # noqa: BLE001 - one step failing must not stop the detectors
+            res.errors.append(f"{step}: {type(e).__name__}: {e}"[:300])
     rep = detect.run(ledger, cfg.detectors if cfg.detectors is not None else DETECTORS, now)
     res.errors += [f"detector {e}" for e in rep.errors]
     res.detected.update({k: v for k, v in rep.as_dict().items() if k != "errors"})
     res.detected = {k: v for k, v in res.detected.items() if v}
     return res
+
+
+def _coordinator(cfg: DaemonConfig) -> str | None:
+    return cfg.watch.carrier.coordinator if cfg.watch.carrier is not None else None
+
+
+_next_read: dict[str, float] = {}
+
+
+def _read_adapters(ledger: Ledger, cfg: DaemonConfig, now: str) -> list[dict[str, Any]]:
+    """Each adapter's asks, and each goal through its adapter, when its poll interval has passed (decision 0013)."""
+    from ..adapters import ingest as adapter_ingest
+    from ..adapters import registry
+
+    adapters = cfg.adapters if cfg.adapters is not None else registry()
+    polls = {a["id"]: a.get("poll_s", 300) for a in cfg.watch.adapters}
+    out = []
+    mono = time.monotonic()
+    for aid, adapter in sorted(adapters.items()):
+        if mono < _next_read.get(aid, 0.0):
+            continue
+        _next_read[aid] = mono + polls.get(aid, 300)
+        out.append(adapter_ingest.asks(ledger, adapter, now))
+        for gid, gadapter, locator in cfg.watch.goals:
+            if gadapter == aid:
+                out.append(goals.ingest(ledger, gid, adapter, locator, now))
+    return [o for o in out if o.get("events")]
 
 
 def _write_heartbeat(cfg: DaemonConfig, port: int, ledger: Ledger, res: TickResult) -> None:
@@ -174,6 +222,14 @@ def _write_heartbeat(cfg: DaemonConfig, port: int, ledger: Ledger, res: TickResu
         "errors": res.errors,
     }
     fsutil.write_atomic(cfg.state_dir / HEARTBEAT_FILE, json.dumps(beat, sort_keys=True) + "\n", newline="\n")
+
+
+def _read_beat(state: pathlib.Path) -> dict[str, Any] | None:
+    """The heartbeat onloopd left when it last ran, before this run writes its own."""
+    try:
+        return json.loads((state / HEARTBEAT_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
@@ -211,7 +267,21 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     spooled = hook_receiver.ingest_spool(ledger, state)
     if spooled:
         say(f"onloopd: logged {spooled} hook event(s) spooled while it was away")
-    declared = sources.declare(ledger, [s.declaration() for s in cfg.watch.schedules])
+    gap = jobs.boot_gap(ledger, _read_beat(state), ledger.now())
+    if gap:
+        say(f"onloopd: it was down from {gap['from']} to {gap['to']} ({gap['cause'] or 'cause unknown'})")
+    try:
+        adapter_set = load_adapters(cfg.watch.adapters)
+    except Exception as e:  # noqa: BLE001 - an adapter that does not load stops onloopd before it starts (fail closed)
+        say(f"onloopd: does not start: adapters: {type(e).__name__}: {e}"[:300])
+        ledger.close()
+        return 2
+    set_registry(adapter_set)
+    for gid, gadapter, locator in cfg.watch.goals:
+        ledger.append(goals.declare_event(gid, gadapter, locator))
+    declared = sources.declare(
+        ledger, [s.declaration() for s in cfg.watch.schedules] + [j.declaration() for j in cfg.watch.jobs]
+    )
     if declared:
         say(f"onloopd: declared {len(declared)} new or changed schedule(s) from onloopd.yaml")
     if sources.declare_setting(ledger, "heartbeat_schedule", cfg.watch.heartbeat_schedule):

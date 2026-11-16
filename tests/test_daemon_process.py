@@ -93,7 +93,13 @@ def test_onloopd_serves_an_imported_ledger_and_stops_cleanly_by_pid(tmp_path):
         port = beat["port"]
         health = get(port, "/health")
         assert health["status"] == "ok" and health["pid"] == pid
-        assert health["ledger"]["cursors"] == {"legacy:onloop.db": beat["last_seq"]}
+        cursors = health["ledger"][
+            "cursors"
+        ]  # the legacy import's events, then what onloopd's tick logs (R5's
+        assert list(cursors) == [
+            "legacy:onloop.db"
+        ]  # PR expiry escalates the fixture's month-old pull requests)
+        assert 0 < cursors["legacy:onloop.db"] <= beat["last_seq"]
         assert {"pr#1", "pr#2"} <= {i["id"] for i in get(port, "/api/items")["items"]}
         assert len(get(port, "/api/waits")["waits"]) == 2 and len(get(port, "/api/leases")["leases"]) == 3
         assert get(port, "/api/constraint")["constraint"]["on_kind"] == "resource"

@@ -277,10 +277,16 @@ def kpi_report(
 def kpi_text(report: dict[str, Any]) -> list[str]:
     lt, idl, rv = report["lead_time"], report["idle"], report["reverts"]
     out = [f"KPIs from {report['since'] or 'the start'} to {report['until']}"]
-    out.append(
-        f"lead time: n={lt['n']}, median {lt['median_hours']} h, p90 {lt['p90_hours']} h"
-        + (f" ({len(lt['unmeasured'])} merged without a start in the log)" if lt["unmeasured"] else "")
-    )
+    if lt["n"]:
+        out.append(
+            f"lead time: n={lt['n']}, median {lt['median_hours']} h, p90 {lt['p90_hours']} h"
+            + (f" ({len(lt['unmeasured'])} merged without a start in the log)" if lt["unmeasured"] else "")
+        )
+    else:  # dogfood finding #5: never print None
+        out.append(
+            "lead time: no merged PR in the window"
+            + (f" with a start in the log ({len(lt['unmeasured'])} without one)" if lt["unmeasured"] else "")
+        )
     out.append(f"  {lt['definition']}")
     if idl["roles"]:
         for role, r in idl["roles"].items():
@@ -302,6 +308,175 @@ def kpi_text(report: dict[str, Any]) -> list[str]:
             + (f" ({rv['rate']:.1%})" if rv["rate"] is not None else "")
         )
     out.append(f"  {rv['definition']}")
+    return out
+
+
+# -- outcome KPIs (decision 0014): progress per unit of work, each with its denominator and its date ---------------------
+
+OUTCOME_DEFINITIONS = {
+    "ticks_per_pr": "goal items ticked in the window (from the checklist's edit history) per pull request merged in "
+    "the window; the checklist's size is the denominator in force at the window's end, with the date it was set",
+    "linked_share": "of the pull requests merged in the window: those with a live `Goal: <goal>/<item>` line, those "
+    "that say `Goal: none` (process work, on purpose), and those that say nothing",
+    "fixed_cost": "per pull request merged in the window: hours from ready (or opened, if never a draft) to merged; "
+    "review rounds (reviews submitted); human touches (tasks on the person's list that name it)",
+    "flow_load": "pull requests open at the window's end, and of those, the ones with no push for 7 days",
+}
+
+
+def _median_p90(values: list[float]) -> tuple[float | None, float | None]:
+    if not values:
+        return None, None
+    s = sorted(values)
+    return round(statistics.median(s), 2), round(_rank(s, 0.9), 2)
+
+
+def outcome(ledger: Ledger, *, since: str, until: str) -> dict[str, Any]:
+    """The outcome KPIs over [since, until): ticks per merged PR, the goal-linked share, the fixed cost per PR, and
+    the flow load. Every count comes with what it is counted over."""
+    rows = ledger.select(
+        "SELECT subject_ref AS pr, COALESCE(at, ts_system) AS at FROM events WHERE kind = 'pr.merged' "
+        "AND COALESCE(at, ts_system) >= ? AND COALESCE(at, ts_system) < ? ORDER BY at",
+        (since, until),
+    )
+    merged = sorted({r["pr"]: r["at"] for r in rows}.items())
+    m = len(merged)
+    goals: dict[str, Any] = {}
+    for g in ledger.select("SELECT id, title FROM goals ORDER BY id"):
+        ticks = ledger.select(
+            "SELECT number, kind, evidence_url FROM goal_ticks WHERE goal_id = ? AND at >= ? AND at < ? "
+            "ORDER BY at",
+            (g["id"], since, until),
+        )
+        dens = ledger.select(
+            "SELECT at, count FROM goal_denominators WHERE goal_id = ? AND at < ? ORDER BY at",
+            (g["id"], until),
+        )
+        in_window = [d for d in dens if d["at"] >= since]
+        end = dens[-1] if dens else None
+        t = sum(1 for x in ticks if x["kind"] == "tick")
+        goals[g["id"]] = {
+            "title": g["title"],
+            "ticks": t,
+            "unticks": sum(1 for x in ticks if x["kind"] == "untick"),
+            "ticks_without_evidence": sum(1 for x in ticks if x["kind"] == "tick" and not x["evidence_url"]),
+            "denominator": end["count"] if end else None,
+            "denominator_at": end["at"] if end else None,
+            "denominators_in_window": [{"count": d["count"], "at": d["at"]} for d in in_window],
+            "per_merged_pr": round(t / m, 4) if m else None,
+        }
+    linked = none = 0
+    cost: dict[str, list[float]] = {"queue_hours": [], "review_rounds": [], "human_touches": []}
+    unmeasured = []
+    for pr, at in merged:
+        links = ledger.select(
+            "SELECT goal_id FROM links WHERE from_kind = 'pr' AND from_ref = ? AND seen_at <= ? "
+            "AND (withdrawn_at IS NULL OR withdrawn_at > ?)",
+            (pr, at, at),
+        )
+        if any(link["goal_id"] for link in links):
+            linked += 1
+        elif links:
+            none += 1
+        start = ledger.select(
+            "SELECT MIN(COALESCE(at, ts_system)) AS t FROM events WHERE subject_ref = ? AND kind IN "
+            "('pr.ready', 'pr.opened', 'pr.reopened')",
+            (pr,),
+        )[0]["t"]
+        ready = ledger.select(
+            "SELECT MIN(COALESCE(at, ts_system)) AS t FROM events WHERE subject_ref = ? AND kind = 'pr.ready'",
+            (pr,),
+        )[0]["t"]
+        began = ready or start
+        if began and began <= at:
+            cost["queue_hours"].append(_hours(began, at))
+        else:
+            unmeasured.append(pr)
+        cost["review_rounds"].append(
+            float(
+                ledger.select(
+                    "SELECT COUNT(*) AS n FROM events WHERE subject_ref = ? AND kind = ?", (pr, verdicts.KIND)
+                )[0]["n"]
+            )
+        )
+        cost["human_touches"].append(
+            float(ledger.select("SELECT COUNT(*) AS n FROM human_tasks WHERE ref = ?", (pr,))[0]["n"])
+        )
+    fixed = {}
+    for k, vals in cost.items():
+        med, p90 = _median_p90(vals)
+        fixed[k] = {"n": len(vals), "median": med, "p90": p90}
+    open_prs = ledger.select(
+        "SELECT i.ref, (SELECT MAX(COALESCE(e.at, e.ts_system)) FROM events e WHERE e.subject_ref = i.ref AND e.kind "
+        "IN ('pr.opened', 'pr.reopened', 'pr.ready', 'pr.drafted', 'pr.head_moved') AND COALESCE(e.at, e.ts_system) "
+        "< ?) AS last_push FROM items i WHERE i.kind = 'task' AND i.ref LIKE 'pr#%' AND i.opened_at < ? AND "
+        "(i.state != 'done' OR i.updated_at >= ?)",
+        (until, until, until),
+    )
+    idle_cut = _t(until) - dt.timedelta(days=7)
+    idle_n = sum(1 for r in open_prs if r["last_push"] and _t(r["last_push"]) <= idle_cut)
+    return {
+        "since": since,
+        "until": until,
+        "merged_prs": m,
+        "goals": goals,
+        "linked_share": {"merged": m, "linked": linked, "none": none, "unlinked": m - linked - none},
+        "fixed_cost": {**fixed, "unmeasured": unmeasured},
+        "flow_load": {"open": len(open_prs), "idle_7d": idle_n},
+        "definitions": OUTCOME_DEFINITIONS,
+    }
+
+
+def _num(v: Any, unit: str = "") -> str:
+    return "not measured" if v is None else f"{v}{unit}"
+
+
+def outcome_text(report: dict[str, Any]) -> list[str]:
+    m = report["merged_prs"]
+    out = [f"outcome KPIs from {report['since']} to {report['until']}"]
+    if not report["goals"]:
+        out.append("goal ticks per merged PR: no goal checklist is read (goals: in onloopd.yaml)")
+    for gid, g in report["goals"].items():
+        size = (
+            f"checklist of {g['denominator']} items as of {g['denominator_at']}"
+            if g["denominator"] is not None
+            else "checklist size not read yet"
+        )
+        if m:
+            out.append(
+                f"goal ticks per merged PR ({gid}): {g['ticks']} ticks / {m} merged PRs = "
+                f"{g['per_merged_pr']} · {size}"
+            )
+        else:
+            out.append(
+                f"goal ticks per merged PR ({gid}): {g['ticks']} ticks, no merged PR in the window · {size}"
+            )
+        if g["ticks_without_evidence"]:
+            out.append(f"  {g['ticks_without_evidence']} of the ticks have no comment that names the item")
+        for d in g["denominators_in_window"]:
+            out.append(f"  the checklist had {d['count']} items from {d['at']}")
+    ls = report["linked_share"]
+    out.append(
+        f"goal-linked share: {ls['linked']} of {ls['merged']} merged PRs linked to a goal item, {ls['none']} process "
+        f"(Goal: none), {ls['unlinked']} unlinked"
+        if m
+        else "goal-linked share: no merged PR in the window"
+    )
+    fc = report["fixed_cost"]
+    if m:
+        q = fc["queue_hours"]
+        out.append(
+            f"fixed cost per PR: queue median {_num(q['median'], ' h')} (p90 {_num(q['p90'], ' h')}) over "
+            f"{q['n']} PRs; review rounds median {_num(fc['review_rounds']['median'])}; human touches median "
+            f"{_num(fc['human_touches']['median'])}"
+            + (f"; {len(fc['unmeasured'])} PR(s) not measured" if fc["unmeasured"] else "")
+        )
+    else:
+        out.append("fixed cost per PR: no merged PR in the window")
+    fl = report["flow_load"]
+    out.append(
+        f"flow load: {fl['open']} open PRs at the window's end, {fl['idle_7d']} with no push for 7 days"
+    )
     return out
 
 

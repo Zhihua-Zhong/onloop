@@ -20,6 +20,16 @@
     kpi:                       optional: how KPIs and costs of delay count days (decisions 0012, 0014)
       timezone: +09:00         an IANA name (Asia/Tokyo, where the OS knows it), a fixed offset, or UTC; default this
                                machine's offset. `days=<n>` on an ask becomes a date in this zone, once, at ingest
+    adapters:                  optional: read adapters (decision 0013); onloop reads through them and never writes
+      - id: tracker            lowercase letters, digits, '.', '_' or '-'
+        kind: github-issues    built in, or an `onloop.adapters` entry point
+        poll: 5m               optional, default 5m, at least 1m: how often its asks are read
+        repo: owner/name       the rest is the adapter's own (github-issues: repo, asks_label)
+        asks_label: needs-human
+    goals:                     optional: goal checklists, read from their edit history (decision 0014)
+      - id: demo               the goal id a `Goal: demo/14` line names
+        adapter: tracker       a read adapter above that can read goals
+        locator: issue/42      where the checklist is, in the adapter's own terms
     heartbeat_schedule: onloop-heartbeat   optional: the schedule above that is onloop's own heartbeat, pinged from
                                outside it (its dead-man switch, decision 0008); the Now view's health shows its state.
                                Without it, the Now view says "dead-man not configured"
@@ -44,7 +54,18 @@ CONFIG_FILE = "onloopd.yaml"
 DEFAULT_GRACE = "1h"
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
-_TOP = ("port", "schedules", "monitors", "github", "heartbeat_schedule", "carrier", "kpi")
+_TOP = (
+    "port",
+    "schedules",
+    "monitors",
+    "github",
+    "heartbeat_schedule",
+    "carrier",
+    "kpi",
+    "adapters",
+    "goals",
+    "jobs",
+)
 _SCHEDULE = ("id", "name", "period", "grace", "owner")
 _GITHUB = ("repo", "base", "every", "workdir", "policy")
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -94,6 +115,9 @@ class OnloopdConfig:
     heartbeat_schedule: str | None = None  # the schedule that is onloop's own dead-man switch
     carrier: Any = None  # carrier.config.CarrierConfig, or None: the session carrier is not configured
     kpi_timezone: str | None = None  # as written; localday.parse_zone has checked it
+    adapters: tuple[dict[str, Any], ...] = field(default_factory=tuple)  # each as written, with poll_s added
+    goals: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)  # (id, adapter, locator)
+    jobs: tuple[Any, ...] = field(default_factory=tuple)  # jobs.Job: onloopd's own scheduled work
 
 
 def _monitors(raw: Any, problems: list[str]) -> list[tuple[str, str]]:
@@ -200,6 +224,65 @@ def _schedule(n: int, raw: Any, problems: list[str]) -> Schedule | None:
     )
 
 
+def _adapters(raw: Any, problems: list[str]) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        problems.append("adapters must be a list")
+        return []
+    out, seen = [], set()
+    for n, a in enumerate(raw):
+        where = f"adapters[{n}]"
+        if not isinstance(a, dict):
+            problems.append(f"{where} must be a mapping with id and kind")
+            continue
+        aid, kind = a.get("id"), a.get("kind")
+        if not isinstance(aid, str) or not _ID.match(aid):
+            problems.append(f"{where}.id must be lowercase letters, digits, '.', '_' or '-'")
+            continue
+        if aid in seen:
+            problems.append(f"adapter id {aid!r} is declared twice")
+        seen.add(aid)
+        if not isinstance(kind, str) or not kind:
+            problems.append(
+                f"{where}.kind names the adapter (github-issues, or an onloop.adapters entry point)"
+            )
+            continue
+        try:
+            poll_s = ev.parse_duration(str(a.get("poll", "5m")))
+        except ev.EventError as e:
+            problems.append(f"{where}.poll: {e}")
+            continue
+        if poll_s < 60:
+            problems.append(f"{where}.poll is at least 1m: a host is read, not polled hard")
+            continue
+        out.append({**{k: v for k, v in a.items() if k != "poll"}, "poll_s": poll_s})
+    return out
+
+
+def _goals(raw: Any, adapters: list[dict[str, Any]], problems: list[str]) -> list[tuple[str, str, str]]:
+    if not isinstance(raw, list):
+        problems.append("goals must be a list")
+        return []
+    ids = {a["id"] for a in adapters}
+    out = []
+    for n, g in enumerate(raw):
+        where = f"goals[{n}]"
+        if not isinstance(g, dict):
+            problems.append(f"{where} must be a mapping with id, adapter and locator")
+            continue
+        for key in sorted(set(g) - {"id", "adapter", "locator"}):
+            problems.append(f"{where} has an unknown key {key!r}; the keys are id, adapter, locator")
+        gid, adapter, locator = g.get("id"), g.get("adapter"), g.get("locator")
+        if not isinstance(gid, str) or not _ROLE.match(gid):
+            problems.append(f"{where}.id is a lowercase name, as a `Goal: <id>/<item>` line writes it")
+        elif adapter not in ids:
+            problems.append(f"{where}.adapter must name one of the adapters declared in this file")
+        elif not isinstance(locator, str) or not locator:
+            problems.append(f"{where}.locator says where the checklist is")
+        else:
+            out.append((gid, adapter, locator))
+    return out
+
+
 def _kpi(raw: Any, problems: list[str]) -> str | None:
     from ..localday import parse_zone
 
@@ -249,6 +332,13 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     beat = data.get("heartbeat_schedule")
     if beat is not None and (not isinstance(beat, str) or beat not in seen):
         problems.append("heartbeat_schedule must name one of the schedules declared in this file")
+    adapters = _adapters(data["adapters"], problems) if data.get("adapters") is not None else []
+    goals = _goals(data["goals"], adapters, problems) if data.get("goals") is not None else []
+    jobs = []
+    if data.get("jobs") is not None:
+        from . import jobs as jobs_mod
+
+        jobs = jobs_mod.parse(data["jobs"], problems)
     kpi_timezone = None
     if data.get("kpi") is not None:
         kpi_timezone = _kpi(data["kpi"], problems)
@@ -267,6 +357,9 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
         port=port,
         heartbeat_schedule=beat,
         kpi_timezone=kpi_timezone,
+        adapters=tuple(adapters),
+        goals=tuple(goals),
+        jobs=tuple(jobs),
     )
 
 
