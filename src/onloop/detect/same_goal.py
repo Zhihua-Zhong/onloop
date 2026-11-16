@@ -4,7 +4,7 @@ cost more than once. One alert to that role, `would.wake` it; onloop never combi
 
 The size limit is `COMBINE_MAX_LINES` (added plus deleted lines); over it there is no advice, because combining only
 helps up to the size at which review still holds. The author role is the gate's own reading of a pull request (its
-title's `role:` prefix, or a `Role:` trailer); a pull request without one is left out.
+title's `[role]` prefix, or a `Role:` trailer); a pull request without one is left out.
 """
 
 from __future__ import annotations

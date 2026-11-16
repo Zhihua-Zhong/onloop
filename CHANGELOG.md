@@ -12,6 +12,12 @@ Act modes are off by default.
 
 ### Upgrading
 
+- **Ledger schema 7** (R5): a ledger of schema 6 or older migrates once, keeps every event, and replays its old
+  outcome lines as they were read: an ask logged before is a task that ends when its wait clears. An older onloop
+  refuses the file, and its message now says what to do.
+- **The outcome line, version 2** (decision 0012): every line that parsed still parses the same, except
+  `waker=pid:0`, which is refused. An onloop older than 0.5.0 refuses a line with the new keys, so a team writes them
+  only after it upgrades.
 - Ledger schema 6: a ledger opened by this onloop migrates once and keeps every event; an older onloop then refuses
   it. Nothing in it changes until onloopd.yaml has a `carrier:` block.
 - The UI is no longer GET-only: the Conversation view's compose box posts `/ui/messages`, with the page's session
@@ -19,6 +25,28 @@ Act modes are off by default.
 
 ### Added
 
+- **The person's task list** ([tasks.md](docs/tasks.md), decision 0013). onloop's ledger is the system of record for
+  what waits on the person:
+  - an ask states its effect, goal item, weight, when its delay starts to cost (a date; `days=<n>` is dated once, at
+    ingest, in `kpi.timezone`), what waits, and a default: `onloop ask`, or the same keys on the outcome line;
+  - one order (weight, then the days left, computed when read, then age); an incomplete ask is listed last and
+    returned to its author once, a critical one keeps its place, flagged;
+  - a task closes only with a resolution (done, declined, superseded, expired) and its evidence, enforced by the
+    ledger; a wait clearing never closes one; an approval at the merge gate is done only on the code host;
+  - returns to the author at 7 days and to the coordinator at 14; open PRs get the same two alerts; nothing is closed
+    by onloop;
+  - reconciliation of the asks seen in outcome lines, PRs, the tracker and prompts against the list;
+  - `onloop tasks [--digest] [--brief]`, `onloop task resolve|keep`, `GET /api/tasks`, `GET /api/digest`; Now's
+    "Waiting on you" is the list, with a "since you were away" band that starts with the first three tasks; Done and
+    Decline post `/ui/tasks/resolve` (a request from a local user, not verified).
+- **Read adapters** (`adapters:` in onloopd.yaml, entry points `onloop.adapters`): no write method, a client that
+  sends only GETs and GraphQL queries. GitHub issues by label are built in.
+- **Goals and outcome KPIs** (decision 0014): a goal checklist read from its edit history, with its denominator and
+  the date of it; `Goal:` lines in PR bodies; goal ticks per merged PR, the goal-linked share, the fixed cost per PR
+  and flow load (`onloop kpi`, `GET /api/kpi`, the Outcome view); combining advice for PRs that move the same item.
+- **External waits**: `waker=event:<kind>:<id>` (a CI run, checks, a review), checked through a read adapter.
+- **onloopd's own jobs** (`jobs:`): the daily report, declared and watched as a schedule, caught up once after a gap;
+  the boot gap, with its cause from the System event log; a quiet ledger read as idle or waiting.
 - **The session carrier** ([carrier.md](docs/carrier.md), decision 0010). onloop delivers messages into the role
   sessions itself, with headless `claude -p --resume`, on the user's own subscription login:
   - one live lease per session id, a unique index in the ledger; a session open in another process is never resumed

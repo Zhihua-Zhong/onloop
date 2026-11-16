@@ -502,3 +502,29 @@ Notes:
 | Entry-point group | Callable | Effect |
 |---|---|---|
 | `onloop.checks` | `(facts, policy, classification) -> list[str]` | Each returned sentence is a reason for the gate to refuse. An exception is also a refusal. |
+
+## onloopd.yaml: R5's keys
+
+The full reference is the docstring of `src/onloop/daemon/config.py`. R5 adds:
+
+```yaml
+kpi:
+  timezone: "+09:00"          # an IANA name where the OS knows it, a fixed offset, or UTC; default this machine's
+adapters:                     # read adapters (decision 0013): never written through
+  - id: tracker
+    kind: github-issues
+    repo: owner/name
+    asks_label: needs-human   # labelled issues become tasks on the person's list
+    poll: 5m                  # at least 1m
+goals:                        # goal checklists, read from their edit history (decision 0014)
+  - id: demo
+    adapter: tracker
+    locator: issue/42
+jobs:                         # onloopd's own scheduled work, watched like any schedule
+  - id: daily-report
+    run: report-daily
+    at: "07:30"               # in kpi.timezone
+    out: reports              # relative to the ledger's folder
+```
+
+Every key is checked when onloopd starts, and a key it does not know stops it with the reason (fail closed).

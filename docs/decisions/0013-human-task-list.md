@@ -66,8 +66,8 @@ The person returns at irregular times and wants the whole current list, in one o
    It opens an alert for each ask missing from the list. It reads nothing but the outcome line of a turn: an ask
    written only in prose is not seen, and the shared paragraph forbids it.
 8. **A "since you were away" digest,** keyed on the person's last visit (a `visit.recorded` event from the UI or
-   `onloop tasks --digest`). It shows what was added, what was resolved (with "resolved without you" apart), and what returned
-   or expired. Then it shows the ordered list.
+   `onloop tasks --digest`). It shows what was added, what was resolved (with "resolved without you" apart), and what
+   returned or expired. Then it shows the ordered list.
 9. **Three writes from the UI**, behind decision 0011's rules (the session cookie, the CSRF token and the Origin check),
    all evidence and none authority:
    - resolve (`done` or `declined`);
@@ -97,4 +97,5 @@ The person returns at irregular times and wants the whole current list, in one o
 - Ledger schema 7: `human_tasks`, `visits`, the goal tables ([decision 0014](0014-goals-and-outcome-kpis.md)),
   `links`; `events.source` takes `adapter`; `resources.waker_kind` takes `event`.
 - Now's "Waiting on you" becomes the ordered list. `GET /api/tasks` and `GET /api/digest` are added, along with
-  `onloop ask`, `onloop tasks`, `onloop task resolve|keep` and `onloop tasks --digest` (`onloop digest` stays the older supervisor's).
+  `onloop ask`, `onloop tasks`, `onloop task resolve|keep` and `onloop tasks --digest` (`onloop digest` stays the
+  older supervisor's).

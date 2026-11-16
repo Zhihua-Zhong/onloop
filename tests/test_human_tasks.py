@@ -197,7 +197,7 @@ def test_one_open_task_per_ask_is_the_database_s(led):
     stop(led, ASK)
     (t,) = tasks(led)
     row = dict(t)
-    row.update(id="t-other", origin_ref="other")
+    row.update(id="t-other", origin_ref="other", wait_id=None)  # only the per-ask index may refuse it
     cols = ", ".join(row)
     with pytest.raises(sqlite3.IntegrityError):
         led.conn.execute(
