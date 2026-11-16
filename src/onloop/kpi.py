@@ -353,6 +353,7 @@ def outcome(ledger: Ledger, *, since: str, until: str) -> dict[str, Any]:
             (g["id"], until),
         )
         in_window = [d for d in dens if d["at"] >= since]
+        before = [d for d in dens if d["at"] < since]
         end = dens[-1] if dens else None
         t = sum(1 for x in ticks if x["kind"] == "tick")
         goals[g["id"]] = {
@@ -363,7 +364,9 @@ def outcome(ledger: Ledger, *, since: str, until: str) -> dict[str, Any]:
             "denominator": end["count"] if end else None,
             "denominator_at": end["at"] if end else None,
             "denominators_in_window": [{"count": d["count"], "at": d["at"]} for d in in_window],
+            "denominator_before": before[-1]["count"] if before else None,
             "per_merged_pr": round(t / m, 4) if m else None,
+            "merged_prs_per_tick": round(m / t, 1) if t else None,
         }
     linked = none = 0
     cost: dict[str, list[float]] = {"queue_hours": [], "review_rounds": [], "human_touches": []}
@@ -452,7 +455,10 @@ def outcome_text(report: dict[str, Any]) -> list[str]:
                 f"goal ticks per merged PR ({gid}): {g['ticks']} ticks, no merged PR in the window · {size}"
             )
         if g["ticks_without_evidence"]:
-            out.append(f"  {g['ticks_without_evidence']} of the ticks have no comment that names the item")
+            n = g["ticks_without_evidence"]
+            out.append(
+                f"  {n} of the {g['ticks']} ticks {'has' if n == 1 else 'have'} no comment that names the item"
+            )
         for d in g["denominators_in_window"]:
             out.append(f"  the checklist had {d['count']} items from {d['at']}")
     ls = report["linked_share"]

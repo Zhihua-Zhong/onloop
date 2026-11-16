@@ -254,7 +254,7 @@ export function NowView() {
           <DigestBand />
           <Banner m={q.data} />
           <Glance m={q.data} />
-          <div className="grid gap-6 lg:grid-cols-3 lg:gap-5">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-5">
             <Section title="Waiting on you" count={q.data.waiting_on_you.length} t="human" testid="col-waiting">
               {q.data.waiting_on_you.length ? (
                 q.data.waiting_on_you[0].kind === "task" ? (

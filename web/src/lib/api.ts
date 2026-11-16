@@ -284,7 +284,9 @@ export interface GoalKpi {
   denominator: number | null;
   denominator_at: string | null;
   denominators_in_window: { count: number; at: string }[];
+  denominator_before: number | null;
   per_merged_pr: number | null;
+  merged_prs_per_tick: number | null;
 }
 export interface Spread { n: number; median: number | null; p90: number | null }
 export interface KpiModel {

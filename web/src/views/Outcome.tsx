@@ -26,22 +26,33 @@ function GoalCard({ id, g, merged }: { id: string; g: GoalKpi; merged: number })
     <Card t="done" testid={`goal-${id}`}>
       <h3 className="text-[15px] font-semibold">Goal ticks per merged PR <span className="font-mono text-muted">{id}</span></h3>
       <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
-        <Big value={g.per_merged_pr == null ? "—" : String(g.per_merged_pr)} testid="ticks-per-pr" />
+        <Big
+          value={g.merged_prs_per_tick == null ? "—" : String(g.merged_prs_per_tick)}
+          unit={g.merged_prs_per_tick == null ? undefined : "merged PRs per tick"}
+          testid="prs-per-tick"
+        />
         <p className="text-[14px] leading-snug" data-testid="ticks-denominator">
           <span className="font-semibold">{g.ticks}</span> {g.ticks === 1 ? "tick" : "ticks"} /{" "}
           <span className="font-semibold">{merged}</span> merged PRs
+          {g.per_merged_pr != null && <span className="text-muted"> = {g.per_merged_pr.toFixed(2)} ticks per PR</span>}
           {merged === 0 && <span className="text-muted"> (none merged in the window)</span>}
+          {merged > 0 && g.ticks === 0 && <span className="text-muted"> (no tick in the window)</span>}
         </p>
       </div>
       <Meta>
         <span data-testid="checklist-size">
-          checklist of {g.denominator ?? "?"} items as of {day(g.denominator_at)}
+          {g.denominators_in_window.length > 0 && g.denominator_before != null
+            ? `checklist: ${g.denominator_before} items, then ${g.denominators_in_window.map((d) => `${d.count} from ${day(d.at)}`).join(", then ")}`
+            : `checklist of ${g.denominator ?? "?"} items, as of ${day(g.denominator_at)}`}
         </span>
-        {g.denominators_in_window.length > 0 && <span>· it changed in the window ({g.denominators_in_window.map((d) => `${d.count} from ${day(d.at)}`).join(", ")})</span>}
       </Meta>
       {(g.ticks_without_evidence > 0 || g.unticks > 0) && (
         <p className="mt-1 text-[13px] text-state-stall">
-          {g.ticks_without_evidence > 0 && <>{g.ticks_without_evidence} of the ticks have no comment that names the item. </>}
+          {g.ticks_without_evidence > 0 && (
+            <>
+              {g.ticks_without_evidence} of the {g.ticks} ticks {g.ticks_without_evidence === 1 ? "has" : "have"} no comment that names the item.{" "}
+            </>
+          )}
           {g.unticks > 0 && <>{g.unticks} unticked in the window.</>}
         </p>
       )}
@@ -52,7 +63,7 @@ function GoalCard({ id, g, merged }: { id: string; g: GoalKpi; merged: number })
 function SpreadLine({ label, s, unit }: { label: string; s: Spread; unit?: string }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-2 text-[14px]">
-      <span className="w-[120px] shrink-0 text-muted">{label}</span>
+      <span className="w-[170px] shrink-0 text-muted max-sm:w-full">{label}</span>
       <span className="font-semibold tabular-nums">{s.median == null ? "—" : `${s.median}${unit ?? ""}`}</span>
       <span className="text-[13px] text-muted">median · p90 {s.p90 == null ? "—" : `${s.p90}${unit ?? ""}`} · over {s.n} PRs</span>
     </p>

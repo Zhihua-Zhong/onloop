@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { tasksApi, uiPost, type DigestModel, type TaskCard } from "@/lib/api";
 import { ago, duration, plural } from "@/lib/format";
-import { Card, Dot, Meta, Pill, type Tone } from "@/components/kit";
+import { Card, Dot, Meta, Pill, tone, type Tone } from "@/components/kit";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 // The person's task list (decision 0013). Each card answers, in reading order: what does this change for the whole
@@ -42,8 +43,19 @@ function origin(t: TaskCard): string {
   }
 }
 
+// The cost of delay, from the date the server keeps: the count of days is always computed, never stored.
+export function costText(t: TaskCard): string | null {
+  if (t.days_left != null && t.cost_from) {
+    if (t.days_left === 0) return "costing now";
+    const d = new Date(`${t.cost_from}T00:00:00`);
+    const when = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    return `costs from ${when} (in ${plural(t.days_left, "day")})`;
+  }
+  return t.cost_unknown ? "costs from a day not known" : null;
+}
+
 function stage(t: TaskCard, now: string): string | null {
-  if (t.stage === "returned_author") return `back with ${t.author_role ?? "its author"} since ${ago((Date.parse(now) - Date.parse(t.returned_at ?? now)) / 1000)}`;
+  if (t.stage === "returned_author") return `returned to ${t.author_role ?? "its author"} ${ago((Date.parse(now) - Date.parse(t.returned_at ?? now)) / 1000)}`;
   if (t.stage === "returned_coordinator") return "with the coordinator: close it or keep it";
   const left = (Date.parse(t.return_author_at) - Date.parse(now)) / 1000;
   return t.author_role && left > 0 ? `returns to ${t.author_role} in ${duration(left)}` : null;
@@ -70,11 +82,11 @@ export function TaskCardView({ t, now, onHide }: { t: TaskCard; now: string; onH
       </h3>
       {(!t.effect || t.incomplete) && t.title && <p className="mt-0.5 text-[13px] leading-snug text-muted">{t.title}</p>}
       {t.effect && t.incomplete && <p className="mt-0.5 text-[13px] text-state-stall">Incomplete: {t.incomplete_reasons.map((r) => MISSING[r] ?? r).join(", ")}</p>}
-      {(t.cost_text || t.holds) && (
+      {(costText(t) || t.holds) && (
         <p className="mt-1 text-[13px] leading-snug" data-testid="cost">
           {t.holds ? <span className="font-medium">{t.holds}</span> : <span className="text-muted">what waits is not said</span>}
-          {t.cost_text && (
-            <span className={t.days_left === 0 ? "font-semibold text-state-blocked" : ""}> · {t.cost_text}</span>
+          {costText(t) && (
+            <span className={t.days_left === 0 ? "font-semibold text-state-blocked" : ""}> · {costText(t)}</span>
           )}
         </p>
       )}
@@ -179,6 +191,7 @@ export function DigestBand() {
   if (!d) return null;
   const away = d.since ? (Date.parse(d.now) - Date.parse(d.since)) / 1000 : Infinity;
   if (away < 8 * 3600) return null;
+  const first = d.open.slice(0, 3);
   const facts = [
     `${d.added.length} added`,
     `${d.resolved.length} resolved`,
@@ -194,6 +207,20 @@ export function DigestBand() {
         <span className="text-sm">{facts.join(" · ")}</span>
         <span className="ml-auto text-[13px] text-accent">{open ? "hide" : "show what changed"}</span>
       </button>
+      {first.length > 0 && (
+        <ol className="mt-2 grid gap-1 text-[13.5px] leading-snug" data-testid="digest-first" aria-label="Start with">
+          {first.map((t, i) => (
+            <li key={t.id} className="flex items-baseline gap-2">
+              <span className="w-4 shrink-0 text-right font-semibold tabular-nums text-muted">{i + 1}</span>
+              <span className={cn("h-2 w-2 shrink-0 translate-y-[-1px] rounded-full", tone(BAND[t.band].t).dot)} aria-hidden />
+              <span className="min-w-0">
+                <span className="font-medium">{t.effect ?? t.title}</span>
+                {costText(t) && <span className={t.days_left === 0 ? "text-state-blocked" : "text-muted"}> · {costText(t)}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
       {open && (
         <div className="mt-2 grid gap-1 text-[13px] leading-snug" data-testid="digest-detail">
           {d.resolved_without_you.map((t) => (
