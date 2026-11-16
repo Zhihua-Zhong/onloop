@@ -42,6 +42,7 @@ from .routes import Routes
 ROUTES: list[tuple[str, Callable[..., dict[str, Any]]]] = [
     ("/hooks/", hook_receiver.handle),
     ("/sources/", sources.handle),
+    ("/tasks/", sources.tasks_route),
 ]
 
 # The detectors run on every tick, after the ingest: (name, detector). They record; nothing acts in R2.

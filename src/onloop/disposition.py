@@ -36,6 +36,9 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
+from typing import Any
+
+from . import localday
 
 GRAMMAR = 2
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
@@ -209,6 +212,24 @@ def parse(message: object) -> Outcome | ParseError:
         line=line,
         **{k: keys.get(k) for k in (*ASK_KEYS, "resolves")},
     )
+
+
+def frozen_ask(got: Outcome, now: str) -> dict[str, Any] | None:
+    """The ask keys of an outcome as the event keeps them, with `days=<n>` turned into a date once (decision 0012)."""
+    ask = got.ask
+    if not ask:
+        return None
+    out: dict[str, Any] = {k: v for k, v in ask.items() if k != "days"}
+    if got.cost_from is not None:
+        out["cost_given"] = f"cost_from={got.cost_from}"
+    elif got.days == "?":
+        out["cost_unknown"] = True
+        out["cost_given"] = "days=?"
+    elif got.days is not None:
+        out["cost_from"] = localday.cost_from_days(int(got.days), now)
+        out["cost_given"] = f"days={got.days}"
+        out["ingest_day"] = localday.local_date(now).isoformat()
+    return out
 
 
 def _quote(value: str) -> str:

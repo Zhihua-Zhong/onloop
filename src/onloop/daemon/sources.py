@@ -238,3 +238,13 @@ def declare(ledger: Ledger, declarations: list[dict[str, Any]]) -> list[int]:
             }
         )
     return ledger.append_batch(events)
+
+
+def tasks_route(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
+    """`/tasks/<ask|resolve|keep|visit>` (decision 0013): the task list's writes, evidence and never authority."""
+    from .. import tasks
+
+    try:
+        return tasks.handle(ledger, rest, body)
+    except tasks.Refused as e:
+        raise WriteRefused(e.status, str(e)) from e

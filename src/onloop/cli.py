@@ -920,6 +920,124 @@ def cmd_say(args) -> int:
     return 0
 
 
+def _task_write(args, action: str, body: dict) -> tuple[int, dict]:
+    """A task write (decision 0013): through the running onloopd with its token, or, when none runs, straight into the
+    ledger. Either way it is the same checks and the same event. (0, answer) or (2, error)."""
+    from . import tasks as tasks_mod
+    from .overlay.ledger import Ledger, LedgerError
+
+    state = _ledger_path(args).resolve().parent
+    code, out = _post_onloopd(state, f"/tasks/{action}", body)
+    if code == 200:
+        return 0, out
+    if code != 0:
+        return 2, out
+    try:
+        with Ledger(_ledger_path(args)) as led:
+            return 0, tasks_mod.handle(led, action, body)
+    except tasks_mod.Refused as e:
+        return 2, {"error": str(e)}
+    except LedgerError as e:
+        return 2, {"error": str(e)}
+
+
+def _task_line(c: dict) -> str:
+    if c.get("effect"):
+        head = c["effect"]
+    else:
+        head = f"(incomplete: {', '.join(c['incomplete_reasons'])}) {c.get('title') or ''}".strip()
+    parts = [f"[{c['band']}] {head}"]
+    if c.get("goal"):
+        parts.append(f"goal {c['goal']}")
+    if c.get("cost_text"):
+        parts.append((c.get("holds") or "what waits is not said") + " · " + c["cost_text"])
+    parts.append(f"if nobody answers: {c['default']}" if c.get("default") else "no default")
+    if c["stage"] != "open":
+        parts.append(c["stage"].replace("_", " "))
+    return f"{c['id']}  " + " | ".join(parts) + (f"  ({c['ref']})" if c.get("ref") else "")
+
+
+def cmd_ask(args) -> int:
+    """Ask the person, with what the act is worth (decisions 0012, 0013). Prints the task id."""
+    role = args.author or os.environ.get("ONLOOP_ROLE") or ""
+    ask = {
+        "effect": args.effect,
+        "goal": args.goal,
+        "weight": args.weight,
+        "cost_from": args.cost_from,
+        "days": args.days,
+        "holds": args.holds,
+        "default": args.default,
+    }
+    body = {"author_role": role, "ref": args.ref, "title": args.title, "ask": ask, "channel": "cli"}
+    code, out = _task_write(args, "ask", body)
+    if code:
+        _err(f"onloop: the ask was not taken: {out.get('error')}")
+        return 2
+    _say(out["id"])
+    _say(f"end the turn with: outcome: blocked owner=human ref=task:{out['id']}")
+    return 0
+
+
+def cmd_tasks(args) -> int:
+    """The person's task list, in its one order; or the digest since the last visit."""
+    from . import tasks as tasks_mod
+    from .overlay.ledger import Ledger, LedgerError
+
+    try:
+        with Ledger(_ledger_path(args)) as led:
+            now = led.now()
+            if args.digest:
+                since = tasks_mod.last_visit(led)
+                body = tasks_mod.digest(led, since, now)
+                if not args.peek:
+                    led.append(tasks_mod.visit_event("cli"))
+            else:
+                body = {"now": now, "open": tasks_mod.open_tasks(led, now)}
+    except LedgerError as e:
+        _err(f"onloop: {e}")
+        return 2
+    if args.json:
+        _say(json.dumps(body, indent=2, sort_keys=True))
+        return 0
+    if args.digest:
+        _say(f"since {body['since'] or 'the start'}:")
+        _say(
+            f"  {len(body['added'])} added, {len(body['resolved'])} resolved, "
+            f"{len(body['resolved_without_you'])} resolved without you, {len(body['returned'])} returned, "
+            f"{len(body['ticks'])} goal tick(s), {len(body['gaps'])} onloopd gap(s)"
+        )
+        for c in body["resolved_without_you"]:
+            _say(f"  resolved without you: {c['id']} {c['resolution']} ({c['evidence']})")
+        for g in body["gaps"]:
+            _say(f"  onloop was down {g.get('from')} to {g.get('to')} ({g.get('cause') or 'cause unknown'})")
+        _say("")
+    if args.brief:
+        for c in body["open"]:
+            _say(f"- {c.get('effect') or c.get('title') or c['id']} [{c['band']}] (task:{c['id']})")
+        return 0
+    if not body["open"]:
+        _say("nothing waits on you")
+    for c in body["open"]:
+        _say(_task_line(c))
+    return 0
+
+
+def cmd_task(args) -> int:
+    """Resolve or keep one task. Evidence, not authority: a local user, not verified."""
+    by = args.by or "human"
+    if args.action == "resolve":
+        body = {"id": args.id, "resolution": args.resolution, "note": args.note, "by": by, "channel": "cli"}
+    else:
+        body = {"id": args.id, "reason": args.reason, "by": by, "channel": "cli"}
+    code, out = _task_write(args, args.action, body)
+    if code:
+        _err(f"onloop: not taken: {out.get('error')}")
+        return 2
+    _say(f"task {args.id}: {args.action} logged (local user, not verified)")
+    return 0
+
+
 def cmd_carrier(args) -> int:
     """Start, stop (the kill switch) or show the session carrier."""
     import uuid
@@ -1475,6 +1593,54 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(fn=cmd_say)
     sp.add_argument("role", help="the role name")
     sp.add_argument("text", help="the message, or - to read it from stdin")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    sp = sub.add_parser(
+        "ask",
+        help="ask the person, saying what the act is worth; prints the task id (decision 0012)",
+        description="ask the person, saying what the act is worth; prints the task id (decision 0012)",
+    )
+    sp.set_defaults(fn=cmd_ask)
+    sp.add_argument("--from", dest="author", help="the asking role (default: $ONLOOP_ROLE)")
+    sp.add_argument("--owner", default="human", choices=["human"], help="who must act (the person)")
+    sp.add_argument("--ref", help="the pull request, issue or file the ask is about")
+    sp.add_argument("--title", help="a short title")
+    sp.add_argument("--effect", help='"do X, so Y": what the act changes for the whole')
+    sp.add_argument("--goal", help="the goal item it moves, as <goal>/<item>, or none")
+    sp.add_argument("--weight", choices=["critical", "supporting", "skippable"])
+    sp.add_argument("--cost-from", dest="cost_from", help="the day the delay starts to cost, YYYY-MM-DD")
+    sp.add_argument("--days", help="the days until the delay starts to cost (0 = now), or ?")
+    sp.add_argument("--holds", help="what waits on it (needed with --cost-from or --days)")
+    sp.add_argument("--default", help="what happens if nobody answers")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    sp = sub.add_parser(
+        "tasks",
+        help="what waits on the person, in one order; --digest: what changed since the last visit",
+        description="what waits on the person, in one order (decision 0013); --digest: what was added, resolved "
+        "and returned since the last visit, then the list (it records this visit unless --peek)",
+    )
+    sp.set_defaults(fn=cmd_tasks)
+    sp.add_argument("--digest", action="store_true", help="what changed since the last visit, then the list")
+    sp.add_argument("--peek", action="store_true", help="with --digest: do not record this visit")
+    sp.add_argument("--brief", action="store_true", help="one line per task, for a reply footer")
+    sp.add_argument("--json", action="store_true", help="the cards as JSON")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    tp = sub.add_parser("task", help="resolve or keep a task (evidence, not authority)")
+    tsub = tp.add_subparsers(dest="action", metavar="<action>")
+    sp = tsub.add_parser("resolve", help="close a task: done, declined, superseded or expired")
+    sp.set_defaults(fn=cmd_task)
+    sp.add_argument("id", help="the task id (t-...)")
+    sp.add_argument("resolution", choices=["done", "declined", "superseded", "expired"])
+    sp.add_argument("--note", help="why (at most 500 characters)")
+    sp.add_argument("--by", help="who resolves it: human (default) or a role, such as the coordinator")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+    sp = tsub.add_parser("keep", help="keep a returned task, with a reason; its clocks start again")
+    sp.set_defaults(fn=cmd_task)
+    sp.add_argument("id", help="the task id (t-...)")
+    sp.add_argument("--reason", required=True, help="why it is kept")
+    sp.add_argument("--by", help="who keeps it: human (default) or a role")
     sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
 
     cp = sub.add_parser("carrier", help="the session carrier: start, stop (the kill switch), status")

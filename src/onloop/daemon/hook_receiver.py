@@ -24,7 +24,7 @@ import re
 import uuid
 from typing import Any
 
-from .. import disposition, localday
+from .. import disposition
 from ..overlay.ledger import Ledger
 from .server import WriteRefused
 
@@ -45,24 +45,6 @@ _CLAIMED = ("timestamp", "at", "time", "ts")
 def _text(payload: dict[str, Any], key: str, cap: int = 300) -> str | None:
     v = payload.get(key)
     return v[:cap] if isinstance(v, str) else None
-
-
-def frozen_ask(got: disposition.Outcome, now: str) -> dict[str, Any] | None:
-    """The ask keys of an outcome as the event keeps them, with `days=<n>` turned into a date once (decision 0012)."""
-    ask = got.ask
-    if not ask:
-        return None
-    out: dict[str, Any] = {k: v for k, v in ask.items() if k != "days"}
-    if got.cost_from is not None:
-        out["cost_given"] = f"cost_from={got.cost_from}"
-    elif got.days == "?":
-        out["cost_unknown"] = True
-        out["cost_given"] = "days=?"
-    elif got.days is not None:
-        out["cost_from"] = localday.cost_from_days(int(got.days), now)
-        out["cost_given"] = f"days={got.days}"
-        out["ingest_day"] = localday.local_date(now).isoformat()
-    return out
 
 
 def event_for(name: str, body: dict[str, Any], now: str | None = None) -> dict[str, Any]:
@@ -97,7 +79,7 @@ def event_for(name: str, body: dict[str, Any], now: str | None = None) -> dict[s
             if got.resolves is not None:
                 out["outcome"]["resolves"] = got.resolves
             if got.value in disposition.ASK_VALUES:
-                ask = frozen_ask(got, now or ev_now())
+                ask = disposition.frozen_ask(got, now or ev_now())
                 if ask:
                     out["ask"] = ask
             out["line"] = got.line

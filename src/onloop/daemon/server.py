@@ -36,6 +36,9 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 its CSRF token in `X-CSRF-Token`, an `Origin` of this onloopd, and a writer; anything
                                 else is 403 (405 without a writer). It is evidence, not authority: a request from a
                                 local user, not verified
+    POST /ui/tasks/resolve      the page's task writes (decision 0013), under the same rules as /ui/messages: mark a
+    POST /ui/tasks/keep         task done or declined, keep a returned task with a reason, record a visit (it keys the
+    POST /ui/visits             digest). Each is evidence from a local user, not verified, never an approval
     GET /, GET /assets/...      the UI's built files (`ui.py`), with a strict Content-Security-Policy
 """
 
@@ -67,8 +70,10 @@ EVENTS_PAGE = 500
 STREAM_POLL_S = 1.0
 STREAM_KEEPALIVE_S = 15.0
 MAX_BODY = 1024 * 1024
-WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/")
+WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/", "/tasks/")
 UI_WRITE = "/ui/messages"
+# the page's task writes (decision 0013), each evidence and none authority: -> the /tasks/ action they become
+UI_TASK_WRITES = {"/ui/tasks/resolve": "resolve", "/ui/tasks/keep": "keep", "/ui/visits": "visit"}
 UI_COOKIE = "onloop_ui"
 UI_MAX_BODY = 64 * 1024
 
@@ -264,8 +269,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
-        if path == UI_WRITE:
-            self._ui_write()
+        if path == UI_WRITE or path in UI_TASK_WRITES:
+            self._ui_write(path)
             return
         if self.server.writer is None or not path.startswith(WRITE_PREFIXES):
             self._drain()
@@ -319,8 +324,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(200, out)
 
-    def _ui_write(self) -> None:
-        """The compose box's POST: the page's cookie, its CSRF token and this onloopd's origin, or 403."""
+    def _ui_write(self, path: str = UI_WRITE) -> None:
+        """A POST from the page (the compose box, a task's mark or keep, a visit): the page's cookie, its CSRF token and
+        this onloopd's origin, or 403."""
         if self.server.writer is None:
             self._drain()
             self._not_allowed()
@@ -360,6 +366,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode("utf-8", errors="strict"))
         except (UnicodeDecodeError, ValueError):
             self._send_json(400, {"error": "the body is not a JSON object in UTF-8"})
+            return
+        if path in UI_TASK_WRITES:
+            if not isinstance(body, dict):
+                self._send_json(400, {"error": "a task write is a JSON object"})
+                return
+            keep = {k: body[k] for k in ("id", "resolution", "note", "reason") if k in body}
+            try:
+                out = self.server.writer.post(
+                    f"/tasks/{UI_TASK_WRITES[path]}", {**keep, "channel": "ui", "by": "human"}
+                )
+            except WriteRefused as e:
+                self._send_json(e.status, {"error": str(e)})
+                return
+            except Exception as e:  # noqa: BLE001 - a failed write is a 500 with its reason
+                self._send_json(500, {"error": f"{type(e).__name__}: {e}"[:300]})
+                return
+            self._send_json(200, out)
             return
         role = body.get("role") if isinstance(body, dict) else None
         if not isinstance(role, str):
