@@ -18,6 +18,7 @@ LAYERS = {
         "asapp",
         "watchdog",
         "testing",
+        "localday",
     },
     1: {
         "ledger",
@@ -41,6 +42,9 @@ LAYERS = {
         "ingest",
         "detect",
         "report",
+        "tasks",
+        "adapters",
+        "goals",
     },
     3: {"supervisor", "daemon", "carrier"},
     4: {"cli", "__main__"},

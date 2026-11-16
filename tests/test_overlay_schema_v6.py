@@ -51,7 +51,7 @@ def test_a_version_5_ledger_migrates_to_version_6_and_keeps_every_event(tmp_path
             before = [tuple(r) for r in led.conn.execute("SELECT * FROM events ORDER BY seq")]
             uid = led.instance()
     with Ledger(path, clock=lambda: T0) as led:
-        assert led.version() == 6 == len(schema.MIGRATIONS)
+        assert led.version() == len(schema.MIGRATIONS) >= 6  # through version 6 and on
         assert [tuple(r) for r in led.conn.execute("SELECT * FROM events ORDER BY seq")] == before
         assert led.instance() == uid
         d = led.select("SELECT state, kind, attempts, acked_at FROM deliveries WHERE id = 'd1'")[0]

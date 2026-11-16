@@ -51,7 +51,10 @@ class Ledger(SQLiteDB):
     STALE = (
         "{path} is ledger schema {have}, this onloop expects {want}; open it once for writing to migrate it"
     )
-    NEWER = "{path} is ledger schema {have}, newer than this onloop ({want})"
+    NEWER = (
+        "{path} is ledger schema {have}, newer than this onloop ({want}); keep the file as it is, and run an onloop "
+        "whose ledger schema is {have} or later (pip show onloop names the version you have)"
+    )
     READ_ONLY = "this ledger was opened read-only"
 
     def __init__(

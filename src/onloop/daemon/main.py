@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import __version__, fsutil, gitutil, procs
+from .. import __version__, fsutil, gitutil, localday, procs
 from .. import events as ev
 from ..detect import core as detect
 from ..detect import no_outcome, schedules, wakers
@@ -202,6 +202,11 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
         say(f"onloopd: does not start: github: {type(e).__name__}: {e}"[:300])
         return 2
     ledger = Ledger(cfg.ledger)  # creates or migrates the file; the one writer
+    # the zone `days=<n>` is turned into a date in, and KPIs count days in (decisions 0012, 0014); set before the
+    # spool is read, so a spooled ask is dated as any other
+    localday.set_zone(localday.parse_zone(cfg.watch.kpi_timezone) if cfg.watch.kpi_timezone else None)
+    if sources.declare_setting(ledger, "kpi.timezone", cfg.watch.kpi_timezone):
+        say(f"onloopd: kpi.timezone is now {cfg.watch.kpi_timezone or 'the machine offset'}")
     spooled = hook_receiver.ingest_spool(ledger, state)
     if spooled:
         say(f"onloopd: logged {spooled} hook event(s) spooled while it was away")

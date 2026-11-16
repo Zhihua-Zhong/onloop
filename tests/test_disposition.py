@@ -129,7 +129,9 @@ def test_every_example_in_the_role_template_paragraph_parses():
     assert template == list(d.OUTCOMES)  # the paragraph names every value, in order
     # the ask example in the paragraph itself parses too
     ask = re.findall(r"^outcome: .+$", text.split("**Asking the person.**")[1].split("Examples")[0], re.M)
-    assert ask and all(isinstance(d.parse(a.replace("<the id onloop ask printed>", "t-1")), d.Outcome) for a in ask)
+    assert ask and all(
+        isinstance(d.parse(a.replace("<the id onloop ask printed>", "t-1")), d.Outcome) for a in ask
+    )
 
 
 def test_the_parser_bites_in_the_selftest():
@@ -141,8 +143,8 @@ def test_the_parser_bites_in_the_selftest():
 
 V2_VALID = [
     "outcome: blocked owner=human ref=#1",
-    "outcome: blocked owner=human ref=pr#45 goal=demo/14 weight=critical days=2 effect=\"a, so b\" holds=\"x waits\"",
-    "outcome: blocked owner=human ref=#1 cost_from=2026-11-20 holds=x effect=\"a, so b\"",
+    'outcome: blocked owner=human ref=pr#45 goal=demo/14 weight=critical days=2 effect="a, so b" holds="x waits"',
+    'outcome: blocked owner=human ref=#1 cost_from=2026-11-20 holds=x effect="a, so b"',
     "outcome: handoff owner=human ref=#1 days=? holds=x",
     "outcome: in_review ref=pr#2 owner=human weight=supporting goal=none",
     "outcome: done ref=pr#3 goal=demo/14",
@@ -172,7 +174,7 @@ def test_version_2_lines_parse(text):
         ("outcome: blocked owner=human ref=#1 days=366", "days"),
         ("outcome: blocked owner=human ref=#1 days=-1", "days"),
         ("outcome: blocked owner=human ref=#1 days=soon", "days"),
-        ("outcome: blocked owner=human ref=#1 effect=\"" + "x" * 201 + "\"", "longer than 200"),
+        ('outcome: blocked owner=human ref=#1 effect="' + "x" * 201 + '"', "longer than 200"),
         ("outcome: idle goal=demo/1", "takes no goal"),
         ("outcome: done weight=critical", "takes no weight"),
         ("outcome: continue ref=#1 waker=event:gh-run", "waker"),
@@ -215,7 +217,7 @@ def test_a_version_2_outcome_formats_and_parses_back():
     )
     line = d.format_line(o)
     assert line == (
-        'outcome: blocked owner=human ref=pr#45 goal=demo/14 weight=critical cost_from=2026-11-20 '
+        "outcome: blocked owner=human ref=pr#45 goal=demo/14 weight=critical cost_from=2026-11-20 "
         'effect="approve it, so it merges" holds="the demo waits"'
     )
     assert d.parse(line) == d.Outcome(**{**o.__dict__, "line": line})

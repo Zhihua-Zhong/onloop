@@ -17,6 +17,9 @@
       workdir: path            optional: a clone to take patch ids in; without one every push counts as substantive
       policy: path             optional: the onloop.yaml whose required checks and identities intake uses
     carrier: ...               optional: the session carrier, off by default (carrier/config.py, decision 0010)
+    kpi:                       optional: how KPIs and costs of delay count days (decisions 0012, 0014)
+      timezone: +09:00         an IANA name (Asia/Tokyo, where the OS knows it), a fixed offset, or UTC; default this
+                               machine's offset. `days=<n>` on an ask becomes a date in this zone, once, at ingest
     heartbeat_schedule: onloop-heartbeat   optional: the schedule above that is onloop's own heartbeat, pinged from
                                outside it (its dead-man switch, decision 0008); the Now view's health shows its state.
                                Without it, the Now view says "dead-man not configured"
@@ -41,7 +44,7 @@ CONFIG_FILE = "onloopd.yaml"
 DEFAULT_GRACE = "1h"
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
-_TOP = ("port", "schedules", "monitors", "github", "heartbeat_schedule", "carrier")
+_TOP = ("port", "schedules", "monitors", "github", "heartbeat_schedule", "carrier", "kpi")
 _SCHEDULE = ("id", "name", "period", "grace", "owner")
 _GITHUB = ("repo", "base", "every", "workdir", "policy")
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -90,6 +93,7 @@ class OnloopdConfig:
     port: int | None = None
     heartbeat_schedule: str | None = None  # the schedule that is onloop's own dead-man switch
     carrier: Any = None  # carrier.config.CarrierConfig, or None: the session carrier is not configured
+    kpi_timezone: str | None = None  # as written; localday.parse_zone has checked it
 
 
 def _monitors(raw: Any, problems: list[str]) -> list[tuple[str, str]]:
@@ -196,6 +200,25 @@ def _schedule(n: int, raw: Any, problems: list[str]) -> Schedule | None:
     )
 
 
+def _kpi(raw: Any, problems: list[str]) -> str | None:
+    from ..localday import parse_zone
+
+    if not isinstance(raw, dict):
+        problems.append("kpi must be a mapping (timezone)")
+        return None
+    for key in sorted(set(raw) - {"timezone"}):
+        problems.append(f"kpi has an unknown key {key!r}; the keys are timezone")
+    tz = raw.get("timezone")
+    if tz is None:
+        return None
+    try:
+        parse_zone(str(tz))
+    except ValueError as e:
+        problems.append(f"kpi.{e}")
+        return None
+    return str(tz)
+
+
 def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     """Check a parsed `onloopd.yaml` whole. Raises ConfigError listing every problem."""
     if data is None:
@@ -226,6 +249,9 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     beat = data.get("heartbeat_schedule")
     if beat is not None and (not isinstance(beat, str) or beat not in seen):
         problems.append("heartbeat_schedule must name one of the schedules declared in this file")
+    kpi_timezone = None
+    if data.get("kpi") is not None:
+        kpi_timezone = _kpi(data["kpi"], problems)
     carrier = None
     if data.get("carrier") is not None:
         from ..carrier import config as carrier_config
@@ -240,6 +266,7 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
         monitors=tuple(monitors),
         port=port,
         heartbeat_schedule=beat,
+        kpi_timezone=kpi_timezone,
     )
 
 

@@ -21,7 +21,9 @@ SOURCES_1 = ("github", "hook", "healthchecks", "ui", "detector", "legacy")
 SOURCES_3 = (*SOURCES_1, "config")  # version 3: onloopd.yaml's declarations, not a person's action
 SOURCES_5 = (*SOURCES_3, "gate")  # version 5: the merge gate's own decisions, not a person's action
 # version 6: the session carrier's own events (leases, runs, deliveries, timers), and what a person sends by the CLI
-SOURCES = (*SOURCES_5, "carrier", "cli")
+SOURCES_6 = (*SOURCES_5, "carrier", "cli")
+# version 7: a read adapter other than the built-in GitHub ingest (decision 0013)
+SOURCES = (*SOURCES_6, "adapter")
 ITEM_KINDS = ("task", "decision", "followup", "alert")
 ITEM_STATES = ("open", "ready", "blocked", "in_review", "done")
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
@@ -41,7 +43,8 @@ WAIT_REASONS_2 = (*WAIT_REASONS_1, "missing_evidence")  # version 2
 WAIT_REASONS = (*WAIT_REASONS_2, "blocked", "handoff")  # version 3
 RESOURCE_STATES = ("alive", "dead", "unknown")  # version 2
 RESOURCE_KINDS = ("lock", "queue", "human", "waker")
-WAKER_KINDS = ("cron", "monitor", "pid")
+WAKER_KINDS_1 = ("cron", "monitor", "pid")
+WAKER_KINDS = (*WAKER_KINDS_1, "event")  # version 7: a wait outside the machine, checked by a read adapter
 ROLE_STATES = ("idle", "working", "paused_by_human", "blocked")
 
 # The projection tables, each with its primary key: what replay clears and rebuilds, and what the byte-identical
@@ -63,6 +66,13 @@ PROJECTIONS = {
     "messages": "id",  # version 6
     "timers": "id",  # version 6
     "carrier_state": "id",  # version 6
+    "human_tasks": "id",  # version 7
+    "visits": "id",  # version 7
+    "goals": "id",  # version 7
+    "goal_items": "id",  # version 7
+    "goal_denominators": "id",  # version 7
+    "goal_ticks": "id",  # version 7
+    "links": "id",  # version 7
 }
 
 # Version 6 value sets (decision 0010).
@@ -95,6 +105,13 @@ TIMER_KINDS = ("corrective", "escalate", "retry", "lease_check")
 MESSAGE_AUTHORS = ("human", "onloop", "role")
 MESSAGE_CHANNELS = ("ui", "cli", "carrier")
 CARRIER_PAUSES = ("kill_switch", "usage_limit", "not_logged_in", "overage")
+
+# Version 7 value sets (decisions 0012, 0013 and 0014).
+TASK_ORIGINS = ("outcome", "cli", "gate", "adapter", "notification", "node", "pause")
+TASK_STAGES = ("open", "returned_author", "returned_coordinator", "resolved")
+TASK_RESOLUTIONS = ("done", "declined", "superseded", "expired")
+WEIGHTS = ("critical", "supporting", "skippable")
+_DATE = "GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
 
 
 def _in(column: str, values: tuple[str, ...], *, nullable: bool = False) -> str:
@@ -166,7 +183,7 @@ CREATE TABLE resources (
   kind       TEXT NOT NULL CHECK ({_in("kind", RESOURCE_KINDS)}),
   capacity   INTEGER NOT NULL DEFAULT 1 CHECK (capacity >= 1),
   plugin     TEXT,
-  waker_kind TEXT CHECK ({_in("waker_kind", WAKER_KINDS, nullable=True)} AND (kind = 'waker') = (waker_kind IS NOT NULL)),
+  waker_kind TEXT CHECK ({_in("waker_kind", WAKER_KINDS_1, nullable=True)} AND (kind = 'waker') = (waker_kind IS NOT NULL)),
   waker_ref  TEXT,
   last_seq   INTEGER NOT NULL
 );
@@ -408,7 +425,7 @@ CREATE TABLE events_v6 (
   seq         INTEGER PRIMARY KEY AUTOINCREMENT,
   id          TEXT NOT NULL UNIQUE,
   {_ts("ts_system", nullable=False)},
-  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_6)}),
   kind        TEXT NOT NULL,
   subject_ref TEXT NOT NULL,
   actor       TEXT,
@@ -530,6 +547,168 @@ CREATE TABLE carrier_state (
 )
 """
 
+# Version 7: the human task list and goals (decisions 0012, 0013, 0014).
+# - `events.source` also takes `adapter`, and `resources.waker_kind` also takes `event` (both copied row for row, as in
+#   versions 3, 5 and 6);
+# - `human_tasks` is the system of record for what waits on the person. Its invariants are the database's: one task
+#   per origin, one open task per ask (author, owner, ref), one open task per wait, no close without a resolution and
+#   its evidence, a resolved task stays resolved, and no count of days anywhere (`cost_from` is a date);
+# - the goal tables keep a checklist's items by number, its denominator at each edit, and its ticks by edit;
+# - `links` ties a pull request (or an item or a task) to a goal item; `visits` keys the digest.
+SCHEMA_7 = f"""
+CREATE TABLE events_v7 (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id          TEXT NOT NULL UNIQUE,
+  {_ts("ts_system", nullable=False)},
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  kind        TEXT NOT NULL,
+  subject_ref TEXT NOT NULL,
+  actor       TEXT,
+  {_ts("at")},
+  payload     TEXT NOT NULL CHECK (json_valid(payload))
+);
+INSERT INTO events_v7 (seq, id, ts_system, source, kind, subject_ref, actor, at, payload) SELECT seq, id, ts_system, source, kind, subject_ref, actor, at, payload FROM events ORDER BY seq;
+DROP TABLE events;
+ALTER TABLE events_v7 RENAME TO events;
+CREATE INDEX events_kind ON events(kind, seq);
+CREATE INDEX events_subject ON events(subject_ref, seq);
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+
+CREATE TABLE resources_v7 (
+  id         TEXT PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK ({_in("kind", RESOURCE_KINDS)}),
+  capacity   INTEGER NOT NULL DEFAULT 1 CHECK (capacity >= 1),
+  plugin     TEXT,
+  waker_kind TEXT CHECK ({_in("waker_kind", WAKER_KINDS, nullable=True)} AND (kind = 'waker') = (waker_kind IS NOT NULL)),
+  waker_ref  TEXT,
+  last_seq   INTEGER NOT NULL,
+  state      TEXT NOT NULL DEFAULT 'unknown' CHECK ({_in("state", RESOURCE_STATES)}),
+  {_ts("checked_at")}
+);
+INSERT INTO resources_v7 (id, kind, capacity, plugin, waker_kind, waker_ref, last_seq, state, checked_at) SELECT id, kind, capacity, plugin, waker_kind, waker_ref, last_seq, state, checked_at FROM resources ORDER BY id;
+DROP TABLE resources;
+ALTER TABLE resources_v7 RENAME TO resources;
+
+CREATE TABLE human_tasks (
+  id                    TEXT PRIMARY KEY,
+  origin                TEXT NOT NULL CHECK ({_in("origin", TASK_ORIGINS)}),
+  origin_ref            TEXT NOT NULL,
+  author_role           TEXT,
+  owner                 TEXT NOT NULL DEFAULT 'human',
+  ref                   TEXT,
+  wait_id               TEXT,
+  title                 TEXT,
+  effect                TEXT CHECK (effect IS NULL OR length(effect) <= 200),
+  goal_id               TEXT,
+  goal_item             INTEGER,
+  goal_none             INTEGER NOT NULL DEFAULT 0 CHECK (goal_none IN (0, 1)),
+  weight                TEXT CHECK ({_in("weight", WEIGHTS, nullable=True)}),
+  holds                 TEXT CHECK (holds IS NULL OR length(holds) <= 120),
+  cost_from             TEXT CHECK (cost_from IS NULL OR cost_from {_DATE}),
+  cost_unknown          INTEGER NOT NULL DEFAULT 0 CHECK (cost_unknown IN (0, 1)),
+  cost_given            TEXT,
+  default_text          TEXT CHECK (default_text IS NULL OR length(default_text) <= 120),
+  {_ts("opened_at", nullable=False)},
+  {_ts("clock_from", nullable=False)},
+  {_ts("return_author_at", nullable=False)},
+  {_ts("return_coordinator_at", nullable=False)},
+  stage                 TEXT NOT NULL DEFAULT 'open' CHECK ({_in("stage", TASK_STAGES)}),
+  {_ts("returned_at")},
+  incomplete            INTEGER NOT NULL CHECK (incomplete IN (0, 1)),
+  incomplete_reasons    TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(incomplete_reasons)),
+  flags                 TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(flags)),
+  kept_reason           TEXT,
+  kept_by               TEXT,
+  resolution            TEXT CHECK ({_in("resolution", TASK_RESOLUTIONS, nullable=True)}),
+  {_ts("resolved_at")},
+  resolved_by           TEXT,
+  evidence              TEXT,
+  note                  TEXT,
+  superseded_by         TEXT,
+  {_ts("updated_at", nullable=False)},
+  last_seq              INTEGER NOT NULL,
+  CHECK (NOT (cost_from IS NOT NULL AND cost_unknown = 1)),
+  CHECK (incomplete = (effect IS NULL OR (holds IS NULL AND (cost_from IS NOT NULL OR cost_unknown = 1)))),
+  CHECK ((stage = 'resolved') = (resolution IS NOT NULL)),
+  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),
+  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),
+  CHECK (goal_none = 0 OR (goal_id IS NULL AND goal_item IS NULL))
+);
+CREATE UNIQUE INDEX one_task_per_origin ON human_tasks(origin, origin_ref);
+CREATE UNIQUE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' AND ref IS NOT NULL AND author_role IS NOT NULL;
+CREATE UNIQUE INDEX one_open_task_per_wait ON human_tasks(wait_id) WHERE stage <> 'resolved' AND wait_id IS NOT NULL;
+CREATE INDEX human_tasks_open ON human_tasks(stage) WHERE stage <> 'resolved';
+CREATE TRIGGER human_tasks_stay_resolved BEFORE UPDATE OF stage ON human_tasks WHEN OLD.stage = 'resolved' AND NEW.stage <> 'resolved' BEGIN SELECT RAISE(ABORT, 'a resolved task stays resolved'); END;
+
+CREATE TABLE visits (
+  id       TEXT PRIMARY KEY,
+  person   TEXT NOT NULL DEFAULT 'human',
+  channel  TEXT NOT NULL CHECK (channel IN ('ui', 'cli')),
+  {_ts("at", nullable=False)},
+  last_seq INTEGER NOT NULL
+);
+CREATE INDEX visits_at ON visits(person, at);
+
+CREATE TABLE goals (
+  id           TEXT PRIMARY KEY,
+  adapter      TEXT NOT NULL,
+  locator      TEXT NOT NULL,
+  title        TEXT,
+  {_ts("read_at")},
+  {_ts("last_edit_at")},
+  last_seq     INTEGER NOT NULL
+);
+
+CREATE TABLE goal_items (
+  id            TEXT PRIMARY KEY,
+  goal_id       TEXT NOT NULL,
+  number        INTEGER NOT NULL CHECK (number >= 1),
+  text_sha256   TEXT NOT NULL CHECK (length(text_sha256) = 64),
+  {_ts("first_seen_at", nullable=False)},
+  {_ts("removed_at")},
+  checked       INTEGER NOT NULL DEFAULT 0 CHECK (checked IN (0, 1)),
+  {_ts("checked_at")},
+  last_seq      INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_item_per_number ON goal_items(goal_id, number);
+
+CREATE TABLE goal_denominators (
+  id       TEXT PRIMARY KEY,
+  goal_id  TEXT NOT NULL,
+  {_ts("at", nullable=False)},
+  count    INTEGER NOT NULL CHECK (count >= 0),
+  last_seq INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_denominator_per_edit ON goal_denominators(goal_id, at);
+
+CREATE TABLE goal_ticks (
+  id            TEXT PRIMARY KEY,
+  goal_id       TEXT NOT NULL,
+  number        INTEGER NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('tick', 'untick')),
+  {_ts("at", nullable=False)},
+  edit_id       TEXT NOT NULL,
+  evidence_url  TEXT,
+  last_seq      INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_tick_per_edit ON goal_ticks(goal_id, edit_id, number);
+
+CREATE TABLE links (
+  id            TEXT PRIMARY KEY,
+  from_kind     TEXT NOT NULL CHECK (from_kind IN ('pr', 'item', 'task')),
+  from_ref      TEXT NOT NULL,
+  goal_id       TEXT,
+  goal_item     INTEGER,
+  via           TEXT NOT NULL CHECK (via IN ('pr_body', 'outcome', 'task')),
+  {_ts("seen_at", nullable=False)},
+  {_ts("withdrawn_at")},
+  last_seq      INTEGER NOT NULL,
+  CHECK ((goal_id IS NULL) = (goal_item IS NULL))
+);
+CREATE UNIQUE INDEX one_live_link ON links(from_kind, from_ref, COALESCE(goal_id, ''), COALESCE(goal_item, 0)) WHERE withdrawn_at IS NULL
+"""
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
@@ -537,6 +716,7 @@ MIGRATIONS: list[str] = [
     SCHEMA_4,
     SCHEMA_5,
     SCHEMA_6,
+    SCHEMA_7,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 

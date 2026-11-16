@@ -23,6 +23,10 @@ Two vocabularies are applied:
   `carrier.resumed`. Their invariants (one live lease per session, one corrective delivery per turn, one delivery per
   cause) are unique indexes, and these rules use plain INSERTs, so an event that would break one fails its append.
 
+- the human task list's (decision 0013): `task.opened`, `task.amended`, `task.returned`, `task.kept`,
+  `task.resolved`, `visit.recorded`; and `hook.stop`, `hook.notification`, the work graph's nodes and a role's pause
+  open and close tasks too (overlay/human_tasks.py). A wait clearing never closes a task.
+
 Any other kind is kept in the log and changes no projection.
 """
 
@@ -35,7 +39,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .. import events as ev
-from . import schema
+from . import human_tasks, schema
 
 Event = Mapping[str, Any]
 
@@ -529,6 +533,8 @@ def _node(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
         if state is None:
             return
     wid = f"{iid}/human"
+    if _HAS_TASKS(conn):
+        human_tasks.on_node(conn, e, iid, state == "waiting-human")
     if state == "waiting-human":
         if not conn.execute("SELECT 1 FROM waits WHERE id = ? AND cleared_at IS NULL", (wid,)).fetchone():
             row = {
@@ -602,12 +608,16 @@ def _role_paused(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> No
     ).fetchall()
     for (item,) in items:
         _pause_wait(conn, e, role, item)
+    if _HAS_TASKS(conn):
+        human_tasks.on_paused(conn, e, role)
 
 
 def _role_resumed(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     role = p["id"]
     if not _paused(conn, role):
         return
+    if _HAS_TASKS(conn):
+        human_tasks.on_resumed(conn, e, role)
     _set(conn, "roles", role, {"state": "idle"}, e["seq"])
     conn.execute(
         "UPDATE waits SET cleared_at = ?, last_seq = ? WHERE id LIKE ? AND reason = 'paused_by_human' "
@@ -684,6 +694,9 @@ def _hook_stop(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None
     }
     _insert(conn, "turns", row)
     _outcome_wait(conn, e, role, out)
+    if _HAS_TASKS(conn):
+        _legacy_tasks_follow_their_waits(conn, e, role)
+        human_tasks.on_stop(conn, e, p)
     if out.get("value") == "continue" and out.get("waker"):
         kind, _, ref = out["waker"].partition(":")
         rid = f"waker:{kind}:{ref}"
@@ -714,6 +727,33 @@ def _hook_stop(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None
         _insert(conn, "waits", {**wait, "last_seq": e["seq"]})
 
 
+def _legacy_tasks_follow_their_waits(conn: sqlite3.Connection, e: Event, role: str) -> None:
+    """A task opened by a version-1 event (logged before decision 0012) keeps version 1's meaning: it ends when its
+    wait clears, as `superseded` by the turn that cleared it, so replaying an old ledger does not invent open asks."""
+    rows = conn.execute(
+        "SELECT t.id FROM human_tasks t JOIN waits w ON w.id = t.wait_id WHERE t.stage <> 'resolved' "
+        "AND t.author_role = ? AND t.flags LIKE '%\"legacy\"%' AND w.cleared_at IS NOT NULL ORDER BY t.id",
+        (role,),
+    ).fetchall()
+    for (tid,) in rows:
+        human_tasks.resolve(
+            conn, e, tid, "superseded", evidence=f"turn:{e['id']}", by=role, superseded_by=f"turn:{e['id']}"
+        )
+
+
+def _HAS_TASKS(conn: sqlite3.Connection) -> bool:  # noqa: N802 - reads as a condition
+    """True from ledger schema 7 on. An older file being migrated replays its events under schema 7's rules, so this
+    is only False inside a migration test that stops at an older version."""
+    return _has_table(conn, "human_tasks")
+
+
+def _has_table(conn: sqlite3.Connection, table: str) -> bool:
+    return (
+        conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()
+        is not None
+    )
+
+
 def _hook_session_start(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     _role_row(conn, e, p["role"], session_id=p.get("session_id"), state="working")
 
@@ -736,6 +776,8 @@ def _hook_notification(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any])
         "cleared_at": None,
     }
     _insert(conn, "waits", {**wait, "last_seq": e["seq"]})
+    if _HAS_TASKS(conn):
+        human_tasks.on_notification(conn, e, p, wait["id"])
 
 
 # -- the session carrier (decision 0010) -------------------------------------------------------------------------------
@@ -957,6 +999,7 @@ def _carrier_state(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
 
 
 RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]] = {
+    **human_tasks.RULES,
     "item.opened": _item_opened,
     "item.changed": _item_changed,
     "item.closed": _item_closed,

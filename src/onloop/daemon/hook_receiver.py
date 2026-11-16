@@ -8,6 +8,11 @@ as its subject, and the ledger's own time. A Stop is parsed for its outcome line
 keeps the parsed outcome or the parse error, and the outcome line itself, but **never the message text** (the same rule
 as the liveness recorder: onloop keeps what it needs to judge a turn, not what was said).
 
+Version 2 of the line (decision 0012) adds the ask keys. They are frozen in the event as `ask`, with `days=<n>` turned
+into `cost_from`, a date: the calendar day of the ledger's own time at ingest, in `kpi.timezone`, plus n. The key as
+written is kept as `cost_given`. Replay reads the frozen date and never converts again, so a later day or a changed
+zone cannot move it.
+
 The role comes from the hook command (each role's settings name it), not from the payload. The event id is derived
 from the role, the event, the session and the prompt id, so a hook delivered twice is logged once.
 """
@@ -19,9 +24,16 @@ import re
 import uuid
 from typing import Any
 
-from .. import disposition
+from .. import disposition, localday
 from ..overlay.ledger import Ledger
 from .server import WriteRefused
+
+
+def ev_now() -> str:
+    from ..events import now_ts
+
+    return now_ts()
+
 
 EVENTS = {"stop": "hook.stop", "session-start": "hook.session_start", "notification": "hook.notification"}
 BLOCKING_NOTIFICATIONS = ("permission_prompt", "elicitation_dialog")
@@ -35,8 +47,27 @@ def _text(payload: dict[str, Any], key: str, cap: int = 300) -> str | None:
     return v[:cap] if isinstance(v, str) else None
 
 
-def event_for(name: str, body: dict[str, Any]) -> dict[str, Any]:
-    """The ledger event for one hook post. Pure: raises WriteRefused for a body it cannot take."""
+def frozen_ask(got: disposition.Outcome, now: str) -> dict[str, Any] | None:
+    """The ask keys of an outcome as the event keeps them, with `days=<n>` turned into a date once (decision 0012)."""
+    ask = got.ask
+    if not ask:
+        return None
+    out: dict[str, Any] = {k: v for k, v in ask.items() if k != "days"}
+    if got.cost_from is not None:
+        out["cost_given"] = f"cost_from={got.cost_from}"
+    elif got.days == "?":
+        out["cost_unknown"] = True
+        out["cost_given"] = "days=?"
+    elif got.days is not None:
+        out["cost_from"] = localday.cost_from_days(int(got.days), now)
+        out["cost_given"] = f"days={got.days}"
+        out["ingest_day"] = localday.local_date(now).isoformat()
+    return out
+
+
+def event_for(name: str, body: dict[str, Any], now: str | None = None) -> dict[str, Any]:
+    """The ledger event for one hook post. Pure but for `now` (the ledger's time, which dates a `days=<n>`): raises
+    WriteRefused for a body it cannot take."""
     if name not in EVENTS:
         raise WriteRefused(404, f"no hook {name!r}; expected one of {', '.join(EVENTS)}")
     role = body.get("role")
@@ -58,8 +89,17 @@ def event_for(name: str, body: dict[str, Any]) -> dict[str, Any]:
             permission_mode=_text(payload, "permission_mode", 40),
             stop_hook_active=bool(payload.get("stop_hook_active")),
         )
+        out["grammar"] = disposition.GRAMMAR
         if isinstance(got, disposition.Outcome):
             out["outcome"] = {"value": got.value, "ref": got.ref, "owner": got.owner, "waker": got.waker}
+            if got.goal is not None and got.value in ("done", "continue"):
+                out["outcome"]["goal"] = got.goal
+            if got.resolves is not None:
+                out["outcome"]["resolves"] = got.resolves
+            if got.value in disposition.ASK_VALUES:
+                ask = frozen_ask(got, now or ev_now())
+                if ask:
+                    out["ask"] = ask
             out["line"] = got.line
         else:
             out["parse_error"] = got.reason
@@ -106,7 +146,7 @@ def ingest_spool(ledger: Ledger, state: Any) -> int:
             continue
         try:
             rec = json.loads(line)
-            event = event_for(rec["event"], rec["body"])
+            event = event_for(rec["event"], rec["body"], ledger.now())
             event.setdefault("payload", {})["spooled_at"] = rec.get("at")
             if ledger.append(event) is not None:
                 logged += 1
@@ -121,6 +161,6 @@ def ingest_spool(ledger: Ledger, state: Any) -> int:
 
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
     """The `/hooks/` route."""
-    event = event_for(rest, body)
+    event = event_for(rest, body, ledger.now())
     seq = ledger.append(event)  # one transaction, inside onloopd's writer lock
     return {"logged": seq is not None, "seq": seq, "id": event["id"]}

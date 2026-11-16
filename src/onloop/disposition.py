@@ -77,7 +77,9 @@ class Outcome:
     goal: str | None = None
     weight: str | None = None
     cost_from: str | None = None  # a date, as written
-    days: str | None = None  # as written: "0".."365" or "?"; turned into a date at ingest, never stored as a count
+    days: str | None = (
+        None  # as written: "0".."365" or "?"; turned into a date at ingest, never stored as a count
+    )
     effect: str | None = None
     holds: str | None = None
     default: str | None = None
@@ -213,7 +215,19 @@ def _quote(value: str) -> str:
     return f'"{value}"' if re.search(r'[\s"]', value) or value == "" else value
 
 
-FORMAT_ORDER = ("owner", "ref", "waker", "goal", "weight", "cost_from", "days", "effect", "holds", "default", "resolves")
+FORMAT_ORDER = (
+    "owner",
+    "ref",
+    "waker",
+    "goal",
+    "weight",
+    "cost_from",
+    "days",
+    "effect",
+    "holds",
+    "default",
+    "resolves",
+)
 
 
 def format_line(outcome: Outcome) -> str:
