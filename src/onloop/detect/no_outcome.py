@@ -19,7 +19,26 @@ from .core import Finding
 NAME = "no_outcome"
 
 
+ADOPTION_KEY = "outcome-lines-not-adopted"
+ADOPTION_MIN_TURNS = (
+    20  # below this, a turn without a line is one turn's problem, not a team that has not adopted them
+)
+
+
 def detect(ledger: Ledger, now: str) -> list[Finding]:
+    row = ledger.select("SELECT count(*) AS n, count(outcome) AS v FROM turns")[0]
+    total, valid = row["n"], row["v"]
+    if total >= ADOPTION_MIN_TURNS and not valid:
+        # A team that does not write outcome lines yet: every turn would be "without an outcome", which is noise. One
+        # summary says so instead, and the activity view shows whether the team is moving.
+        return [
+            Finding(
+                key=ADOPTION_KEY,
+                title=f"Outcome lines not adopted: 0 of {total} turns end with one",
+                owner_role=None,
+                detail={"turns": total, "with_outcome": 0, "summary": True},
+            )
+        ]
     latest = ledger.select(
         "SELECT t.* FROM turns t WHERE NOT EXISTS (SELECT 1 FROM turns u WHERE u.role = t.role AND "
         "(u.ended_at > t.ended_at OR (u.ended_at = t.ended_at AND u.last_seq > t.last_seq))) ORDER BY t.role"
@@ -75,15 +94,24 @@ def self_test() -> tuple[bool, list[str]]:
     with tempfile.TemporaryDirectory() as tmp:
         led = Ledger(pathlib.Path(tmp) / "ledger.db")
         try:
-            stop(led, 1, "I will set X before opening the PR.")
+            for n in range(ADOPTION_MIN_TURNS):
+                stop(led, 100 + n, "Some work, and no line at the end.")
+            not_adopted = core.run(led, run, led.now())
+            stop(led, 2, "outcome: done ref=pr#0")  # the team writes outcome lines: the summary closes
+            stop(led, 3, "I will set X before opening the PR.")
             first, again = core.run(led, run, led.now()), core.run(led, run, led.now())
-            stop(led, 2, "outcome: done ref=pr#1")
+            stop(led, 4, "outcome: done ref=pr#1")
             closed = core.run(led, run, led.now())
         finally:
             led.close()
     cases = [
+        (
+            "a team without outcome lines gets one summary, and no wake",
+            len(not_adopted.opened) == 1 and not_adopted.would == [],
+        ),
         ("a turn ending on an intention opens one alert", len(first.opened) == 1),
         ("it would wake the role once", first.would == ["wake:builder"] and again.would == []),
         ("a valid next turn closes it", len(closed.closed) == 1 and closed.opened == []),
+        ("the summary closed once the team wrote an outcome line", len(first.closed) == 1),
     ]
     return all(ok for _, ok in cases), [f"  {'ok' if ok else 'FAILED'} {name}" for name, ok in cases]

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/feedback.item",
+  "title": "One feedback item as the team reports it at export time: its stage is declared by the team, not derived by onloop",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["batch", "item", "stage_index", "stage", "waits_on"],
+  "properties": {
+    "batch": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,80}$"},
+    "item": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,40}$"},
+    "label": {"type": "string", "maxLength": 120},
+    "stage_index": {"type": "integer", "minimum": 0},
+    "stage": {"type": "string", "minLength": 1, "maxLength": 60},
+    "skipped_stages": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 60}},
+    "waits_on": {"enum": ["human", "team"]}
+  }
+}

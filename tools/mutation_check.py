@@ -1508,6 +1508,37 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     # -- R5: the human task list, goals and outcome KPIs (decisions 0012, 0013, 0014) ------------------------------------
+    # -- the data contract (decision 0017) --------------------------------------------------------------------------
+    (
+        "a file with a bad record is half imported",
+        "src/onloop/contract/reader.py",
+        '    if problems:\n        return FileResult(name, fname, "refused"',
+        '    if problems and not records:\n        return FileResult(name, fname, "refused"',
+        [
+            "tests/test_contract.py::test_a_bad_record_refuses_its_whole_file_and_the_report_never_holds_the_value"
+        ],
+    ),
+    (
+        "the privacy check is skipped",
+        "src/onloop/contract/reader.py",
+        "        found = _check_record(rec) or privacy(rec, deny)",
+        "        found = _check_record(rec)",
+        ["tests/test_contract.py::test_a_privacy_hit_in_a_free_field_refuses_the_file_by_path_and_rule_only"],
+    ),
+    (
+        "a team without outcome lines gets a stall per role",
+        "src/onloop/detect/no_outcome.py",
+        "    if total >= ADOPTION_MIN_TURNS and not valid:",
+        "    if False:",
+        ["tests/test_contract.py::test_a_team_without_outcome_lines_gets_one_summary_not_one_stall_per_turn"],
+    ),
+    (
+        "an imported turn gets an id of its own",
+        "src/onloop/contract/reader.py",
+        '        ("hook", "stop", role, session, prompt)\n    )  # the hook receiver',
+        '        ("import", "stop", role, session, prompt)\n    )  # the hook receiver',
+        ["tests/test_contract.py::test_an_imported_turn_has_the_id_the_live_hook_would_give_it"],
+    ),
     (
         "a raw outcome line is a task's title (finding #26)",
         "src/onloop/tasks.py",

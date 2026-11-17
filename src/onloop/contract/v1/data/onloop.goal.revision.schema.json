@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/goal.revision",
+  "title": "A goal checklist as it stood after one edit: every item by its number, ticked or not. The record's time is the edit's time",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["goal", "items"],
+  "properties": {
+    "goal": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,39}$"},
+    "items": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "ticked"],
+        "properties": {
+          "id": {"type": "integer", "minimum": 1},
+          "ticked": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

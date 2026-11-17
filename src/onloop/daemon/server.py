@@ -25,6 +25,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 the newest first, paged by `next_before`; a filter that is not valid is a 400
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
+    GET /api/activity           the Activity view: one lane per role with its turns on a time axis, side sessions under
+                                their role, the longest silence per role, turns per hour (?hours=48; 1 to 336)
     GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
@@ -470,6 +472,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     return
             elif url.path == "/api/now":
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
+            elif url.path == "/api/activity":
+                from ..report import activity
+
+                body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
             elif url.path == "/api/tasks":

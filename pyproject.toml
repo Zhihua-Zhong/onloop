@@ -36,7 +36,7 @@ where = ["src"]
 include = ["onloop*"]
 
 [tool.setuptools.package-data]
-onloop = ["templates/**/*", "ui/**/*"]  # ui/: the built UI, made at release time (decision 0009)
+onloop = ["templates/**/*", "ui/**/*", "contract/v1/**/*.json"]  # ui/: the built UI, made at release time (decision 0009)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

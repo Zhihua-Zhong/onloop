@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/envelope",
+  "title": "One record: a CloudEvents 1.0 envelope, one per line of a JSON-lines file",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specversion", "id", "source", "type", "time", "exporttime", "dataschema", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "source": {"type": "string", "minLength": 1, "maxLength": 128},
+    "type": {"type": "string", "pattern": "^onloop\\.[a-z_]+(\\.[a-z_]+)*$"},
+    "time": {"$ref": "#/$defs/time"},
+    "exporttime": {"$ref": "#/$defs/time"},
+    "subject": {"type": "string", "maxLength": 128},
+    "dataschema": {"type": "string", "pattern": "^onloop-contract/1\\.[0-9]+/[a-z_.]+$"},
+    "data": {"type": "object"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"}
+  }
+}
