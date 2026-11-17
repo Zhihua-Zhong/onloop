@@ -292,37 +292,48 @@ def test_a_paused_role_is_a_task_until_resumed(led):
     assert tasks(led, open_only=True) == []
 
 
-def test_a_version_1_event_keeps_version_1_meaning_on_replay(led):
-    """An ask logged before decision 0012 (no `grammar` in the payload) ends when its wait clears."""
+def _v1_stop(led, eid, line, outcome):
+    """A Stop logged by a version-1 onloop (0.3): its parse is frozen in the event, with no `grammar` key."""
     led.append(
         {
-            "id": "old1",
+            "id": eid,
             "source": "hook",
             "kind": "hook.stop",
             "subject_ref": "role:builder",
-            "payload": {
-                "role": "builder",
-                "session_id": "s",
-                "line": "outcome: blocked owner=human ref=#1",
-                "outcome": {"value": "blocked", "ref": "#1", "owner": "human", "waker": None},
-            },
+            "payload": {"role": "builder", "session_id": "s", "line": line, "outcome": outcome},
         }
     )
+
+
+V1_ASK = (
+    "outcome: blocked owner=human ref=#1",
+    {"value": "blocked", "ref": "#1", "owner": "human", "waker": None},
+)
+V1_IDLE = ("outcome: idle", {"value": "idle", "ref": None, "owner": None, "waker": None})
+
+
+def test_a_version_1_ask_stays_open_after_its_authors_next_turn(led):
+    """Finding #22: a version-1 ask that nobody resolved stays open, listed as incomplete, never "resolved without
+    you". Its wait clears at the author's next turn, and a wait clearing never closes a task (decision 0013)."""
+    _v1_stop(led, "old1", *V1_ASK)
     (t,) = tasks(led)
     assert "legacy" in json.loads(t["flags"]) and t["incomplete"] == 1
-    led.append(
-        {
-            "id": "old2",
-            "source": "hook",
-            "kind": "hook.stop",
-            "subject_ref": "role:builder",
-            "payload": {
-                "role": "builder",
-                "session_id": "s",
-                "line": "outcome: idle",
-                "outcome": {"value": "idle", "ref": None, "owner": None, "waker": None},
-            },
-        }
+    _v1_stop(led, "old2", *V1_IDLE)
+    (t,) = tasks(led)
+    assert (t["stage"], t["resolution"], t["evidence"]) == ("open", None, None)
+    _v1_stop(led, "old3", *V1_ASK)  # the same ask restated: it amends the open task
+    _v1_stop(led, "old4", *V1_IDLE)
+    (t,) = tasks(led)
+    assert t["stage"] == "open" and t["origin_ref"] == "old1"
+    before = led.dump()
+    assert led.replay() == before  # replay gives the same open task
+
+
+def test_a_version_1_ask_closes_when_its_author_closes_its_ref(led):
+    """The author's own `done ref=X` is evidence that the ask on X is settled: superseded, "resolved without you"."""
+    _v1_stop(led, "old1", *V1_ASK)
+    _v1_stop(
+        led, "old2", "outcome: done ref=#1", {"value": "done", "ref": "#1", "owner": None, "waker": None}
     )
     (t,) = tasks(led)
     assert (t["resolution"], t["evidence"]) == ("superseded", "turn:old2")
@@ -340,3 +351,32 @@ def test_the_task_projection_replays_byte_for_byte(led, clock):
 def test_task_ids_are_deterministic():
     assert human_tasks.task_id("outcome", "e1") == human_tasks.task_id("outcome", "e1")
     assert human_tasks.task_id("outcome", "e1") != human_tasks.task_id("cli", "e1")
+
+
+def test_onloop_ask_on_the_ref_of_an_open_version_1_ask_keeps_the_id_it_printed(led):
+    """Finding #22's replay: `onloop ask` printed its task id, so that task exists on every replay. The older open ask
+    from the same author on the same ref is superseded by it, and `ref=task:<id>` amends the new one."""
+    from onloop import tasks as T
+
+    _v1_stop(led, "old1", *V1_ASK)
+    event = T.ask_event(
+        author_role="builder",
+        ref="#1",
+        ask={"effect": "merge #1, so the release can go"},
+        title=None,
+        source="cli",
+    )
+    led.append(event)
+    tid = event["payload"]["id"]
+    (old,) = led._rows("SELECT * FROM human_tasks WHERE origin_ref = 'old1'")
+    (new,) = led._rows("SELECT * FROM human_tasks WHERE id = ?", (tid,))
+    assert (old["resolution"], old["superseded_by"], old["evidence"]) == (
+        "superseded",
+        f"task:{tid}",
+        f"event:{event['id']}",
+    )
+    assert new["stage"] == "open" and new["effect"].startswith("merge #1")
+    stop(led, f"outcome: blocked owner=human ref=task:{tid}")
+    assert [t["id"] for t in tasks(led, open_only=True)] == [tid]
+    before = led.dump()
+    assert led.replay() == before

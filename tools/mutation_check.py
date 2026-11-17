@@ -1516,11 +1516,16 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     ),
     # -- R5: the human task list, goals and outcome KPIs (decisions 0012, 0013, 0014) ------------------------------------
     (
-        "a wait clearing closes the person's task (the silent drop)",
+        "the author's next turn closes its open asks (the silent drop, finding #22)",
         "src/onloop/overlay/projections.py",
-        """"AND t.author_role = ? AND t.flags LIKE '%\\"legacy\\"%' AND w.cleared_at IS NOT NULL ORDER BY t.id",""",
-        """"AND t.author_role = ? AND w.cleared_at IS NOT NULL ORDER BY t.id",""",
-        ["tests/test_human_tasks.py::test_a_wait_clearing_never_closes_the_task"],
+        "        human_tasks.on_stop(conn, e, p)",
+        "        human_tasks.on_stop(conn, e, p)\n"
+        "        for t in human_tasks._open_ids(conn, \"author_role = ? AND origin = 'outcome'\", (role,)):\n"
+        "            human_tasks.resolve(conn, e, t, 'superseded', evidence='x', by=role, superseded_by='x')",
+        [
+            "tests/test_human_tasks.py::test_a_wait_clearing_never_closes_the_task",
+            "tests/test_human_tasks.py::test_a_version_1_ask_stays_open_after_its_authors_next_turn",
+        ],
     ),
     (
         "a task may close without evidence",

@@ -6,6 +6,19 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ask logged before 0.4.0 is no longer closed by its author's next turn.** After an upgrade, every outcome-line
+  ask from 0.3 read "resolved without you", because a task opened by a version-1 event ended when its wait cleared, and
+  a version-1 wait clears at the role's next turn. That is the silent drop decision 0013 rejects. Such a task now stays
+  open, listed as incomplete (it does not say what it changes), until the person resolves it, its author resolves it
+  with `done resolves=` or closes its ref with `done ref=`. It is returned to its author after 7 days, as any
+  task is. A restated ask on the same ref amends the
+  open task instead of opening another. A ledger already on 0.4.0 shows this after `onloop overlay replay`.
+- **`onloop ask` always opens the task whose id it prints.** On the same ref as an open ask from the same author, it
+  used to amend the older task, so the printed id, and a `ref=task:<id>` that names it, pointed at nothing. The older
+  ask is now superseded by the new task, with the `onloop ask` event as its evidence.
+
 ## [0.4.0] - 2026-11-17
 
 0.4.0 is the first release in which onloop can act, and every act is off until you switch it on. It adds the session

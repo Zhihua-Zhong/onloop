@@ -7,7 +7,8 @@ reads only the event and the projection rows and takes every time from the event
 What opens a task:
 - an outcome line with `owner=human` on blocked, handoff or in_review (`hook.stop`); a restated ask from the same
   author on the same ref amends the open task instead, and `ref=task:<id>` points at a task `onloop ask` opened;
-- `task.opened` (`onloop ask`, a read adapter);
+- `task.opened` (`onloop ask`, a read adapter). `onloop ask` always opens the task whose id it printed, and an open ask
+  of the same author on the same ref is superseded by it; an adapter's restated ask amends the open one;
 - a blocking notification (a session waits on a prompt);
 - a work-graph node waiting on the person;
 - a role the person paused.
@@ -113,9 +114,7 @@ def open_task(
 ) -> str:
     tid = tid or task_id(origin, origin_ref)
     cols_ask = ask_columns(ask)
-    if (
-        legacy
-    ):  # opened by a version-1 event: it follows its wait (projections._legacy_tasks_follow_their_waits)
+    if legacy:  # opened by a version-1 event; it closes like any other task, never when its wait clears
         cols_ask["flags"] = json.dumps([*json.loads(cols_ask["flags"]), "legacy"])
     row = {
         "id": tid,
@@ -374,7 +373,20 @@ def task_opened(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> Non
     author = p.get("author_role")
     if ref and author:
         existing = _open_ids(conn, "author_role = ? AND owner = 'human' AND ref = ?", (author, ref))
-        if existing:  # the same ask again: amend it
+        if existing and p.get("id"):
+            # `onloop ask` printed this id to its author, who may write `ref=task:<id>`: the task must exist under
+            # it on every replay. The older open ask on the same ref is replaced by it, with this event as evidence.
+            for tid in existing:
+                resolve(
+                    conn,
+                    e,
+                    tid,
+                    "superseded",
+                    evidence=f"event:{e['id']}",
+                    by=author,
+                    superseded_by=f"task:{p['id']}",
+                )
+        elif existing:  # the same ask again, from an adapter: amend it
             amend(conn, e, existing[0], p.get("ask") or {}, title=p.get("title"))
             return
     open_task(

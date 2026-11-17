@@ -701,7 +701,6 @@ def _hook_stop(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None
     _insert(conn, "turns", row)
     _outcome_wait(conn, e, role, out)
     if _HAS_TASKS(conn):
-        _legacy_tasks_follow_their_waits(conn, e, role)
         human_tasks.on_stop(conn, e, p)
     if out.get("value") == "continue" and out.get("waker"):
         kind, _, ref = out["waker"].partition(":")
@@ -731,20 +730,6 @@ def _hook_stop(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None
             "cleared_at": None,
         }
         _insert(conn, "waits", {**wait, "last_seq": e["seq"]})
-
-
-def _legacy_tasks_follow_their_waits(conn: sqlite3.Connection, e: Event, role: str) -> None:
-    """A task opened by a version-1 event (logged before decision 0012) keeps version 1's meaning: it ends when its
-    wait clears, as `superseded` by the turn that cleared it, so replaying an old ledger does not invent open asks."""
-    rows = conn.execute(
-        "SELECT t.id FROM human_tasks t JOIN waits w ON w.id = t.wait_id WHERE t.stage <> 'resolved' "
-        "AND t.author_role = ? AND t.flags LIKE '%\"legacy\"%' AND w.cleared_at IS NOT NULL ORDER BY t.id",
-        (role,),
-    ).fetchall()
-    for (tid,) in rows:
-        human_tasks.resolve(
-            conn, e, tid, "superseded", evidence=f"turn:{e['id']}", by=role, superseded_by=f"turn:{e['id']}"
-        )
 
 
 def _HAS_TASKS(conn: sqlite3.Connection) -> bool:  # noqa: N802 - reads as a condition
