@@ -17,13 +17,13 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.3.1 is the latest release, alpha. `main` is 0.5.0.dev0 and unreleased (R4 and R5). See [CHANGELOG.md](CHANGELOG.md) and
-the roadmap below.
+Status: 0.4.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
-onloopd serves this UI at `http://localhost:8790`: Now, Flow, Team, Conversation, Schedules and Audit, six views of
-one ledger ([docs/ui.md](docs/ui.md)). Its one write is a message to a role, from the Conversation view.
+onloopd serves this UI at `http://localhost:8790`: Now, Flow, Team, Conversation, Outcome, Schedules and Audit,
+seven views of one ledger ([docs/ui.md](docs/ui.md)). It writes in three narrow places: a message to a role, a
+task's Done or Decline, and the time of your visit.
 
 ## Why human-on-the-loop
 
@@ -53,7 +53,7 @@ Install the release's wheel, which carries the UI (there is no PyPI release; a `
 without the UI):
 
 ```bash
-pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.3.1/onloop-0.3.1-py3-none-any.whl"      # no clone needed
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.4.0/onloop-0.4.0-py3-none-any.whl"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -135,7 +135,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.3.1/onloop-0.3.1-py3-none-any.whl"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.4.0/onloop-0.4.0-py3-none-any.whl"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
@@ -261,13 +261,17 @@ Everything described above exists and has a self-test.
   replaces the dashboard, the demo site, the workbench and the work-graph panel, which are removed
   ([docs/ui.md](docs/ui.md), [decision 0009](docs/decisions/0009-one-read-only-ui.md)).
 
-On `main`, unreleased (0.4.0, behind the subscription-use question in decision 0010):
+0.4.0 (2026-11-17) adds, with every act off until you switch it on:
 
 - **The session carrier** (decision 0010), off by default: onloop delivers messages into the role sessions itself,
   one lease per session id, one process per run, acknowledged by the role's next turn. Until a role opts in and the
-  carrier is started, it only records what it would send ([docs/carrier.md](docs/carrier.md)).
-- **The Conversation view**, the UI's sixth: the carried roles and their threads, with a compose box, the UI's one
-  write (decision 0011).
+  carrier is started, it only records what it would send ([docs/carrier.md](docs/carrier.md)). It drives your own
+  `claude` command-line tool under your own login; a team that runs many roles around the clock should confirm its
+  use with Anthropic first (see [RELEASE_NOTES.md](RELEASE_NOTES.md)).
+- **The Conversation view**: the carried roles and their threads, with a message box (decision 0011).
+- **The person's task list** (decision 0013): everything that waits on you, in one order, closed only with a
+  resolution and its evidence ([docs/tasks.md](docs/tasks.md)).
+- **Goals and outcome KPIs** (decision 0014), read through read-only adapters, and the Outcome view.
 
 Where it goes next ([decision 0004](docs/decisions/0004-onloop-hosts-the-conversation.md)): onloop becomes the
 operations layer for a team of AI agents, a loop owner that runs outside any session, hosts the role sessions itself
@@ -276,9 +280,9 @@ watches results.
 
 - **0.3.0 observes:** scheduled-job results, the constraint view, handoffs nobody owns, system time, checks that fail
   closed, and a report of what onloop would have done against what happened.
-- **0.4.0 acts:** delivery into sessions, reserved gaps, a safe stop, and no clutter and no expiry, with onloop's own
-  dead-man switch.
-- Not yet: act mode in a real project, and a PyPI release.
+- **0.4.0 acts, when you switch it on:** delivery into sessions with a kill switch, the person's task list, and goals.
+- Next: one overview of goals and feedback, the batching merge queue, act mode in a real project, and a PyPI
+  release.
 
 ## Licence
 

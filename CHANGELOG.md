@@ -4,79 +4,108 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-17
 
-The session carrier (decision 0010) and the Conversation view (decision 0011) were meant for 0.4.0; `main` is now
-0.5.0.dev0, and R4 and R5 are to be released together (the project lead's call).
-Act modes are off by default.
+0.4.0 is the first release in which onloop can act, and every act is off until you switch it on. It adds the session
+carrier, which can deliver messages into a team's role sessions; the person's task list, in which every ask says what
+it is worth; goals with progress KPIs that each carry their denominator; and live pages that keep up with a busy team.
+Without a `carrier:` block in onloopd.yaml, onloop observes and records, as 0.3 did.
 
 ### Upgrading
 
-- **Ledger schema 7** (R5): a ledger of schema 6 or older migrates once, keeps every event, and replays its old
-  outcome lines as they were read: an ask logged before is a task that ends when its wait clears. An older onloop
-  refuses the file, and its message now says what to do.
-- **The outcome line, version 2** (decision 0012): every line that parsed still parses the same, except
-  `waker=pid:0`, which is refused. An onloop older than 0.5.0 refuses a line with the new keys, so a team writes them
-  only after it upgrades.
-- Ledger schema 6: a ledger opened by this onloop migrates once and keeps every event; an older onloop then refuses
-  it. Nothing in it changes until onloopd.yaml has a `carrier:` block.
-- The UI is no longer GET-only: the Conversation view's compose box posts `/ui/messages`, with the page's session
-  cookie, a CSRF token and an Origin check. Nothing else writes.
+- **The ledger moves from schema 5 to schema 7.** The first time 0.4.0 opens a 0.3.x ledger, it migrates it once, in
+  two steps: schema 6 adds the session carrier's tables, and schema 7 the task list and goals. It keeps every event
+  and rebuilds what it shows from them. An ask logged under 0.3 replays as a task that ends when its wait clears, as
+  0.3 read it. After that, 0.3.x refuses the file, and the message says to keep the file and run an onloop that reads
+  it. Back the ledger file up first if you may want to go back.
+- **The outcome line, version 2** ([decision 0012](docs/decisions/0012-outcome-line-version-2.md)). Every line that
+  0.3 accepted means the same, except a placeholder waker `pid:0`, which is now refused. The new keys (what an ask is
+  worth, and waits on outside events) are refused by 0.3.x, so teams write them only once every reader is on 0.4.0.
+- **The page can now write, in three narrow places:**
+  - the Conversation view's message box (`/ui/messages`);
+  - a task's Done or Decline, and its keep (`/ui/tasks/resolve`, `/ui/tasks/keep`);
+  - the visit that "since you were away" counts from (`/ui/visits`).
+
+  Each needs the page's own session cookie, a CSRF token and a same-origin request. Each is recorded as a request
+  from a local user, not verified, and never as an approval.
+- **New, optional blocks in onloopd.yaml:**
+  - `carrier:` (the session carrier; nothing is delivered without it);
+  - `kpi:` (`timezone`, for calendar days);
+  - `adapters:` (read-only trackers);
+  - `goals:` (goal checklists);
+  - `jobs:` (onloopd's own daily report).
+
+  An existing onloopd.yaml keeps working unchanged.
 
 ### Added
 
-- **The person's task list** ([tasks.md](docs/tasks.md), decision 0013). onloop's ledger is the system of record for
-  what waits on the person:
-  - an ask states its effect, goal item, weight, when its delay starts to cost (a date; `days=<n>` is dated once, at
-    ingest, in `kpi.timezone`), what waits, and a default: `onloop ask`, or the same keys on the outcome line;
-  - one order (weight, then the days left, computed when read, then age); an incomplete ask is listed last and
-    returned to its author once, a critical one keeps its place, flagged;
-  - a task closes only with a resolution (done, declined, superseded, expired) and its evidence, enforced by the
-    ledger; a wait clearing never closes one; an approval at the merge gate is done only on the code host;
-  - returns to the author at 7 days and to the coordinator at 14; open PRs get the same two alerts; nothing is closed
-    by onloop;
-  - reconciliation of the asks seen in outcome lines, PRs, the tracker and prompts against the list;
-  - `onloop tasks [--digest] [--brief]`, `onloop task resolve|keep`, `GET /api/tasks`, `GET /api/digest`; Now's
-    "Waiting on you" is the list, with a "since you were away" band that starts with the first three tasks; Done and
-    Decline post `/ui/tasks/resolve` (a request from a local user, not verified).
-- **Read adapters** (`adapters:` in onloopd.yaml, entry points `onloop.adapters`): no write method, a client that
-  sends only GETs and GraphQL queries. GitHub issues by label are built in.
-- **Goals and outcome KPIs** (decision 0014): a goal checklist read from its edit history, with its denominator and
-  the date of it; `Goal:` lines in PR bodies; goal ticks per merged PR, the goal-linked share, the fixed cost per PR
-  and flow load (`onloop kpi`, `GET /api/kpi`, the Outcome view); combining advice for PRs that move the same item.
-- **External waits**: `waker=event:<kind>:<id>` (a CI run, checks, a review), checked through a read adapter.
-- **onloopd's own jobs** (`jobs:`): the daily report, declared and watched as a schedule, caught up once after a gap;
-  the boot gap, with its cause from the System event log; a quiet ledger read as idle or waiting.
+- **The person's task list** ([tasks.md](docs/tasks.md), decision 0013). onloop's ledger is the one record of what
+  waits on the person:
+  - an ask says what it changes, which goal item it moves, how much it weighs, from when its delay costs, what waits
+    on it and what happens if nobody answers: `onloop ask`, or the same keys on the outcome line;
+  - one order: weight, then the days left (counted when read, from a stored date), then age. An ask that does not say
+    what it changes is listed last and sent back to its author once; a critical one keeps its place, flagged;
+  - a task closes only with a resolution (done, declined, superseded, expired) and its evidence, and the ledger
+    refuses anything else. A wait clearing never closes one, and an approval at the merge gate is done only on the
+    code host;
+  - a task goes back to its author after 7 days and to the coordinator after 14; open pull requests get the same two
+    alerts; onloop closes nothing itself;
+  - a reconciliation check reports any ask seen in outcome lines, pull requests, a tracker or a prompt that is
+    missing from the list;
+  - `onloop tasks [--digest] [--brief]`, `onloop task resolve|keep`, `GET /api/tasks` and `GET /api/digest`. Now's
+    "Waiting on you" is the list, one row per task, with a "since you were away" line above it.
+- **Read adapters** (`adapters:`, the entry points `onloop.adapters`). They have no write method, and their client
+  sends only GETs and GraphQL queries. GitHub issues with a label are built in.
+- **Goals and outcome KPIs** ([decision 0014](docs/decisions/0014-goals-and-outcome-kpis.md)). A goal checklist is
+  read from its edit history, with its size and the date of it. `Goal:` lines in pull-request bodies link work to it.
+  The new Outcome view and `onloop kpi` show goal items done per merged change, the share of changes linked to a goal,
+  the fixed cost of each change, and the open work. Two changes that move the same item get a hint to combine them.
+- **Waits on outside events**: `waker=event:<kind>:<id>` (a CI run, a set of checks, a review), checked through a read
+  adapter. The GitHub checks behind these are not live yet, and such a waker reads "unknown".
+- **onloopd's own jobs** (`jobs:`): the daily report, declared and watched as a schedule, caught up once after a gap.
+  At start, onloopd records how long it was down and, on Windows, why. A quiet ledger is read as idle or waiting.
 - **The session carrier** ([carrier.md](docs/carrier.md), decision 0010). onloop delivers messages into the role
-  sessions itself, with headless `claude -p --resume`, on the user's own subscription login:
-  - one live lease per session id, a unique index in the ledger; a session open in another process is never resumed
-    (`claude agents --json`, filtered to the carried sessions in one function; nothing else from it is kept);
-  - one process and one composed message per run, in a Windows job object, `--restricted`, `dontAsk`, no prompts,
-    and the role's tools, never a shell (a role that names one is refused);
-  - a delivery is acknowledged by the role's Stop-hook turn, whatever it said; a missing outcome line is recorded on
-    the turn and starts the corrective only for a role that opted in;
-  - the corrective wake at most once per turn, then the coordinator with the item's age; handoffs and review requests
-    to a carried role; a dead waker, to the coordinator first;
-  - observe-only by default (`would.deliver`, with the exact command and text);
-  - the kill switch (`onloop carrier stop`, or the `carrier.off` file), budgets per role and across roles, the
-    metered-key refusal, the login check, and the usage limit: a rejection pauses until its reset, a warning halves
-    the rate, overage pauses at once;
-  - recovery after a crash (the lease released once, a delivery acknowledged by evidence or resent with a mark), a
-    hook spool across a respawn, and sleep (a corrective for a turn older than an hour escalates instead).
+  sessions itself, with headless `claude -p --resume`, under the user's own subscription login:
+  - one live lease per session id, enforced by the ledger; a session open in another process is never resumed;
+  - one process and one composed message per run, in a Windows job object, `--restricted`, with no prompts and only
+    the role's tools, never a shell (a role that names one is refused);
+  - a delivery is acknowledged by the role's next turn, whatever it said; a missing outcome line starts the
+    corrective only for a role that opted in;
+  - at most one corrective wake per turn, then the coordinator; handoffs and review requests to a carried role; a dead
+    waker goes to the coordinator first;
+  - off by default: without an opt-in it only records what it would send, with the exact command and text;
+  - the kill switch (`onloop carrier stop`, or a `carrier.off` file), budgets per role and across roles, a refusal to
+    run with a metered API key, the login check, and the usage limit (a rejection pauses until its reset, a warning
+    halves the rate, overage pauses at once);
+  - recovery after a crash, a hook spool across a restart, and sleep.
 - `onloop carrier start|stop|status`, `onloop role opt-in|opt-out`, `onloop say`, and the `carrier:` block of
   onloopd.yaml.
-- The **Conversation** view: the carried roles with unread counts and what needs you, one role's thread (your
-  messages and how far each got, onloop's notes, what it would send, runs, turns by their outcome line), and a compose
-  box that is open only when a message can go somewhere, and otherwise says why, with the command that opens it.
-  `GET /api/conversation`.
-- The text onloop writes into a session is stored, scrubbed of secret-shaped strings, for 30 days, then only its
-  hash. Nothing a role writes is stored.
+- The **Conversation** view: the carried roles, one role's thread (your messages and how far each got, onloop's
+  notes, what it would send, runs, and turns by their outcome line), and a message box that is open only when a
+  message can go somewhere. `GET /api/conversation`.
+- The text onloop writes into a session is stored, scrubbed of secret-shaped strings, for 30 days, then only its hash.
+  Nothing a role writes is stored.
 
 ### Changed
 
-- Now's stall card and Team's lane say what the carrier did about a turn without an outcome line ("onloop asked for
-  its outcome line (being processed)"); "would wake (observe only)" only where it did nothing.
-- `onloop daemon hook` spools a post it cannot deliver to `hook-spool.jsonl`; onloopd logs it once when it is back.
+- Now leads with the task list when tasks wait on the person; the constraint is one line above it. Stalled and Health
+  sit beside it.
+- Now's stall card and Team's lane say what the carrier did about a turn without an outcome line, and "would wake
+  (observe only)" only where it did nothing.
+- `onloop daemon hook` keeps a post it cannot deliver in `hook-spool.jsonl`; onloopd logs it once when it is back.
+- A development build no longer reports an older version.
+
+### Fixed
+
+- A page that follows live events now refreshes at least every 2 seconds while events keep arriving. Before, it
+  refreshed only once the stream paused, so a busy team's Now and Flow could stay as they were for as long as the
+  stream ran.
+- The lead-time KPI says "no merged PR in the window" where it printed `None`.
+- Opening a ledger made by a newer onloop now says what to do, not only that it is newer.
+
+### Removed
+
+- Nothing is removed in 0.4.0.
 
 ## [0.3.1] - 2026-11-12
 

@@ -4,7 +4,7 @@ This paragraph is meant to live once, in a team's shared role template. Each rol
 copying it, so there is one text to keep current. It reaches a role as part of a file (the template, a charter), never
 as a command-line argument: a multi-line argument through a `.cmd` shim is cut at its first newline. The contract it
 states is [decision 0007](../../docs/decisions/0007-disposition-contract.md), with the grammar of
-[decision 0012](../../docs/decisions/0012-outcome-line-version-2.md). It needs onloop 0.5.0 or later; an older onloop
+[decision 0012](../../docs/decisions/0012-outcome-line-version-2.md). It needs onloop 0.4.0 or later; an older onloop
 refuses the ask keys and the `event:` waker.
 
 ---
