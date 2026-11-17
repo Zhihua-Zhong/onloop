@@ -1,3 +1,4 @@
+import { isUrl } from "@/lib/url";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
@@ -73,7 +74,7 @@ function Banner({ m }: { m: NowModel }) {
             <p className="mt-1 text-[15px] font-medium leading-snug" data-testid="next-text">{m.next.text}</p>
             {m.next.command && <Command cmd={m.next.command} />}
             <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
-              {m.next.ref && (
+              {isUrl(m.next.ref) && (
                 <a href={m.next.ref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline" data-testid="next-link">
                   Open it <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                 </a>
@@ -111,7 +112,7 @@ function CompactBanner({ m }: { m: NowModel }) {
         <span className="min-w-0 truncate max-sm:hidden" data-testid="next-move">
           <span className="text-muted">next: </span>
           <span data-testid="next-text">{m.next.text}</span>
-          {m.next.ref && (
+          {isUrl(m.next.ref) && (
             <a href={m.next.ref} target="_blank" rel="noopener noreferrer" className="ml-1.5 inline-flex items-center gap-0.5 text-accent hover:underline" data-testid="next-link">
               open <ExternalLink className="h-3 w-3" aria-hidden />
             </a>
@@ -155,7 +156,7 @@ function Waiting({ w }: { w: WaitCard }) {
             <span>{reason(w.reason)}</span>
             <Dot />
             <span>waiting {duration(w.age_s)}</span>
-            {w.ref && (
+            {isUrl(w.ref) && (
               <>
                 <Dot />
                 <a className="inline-flex items-center gap-0.5 text-accent hover:underline" href={w.ref} target="_blank" rel="noopener noreferrer">

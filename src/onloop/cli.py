@@ -941,12 +941,27 @@ def _task_write(args, action: str, body: dict) -> tuple[int, dict]:
         return 2, {"error": str(e)}
 
 
+def _asked(c: dict) -> str:
+    """ "from the lead, 5 days ago": who asked and when, in plain words."""
+    from . import tasks as tasks_mod
+
+    who = f"from {c['asked_by']}, " if c.get("asked_by") else ""
+    return who + tasks_mod.ago(c["age_s"])
+
+
+def brief_line(c: dict) -> str:
+    """One task for a reply footer: the plain headline first, the codes last, in parentheses."""
+    return f"- {c['headline']} · {_asked(c)} ({c['band']} · task:{c['id']})"
+
+
 def _task_line(c: dict) -> str:
-    if c.get("effect"):
-        head = c["effect"]
-    else:
-        head = f"(incomplete: {', '.join(c['incomplete_reasons'])}) {c.get('title') or ''}".strip()
-    parts = [f"[{c['band']}] {head}"]
+    head = c["headline"]
+    if not c.get("effect"):
+        from . import tasks as tasks_mod
+
+        said = [tasks_mod.MISSING.get(r, r) for r in c["incomplete_reasons"]]
+        head += f" (not said: {', '.join(said)})" if said else ""
+    parts = [f"{head} · {_asked(c)} ({c['band']})"]
     if c.get("goal"):
         parts.append(f"goal {c['goal']}")
     if c.get("cost_text"):
@@ -954,7 +969,8 @@ def _task_line(c: dict) -> str:
     parts.append(f"if nobody answers: {c['default']}" if c.get("default") else "no default")
     if c["stage"] != "open":
         parts.append(c["stage"].replace("_", " "))
-    return f"{c['id']}  " + " | ".join(parts) + (f"  ({c['ref']})" if c.get("ref") else "")
+    codes = ", ".join(x for x in (f"task:{c['id']}", c.get("ref")) if x)
+    return " | ".join(parts) + f"  ({codes})"
 
 
 def cmd_ask(args) -> int:
@@ -1014,7 +1030,7 @@ def cmd_tasks(args) -> int:
         _say("")
     if args.brief:
         for c in body["open"]:
-            _say(f"- {c.get('effect') or c.get('title') or c['id']} [{c['band']}] (task:{c['id']})")
+            _say(brief_line(c))
         return 0
     if not body["open"]:
         _say("nothing waits on you")

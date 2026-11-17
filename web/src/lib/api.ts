@@ -239,6 +239,9 @@ export interface TaskCard {
   author_role: string | null;
   ref: string | null;
   title: string | null;
+  headline: string;
+  asked_by: string | null;
+  raw_line: string | null;
   effect: string | null;
   goal: string | null;
   weight: string | null;

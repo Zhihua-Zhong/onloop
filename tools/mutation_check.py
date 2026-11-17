@@ -1509,6 +1509,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     ),
     # -- R5: the human task list, goals and outcome KPIs (decisions 0012, 0013, 0014) ------------------------------------
     (
+        "a raw outcome line is a task's title (finding #26)",
+        "src/onloop/tasks.py",
+        '    if title and not str(title).startswith("outcome:"):',
+        "    if title:",
+        ["tests/test_plaintext.py::test_a_version_1_ask_reads_as_a_plain_title_with_the_raw_line_kept"],
+    ),
+    (
         "the author's next turn closes its open asks (the silent drop, finding #22)",
         "src/onloop/overlay/projections.py",
         "        human_tasks.on_stop(conn, e, p)",

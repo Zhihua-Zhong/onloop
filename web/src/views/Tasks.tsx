@@ -1,3 +1,4 @@
+import { isUrl } from "@/lib/url";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
@@ -19,11 +20,8 @@ const BAND: Record<TaskCard["band"], { label: string; t: Tone }> = {
   incomplete: { label: "incomplete", t: "stall" },
 };
 
-const MISSING: Record<string, string> = { no_effect: "no effect stated", no_holds: "no word on what waits" };
+const MISSING: Record<string, string> = { no_effect: "what it changes", no_holds: "what waits on it" };
 
-function isUrl(s: string | null): s is string {
-  return !!s && /^https?:\/\//.test(s);
-}
 
 function origin(t: TaskCard): string {
   switch (t.origin) {
@@ -77,11 +75,18 @@ export function TaskCardView({ t, now, onHide }: { t: TaskCard; now: string; onH
         {t.goal && <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11.5px] text-muted" data-testid="goal">{t.goal}</span>}
         {!t.goal && t.origin !== "pause" && t.origin !== "notification" && <span className="text-[11.5px] text-muted">no goal</span>}
       </div>
-      <h3 className="mt-1.5 text-[15px] font-semibold leading-snug" data-testid="effect">
-        {t.effect ?? <span className="text-state-stall">Incomplete: {t.incomplete_reasons.map((r) => MISSING[r] ?? r).join(", ")}</span>}
+      <h3 className={cn("mt-1.5 text-[15px] font-semibold leading-snug", !t.effect && "text-state-stall")} data-testid="effect">
+        {t.headline}
       </h3>
-      {(!t.effect || t.incomplete) && t.title && <p className="mt-0.5 text-[13px] leading-snug text-muted">{t.title}</p>}
-      {t.effect && t.incomplete && <p className="mt-0.5 text-[13px] text-state-stall">Incomplete: {t.incomplete_reasons.map((r) => MISSING[r] ?? r).join(", ")}</p>}
+      {t.incomplete && t.incomplete_reasons.length > 0 && (
+        <p className="mt-0.5 text-[13px] text-state-stall">Not said: {t.incomplete_reasons.map((r) => MISSING[r] ?? r).join(", ")}</p>
+      )}
+      {t.raw_line && (
+        <details className="mt-1 text-[12.5px] text-muted" data-testid="raw-line">
+          <summary className="cursor-pointer select-none hover:text-fg">The line it was asked with</summary>
+          <code className="mt-1 block break-all font-mono text-[12px]">{t.raw_line}</code>
+        </details>
+      )}
       {(costText(t) || t.holds) && (
         <p className="mt-1 text-[13px] leading-snug" data-testid="cost">
           {t.holds ? <span className="font-medium">{t.holds}</span> : <span className="text-muted">what waits is not said</span>}
@@ -222,10 +227,10 @@ export function DigestBand() {
       {open && (
         <div className="mt-1 grid gap-0.5 pb-1 text-[12.5px] leading-snug" data-testid="digest-detail">
           {d.resolved_without_you.map((t) => (
-            <p key={t.id}><span className="font-medium">Resolved without you:</span> {t.effect ?? t.title} <span className="text-muted">({t.resolution}, {t.evidence})</span></p>
+            <p key={t.id}><span className="font-medium">Resolved without you:</span> {t.headline} <span className="text-muted">({t.resolution}, {t.evidence})</span></p>
           ))}
           {d.returned.map((t) => (
-            <p key={t.id}><span className="font-medium">Returned:</span> {t.effect ?? t.title} <span className="text-muted">({t.stage.replace("_", " to the ")})</span></p>
+            <p key={t.id}><span className="font-medium">Returned:</span> {t.headline} <span className="text-muted">({t.stage.replace("_", " to the ")})</span></p>
           ))}
           {d.gaps.map((g) => (
             <p key={g.from}><span className="font-medium">onloop was down</span> {duration(g.seconds)} from {new Date(g.from).toLocaleString()} ({g.cause ?? "cause unknown"})</p>
@@ -297,8 +302,8 @@ export function TaskRows({ tasks, now }: { tasks: TaskCard[]; now: string }) {
                 <span className="min-w-0">
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className={cn("h-2 w-2 shrink-0 translate-y-[-1px] rounded-full sm:hidden", tone(band.t).dot)} aria-hidden />
-                    <span className={cn("min-w-0 shrink truncate text-[14px] font-medium", !t.effect && "text-state-stall")} data-testid="row-effect" title={t.effect ?? t.title ?? undefined}>
-                      {t.effect ?? `Incomplete: ${t.title ?? t.id}`}
+                    <span className={cn("min-w-0 shrink truncate text-[14px] font-medium max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]", !t.effect && "text-state-stall")} data-testid="row-effect" title={t.raw_line ? `The line it was asked with: ${t.raw_line}` : t.headline}>
+                      {t.headline}
                     </span>
                     {t.holds && <span className="hidden max-w-[32%] shrink-[3] truncate text-[12.5px] text-muted xl:inline">{t.holds}</span>}
                   </span>

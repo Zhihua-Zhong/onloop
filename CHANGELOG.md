@@ -18,6 +18,15 @@ All notable changes to this project are recorded here. The format follows
 - **`onloop ask` always opens the task whose id it prints.** On the same ref as an open ask from the same author, it
   used to amend the older task, so the printed id, and a `ref=task:<id>` that names it, pointed at nothing. The older
   ask is now superseded by the new task, with the `onloop ask` event as its evidence.
+- **A task's title is in plain words** (finding #26). An ask that does not say what it changes read as its raw outcome
+  line ("outcome: blocked owner=human ref=r5-planning"). It now reads "An ask with no effect stated, about:
+  r5-planning", with who asked and when; the line itself is shown on hover and in the expanded card. `onloop tasks`
+  and `--brief` lead with the same words and put the codes last, in parentheses. A first plain-language check, for
+  task titles, fails a title that starts with a code, shows a code outside parentheses, or uses a jargon word.
+- Now links a task's or a wait's reference only when it is a web address. A file path was a link that opened "not
+  found".
+- At phone width, a task row's text wraps to two lines instead of being cut, so rows that start alike can be told
+  apart.
 
 ## [0.4.0] - 2026-11-17
 

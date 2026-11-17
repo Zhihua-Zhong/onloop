@@ -217,7 +217,10 @@ def test_the_cli_asks_lists_and_resolves(led, tmp_path, capsys, monkeypatch):
     assert out[1] == f"end the turn with: outcome: blocked owner=human ref=task:{tid}"
     assert cli.main(["tasks", "--ledger", path]) == 0
     line = capsys.readouterr().out.strip()
-    assert line.startswith(tid) and "[critical] approve it, so it merges" in line and "the demo waits" in line
+    assert (
+        line.startswith("approve it, so it merges · from the builder") and "(critical)" in line
+    )  # plain words first
+    assert f"task:{tid}" in line and "the demo waits" in line
     assert cli.main(["ask", "--ref", "pr#8", "--days", "soon", "--ledger", path]) == 2
     capsys.readouterr()
     assert cli.main(["task", "resolve", tid, "done", "--ledger", path]) == 0

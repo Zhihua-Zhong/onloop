@@ -31,6 +31,7 @@ BANDS = ("critical", "supporting", "unweighted", "skippable", "incomplete")
 RESOLUTIONS_BY_PERSON = ("done", "declined")
 RESOLUTIONS = ("done", "declined", "superseded", "expired")
 NOTE_CAP = 500
+MISSING = {"no_effect": "what it changes", "no_holds": "what waits on it"}  # an incomplete ask, in words
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 _TASK = re.compile(r"^t-[0-9a-f]{6,32}$")
 _REF = re.compile(r"^[^\s\"]{1,200}$")
@@ -194,6 +195,38 @@ def cost_text(task: Mapping[str, Any], now: str) -> str | None:
     return None
 
 
+_REF_IS_CODE = re.compile(r"^(t-|f-|b-|pr#|issue#|task:|turn:|#|[a-z][a-z0-9_-]*/\d+$)")
+
+
+def headline(task: Mapping[str, Any]) -> str:
+    """What the task is, in plain words: its effect; else a sentence built from what is known. An outcome line is
+    never the headline (finding #26): it is kept as `raw_line`, for hover and the drill-down."""
+    if task.get("effect"):
+        return str(task["effect"])
+    title, ref = task.get("title"), task.get("ref")
+    if title and not str(title).startswith("outcome:"):
+        return f"An ask with no effect stated: {title}"
+    if ref and not _REF_IS_CODE.match(str(ref)):
+        return f"An ask with no effect stated, about: {ref}"
+    if ref:
+        return f"An ask with no effect stated ({ref})"
+    return "An ask with no effect stated"
+
+
+def asked_by(task: Mapping[str, Any]) -> str | None:
+    role = task.get("author_role")
+    return f"the {role}" if role else None
+
+
+def ago(age_s: float) -> str:
+    if age_s < 3600:
+        return f"{max(1, int(age_s // 60))} min ago"
+    if age_s < 86400:
+        return f"{int(age_s // 3600)} h ago"
+    days = int(age_s // 86400)
+    return "1 day ago" if days == 1 else f"{days} days ago"
+
+
 def card(task: Mapping[str, Any], now: str) -> dict[str, Any]:
     reasons = _list(task.get("incomplete_reasons"))
     goal = (
@@ -208,6 +241,9 @@ def card(task: Mapping[str, Any], now: str) -> dict[str, Any]:
         "author_role": task.get("author_role"),
         "ref": task.get("ref"),
         "title": task.get("title"),
+        "headline": headline(task),
+        "asked_by": asked_by(task),
+        "raw_line": task.get("title") if str(task.get("title") or "").startswith("outcome:") else None,
         "effect": task.get("effect"),
         "goal": goal,
         "weight": task.get("weight"),

@@ -19,6 +19,7 @@ LAYERS = {
         "watchdog",
         "testing",
         "localday",
+        "plaintext",
     },
     1: {
         "ledger",
