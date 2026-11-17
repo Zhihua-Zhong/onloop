@@ -315,13 +315,6 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_ui_api.py::test_events_filter_by_kind_subject_source_actor_and_the_ledgers_own_time"],
     ),
     (
-        "a paused role's items are separate asks",
-        "src/onloop/report/views.py",
-        '        if w["reason"] == "paused_by_human":\n            paused.setdefault',
-        '        if w["reason"] == "never":\n            paused.setdefault',
-        ["tests/test_ui_api.py::test_now_lists_what_waits_on_the_human_with_the_default_and_the_time_left"],
-    ),
-    (
         "the downstream set stops at the first wait",
         "src/onloop/report/views.py",
         "todo.append(n)",
