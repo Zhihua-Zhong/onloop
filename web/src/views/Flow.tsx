@@ -77,11 +77,23 @@ function Toolbar({ mode, overlay, hideDone, params, m }: { mode: Mode; overlay: 
           </label>
         </div>
       )}
-      {m.constraint && (
-        <p className="ml-auto text-[13px] text-muted max-lg:hidden" data-testid="flow-constraint">
-          Constraint: <span className="font-mono font-medium text-state-blocked">{m.constraint.node === "human" ? "you" : m.constraint.node}</span>, holding{" "}
-          {plural(m.constraint.cards.length, "card")} ({duration(m.constraint.downstream_wait_s)} of waiting)
+      {mode === "you" ? (
+        <p className="ml-auto text-[13px] max-lg:basis-full" data-testid="flow-waiting-on-you">
+          <a href={href("now")} className="font-medium text-accent hover:underline">
+            {plural(m.waiting_on_you.count, "task")} {m.waiting_on_you.count === 1 ? "waits" : "wait"} on you
+          </a>
+          <span className="text-muted">
+            {" "}
+            (the same list as Now) · on this canvas, {plural(m.waiting_on_you.cards.length, "card")} {m.waiting_on_you.cards.length === 1 ? "waits" : "wait"} on you
+          </span>
         </p>
+      ) : (
+        m.constraint && (
+          <p className="ml-auto text-[13px] text-muted max-lg:hidden" data-testid="flow-constraint">
+            Constraint: <span className="font-medium text-state-blocked">{m.constraint.node === "human" ? "you" : m.constraint.node}</span>, holding up{" "}
+            {plural(m.constraint.cards.length, "card")} downstream ({duration(m.constraint.downstream_wait_s)} of waiting)
+          </p>
+        )
       )}
     </div>
   );

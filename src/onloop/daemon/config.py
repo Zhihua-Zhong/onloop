@@ -305,7 +305,11 @@ def _kpi(raw: Any, problems: list[str]) -> str | None:
 def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     """Check a parsed `onloopd.yaml` whole. Raises ConfigError listing every problem."""
     if data is None:
-        return OnloopdConfig()
+        from . import jobs as jobs_mod
+
+        return OnloopdConfig(
+            jobs=(jobs_mod.DEFAULT_JOB,)
+        )  # the daily report runs unless turned off (finding #15)
     if not isinstance(data, dict):
         raise ConfigError(path, ["the file must be a mapping at the top level"])
     problems: list[str] = [
@@ -334,11 +338,12 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
         problems.append("heartbeat_schedule must name one of the schedules declared in this file")
     adapters = _adapters(data["adapters"], problems) if data.get("adapters") is not None else []
     goals = _goals(data["goals"], adapters, problems) if data.get("goals") is not None else []
-    jobs = []
-    if data.get("jobs") is not None:
-        from . import jobs as jobs_mod
+    from . import jobs as jobs_mod
 
-        jobs = jobs_mod.parse(data["jobs"], problems)
+    # by default the daily report runs by itself (finding #15); `jobs: []` turns it off
+    jobs = [jobs_mod.DEFAULT_JOB]
+    if "jobs" in data:
+        jobs = jobs_mod.parse(data["jobs"], problems) if data["jobs"] is not None else []
     kpi_timezone = None
     if data.get("kpi") is not None:
         kpi_timezone = _kpi(data["kpi"], problems)

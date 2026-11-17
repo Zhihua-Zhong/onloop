@@ -258,9 +258,11 @@ def test_flow_draws_the_resources_the_cards_wait_on_and_the_edges(led):
         ["pr#99"],
     )
     assert res["main"]["kind"] == "lock" and res["main"]["waiting"] == 3
+    # the lines to "You": two asks and the paused reviewer's four; its count is the task list's, as Now's (finding #20)
+    assert res["human"]["kind"] == "human" and res["human"]["lines"] == 6
     assert (
-        res["human"]["kind"] == "human" and res["human"]["waiting"] == 6
-    )  # two asks and the paused reviewer's four
+        res["human"]["waiting"] == f["waiting_on_you"]["count"] == len(views.now(led, NOW)["waiting_on_you"])
+    )
     links = {(w["card"], w["on_ref"]) for w in f["waits"]}
     assert ("pr#101", "merge-check") in links and ("wg:n-date", "human") in links
     edges = {(e["source"], e["target"], e["kind"]) for e in f["edges"]}

@@ -1146,7 +1146,9 @@ def cmd_daemon(args) -> int:
             watch = (
                 daemon_config.load(config_path)
                 if args.config or config_path.exists()
-                else daemon_config.OnloopdConfig()
+                else daemon_config.parse(
+                    None, config_path
+                )  # no file: the defaults, the daily report included
             )
         except daemon_config.ConfigError as e:
             _err(f"onloop: onloopd does not start: {config_path}:")

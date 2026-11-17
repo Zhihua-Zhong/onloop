@@ -1508,6 +1508,30 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     # -- R5: the human task list, goals and outcome KPIs (decisions 0012, 0013, 0014) ------------------------------------
+    # -- phase A, the trust fixes ---------------------------------------------------------------------------------
+    (
+        "Flow's You node counts its waits, not the task list (finding #20)",
+        "src/onloop/report/views.py",
+        '        nodes["human"]["waiting"] = yours["count"] if _has_tasks(ledger) else nodes["human"]["waiting"]',
+        '        nodes["human"]["waiting"] = nodes["human"]["waiting"]',
+        ["tests/test_agreement.py::test_they_agree_when_some_asks_are_not_cards_on_the_canvas"],
+    ),
+    (
+        "onloopd's own gap counts as the team's activity (finding #14)",
+        "src/onloop/tasks.py",
+        "FROM events WHERE source <> 'config'\")",
+        "FROM events WHERE kind NOT IN ('config.set')\")",
+        [
+            "tests/test_trust_base.py::test_now_shows_the_gap_and_the_quiet_reading_says_onloop_was_down_for_part_of_it"
+        ],
+    ),
+    (
+        "the daily report runs only when declared (finding #15)",
+        "src/onloop/daemon/config.py",
+        "    jobs = [jobs_mod.DEFAULT_JOB]",
+        "    jobs = []",
+        ["tests/test_trust_base.py::test_the_daily_report_runs_unless_turned_off"],
+    ),
     (
         "a raw outcome line is a task's title (finding #26)",
         "src/onloop/tasks.py",

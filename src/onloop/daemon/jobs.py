@@ -1,5 +1,8 @@
 """onloopd's own scheduled work, declared and watched like any other schedule (dogfood findings #14, #15, #16).
 
+Without a `jobs:` key, onloopd runs `DEFAULT_JOB`, the daily report at 07:30 into `reports/` next to the ledger;
+`jobs: []` turns it off.
+
     jobs:
       - id: daily-report
         run: report-daily       built in; no shell command and no script path
@@ -64,6 +67,11 @@ class Job:
             "grace": self.grace,
             "owner_role": self.owner,
         }
+
+
+# The job onloopd runs when onloopd.yaml does not say `jobs:` (finding #15): yesterday's report, every morning, next to
+# the ledger. A "once a day" step that needs a person is the silent stall onloop exists to catch.
+DEFAULT_JOB = Job(id="daily-report", run="report-daily", at="07:30", out="reports")
 
 
 def parse(raw: Any, problems: list[str]) -> list[Job]:
@@ -203,11 +211,11 @@ def run_due(ledger: Ledger, jobs: tuple[Job, ...], state: pathlib.Path, now: str
 
 
 def system_log_cause(since: str, until: str, runner: Any = None) -> str | None:
-    """The cause of a gap, from Windows' System event log: an unclean shutdown (41 or 6008), a clean one (1074).
-    None when it cannot be read or nothing in the gap says; never a guess."""
+    """The cause of a gap, from Windows' System event log: an unclean shutdown (41 or 6008), a clean one (1074), or
+    sleep (42). None when it cannot be read or nothing in the gap says; never a guess."""
     if sys.platform != "win32" and runner is None:
         return None
-    query = "*[System[(EventID=41 or EventID=6008 or EventID=1074)]]"
+    query = "*[System[(EventID=41 or EventID=6008 or EventID=1074 or EventID=42)]]"
     try:
         run = runner or (
             lambda argv: subprocess.run(
@@ -226,13 +234,24 @@ def system_log_cause(since: str, until: str, runner: Any = None) -> str | None:
             continue
         if at and since <= at <= until:
             code = m.group(1)
-            found = "unclean shutdown" if code in ("41", "6008") else (found or "clean shutdown")
+            rank = {"unclean shutdown": 3, "clean shutdown": 2, "sleep": 1}
+            now_found = (
+                "unclean shutdown"
+                if code in ("41", "6008")
+                else "clean shutdown"
+                if code == "1074"
+                else "sleep"
+            )
+            if found is None or rank[now_found] > rank[found]:
+                found = now_found
     return found
 
 
 def boot_gap(
-    ledger: Ledger, beat: dict[str, Any] | None, now: str, runner: Any = None
+    ledger: Ledger, beat: dict[str, Any] | None, now: str, runner: Any = None, *, while_running: bool = False
 ) -> dict[str, Any] | None:
+    """A gap in onloopd's own record: at start, against the last heartbeat; while running, between two ticks (the
+    machine slept, or the process was suspended). Logged as `daemon.gap`, so every view shows it as a gap, not quiet."""
     last = (beat or {}).get("at")
     if not last:
         return None
@@ -244,6 +263,8 @@ def boot_gap(
         return None
     cause = system_log_cause(last, now, runner)
     payload = {"from": ev.norm_ts(last), "to": now, "seconds": int(gap_s), "cause": cause}
+    if while_running:
+        payload["while_running"] = True
     ledger.append(
         {
             "id": f"daemon.gap:{payload['from']}",

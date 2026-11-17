@@ -66,9 +66,11 @@ export interface NowModel {
   related: { bottlenecks: { on_ref: string; on_kind: string; waiters: number }[]; conflicts: number; blocked_items: number } | null;
   next: { text: string; command: string | null; item_id: string | null; ref: string | null } | null;
   waiting_on_you: (WaitCard | TaskCard)[];
-  quiet: { since: string; state: "idle" | "waiting"; waits: { waiter: string; on: string; since: string }[] } | null;
+  quiet: { since: string; state: "idle" | "waiting"; waits: { waiter: string; on: string; since: string }[]; onloop_down_s?: number } | null;
   stalls: Stall[];
   health: {
+    /** onloopd's own gaps in the last week (finding #14): time with no record, never shown as quiet. */
+    gaps: { from: string; to: string; seconds: number; cause: string | null; while_running: boolean | null }[];
     schedules: ScheduleHealth[];
     schedules_ok: number;
     schedules_total: number;
@@ -114,6 +116,8 @@ export interface FlowModel {
   resources: FlowResource[];
   waits: FlowWait[];
   constraint: { node: string; on_kind: string; downstream_wait_s: number; cards: string[] } | null;
+  /** The one count of "waiting on you" (finding #20): the open task list, the same number as Now's. */
+  waiting_on_you: { count: number; task_ids: string[]; cards: string[] };
   schedules: { id: string; name: string; period: string | null; last_result_at: string | null; last_success: string | null; next_due: string | null }[];
 }
 

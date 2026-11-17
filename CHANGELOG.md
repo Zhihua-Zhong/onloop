@@ -8,6 +8,18 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- **Now and Flow count "waiting on you" the same way** (finding #20). Both read the open task list. Flow's "You"
+  node says how many tasks wait on you, and its tab says how many cards on the canvas wait on you. An agreement test
+  checks Now, Flow and the task list on the demo ledger and on asks that are not cards.
+- **Done and Decline can be undone for 8 seconds** (finding #19). The mark is sent only when the count ends. Undo, or
+  leaving the page, sends nothing, so the task stays open.
+- **A gap in onloop's own record shows as a gap, not as quiet** (finding #14). A gap while onloopd runs (the machine
+  slept or the process was paused) is now recorded too, besides the gap at start. Now's health card lists the last
+  week's gaps with their cause (a crash, a shutdown or sleep). The quiet reading says how much of the quiet time onloop
+  was down, and no longer counts onloopd's own records as the team's activity.
+- **The daily report runs by itself** (finding #15). Without a `jobs:` key in onloopd.yaml, and without the file,
+  onloopd writes yesterday's report to `reports/` next to the ledger at 07:30. `jobs: []` turns it off.
+
 - **An ask logged before 0.4.0 is no longer closed by its author's next turn.** After an upgrade, every outcome-line
   ask from 0.3 read "resolved without you", because a task opened by a version-1 event ended when its wait cleared, and
   a version-1 wait clears at the role's next turn. That is the silent drop decision 0013 rejects. Such a task now stays
