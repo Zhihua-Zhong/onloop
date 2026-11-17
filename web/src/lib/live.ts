@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { coalescer } from "@/lib/coalesce";
 
 export type Live = { state: "connecting" | "live" | "stale"; since: number | null };
 
 const STALE_AFTER_MS = 5_000;
 
 // Live updates from onloopd's event stream (`/api/stream?plain=1`, a GET). A burst of new events refetches what the
-// open view reads, once. When the stream is down for more than five seconds the state is "stale" and the shell says
+// open view reads, once, and a steady stream at least every two seconds (lib/coalesce.ts). When the stream is down for more than five seconds the state is "stale" and the shell says
 // so: the page keeps what it last read, labelled with when (fail closed, never silently old). It reconnects by itself.
 export function useLive(): Live {
   const client = useQueryClient();
@@ -15,7 +16,7 @@ export function useLive(): Live {
   useEffect(() => {
     let source: EventSource | null = null;
     let staleTimer: number | undefined;
-    let flush: number | undefined;
+    const flush = coalescer(() => client.invalidateQueries());
     let retry: number | undefined;
     let closed = false;
     let lostAt: number | null = null;
@@ -30,8 +31,7 @@ export function useLive(): Live {
       source.onmessage = (e: MessageEvent) => {
         const seq = Number(e.lastEventId);
         if (Number.isFinite(seq) && seq > after.current) after.current = seq;
-        window.clearTimeout(flush);
-        flush = window.setTimeout(() => client.invalidateQueries(), 400);
+        flush.poke();
       };
       source.onerror = () => {
         source?.close();
@@ -57,7 +57,7 @@ export function useLive(): Live {
       closed = true;
       source?.close();
       window.clearTimeout(staleTimer);
-      window.clearTimeout(flush);
+      flush.cancel();
       window.clearTimeout(retry);
     };
   }, [client]);
