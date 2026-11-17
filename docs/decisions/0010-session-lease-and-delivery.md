@@ -94,4 +94,5 @@ measured these facts:
 - **Open: Q1, the subscription-use policy.** Whether a carrier that drives several roles around the clock is
   "ordinary, individual usage" of a subscription is open with the project lead, deferred to the end. It is a gate:
   - before the pilot's rollout step 3 (the first act beyond observe-only), no customer pilot goes past step 2;
-  - before the 0.4.0 release, which ships the carrier.
+  - before the 0.4.0 release, which ships the carrier. The project lead lifted this gate on 2026-11-17: 0.4.0
+    ships with the carrier off by default, and its release notes state the question.

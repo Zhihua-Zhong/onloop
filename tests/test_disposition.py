@@ -277,7 +277,7 @@ def test_every_version_1_line_parses_the_same_under_version_2_except_pid_0():
 
 
 def test_an_older_onloop_refuses_a_version_2_line():
-    """The rollout rule: a role writes the new keys only once its onloop is 0.5.0 or later."""
+    """The rollout rule: a role writes the new keys only once its onloop is 0.4.0 or later."""
     v1, _ = _v1_corpus()
     got = v1.parse("outcome: blocked owner=human ref=#1 goal=demo/14")
     assert isinstance(got, v1.ParseError) and "takes no goal" in got.reason

@@ -89,8 +89,8 @@ re-parses. A new grammar therefore cannot change how an old event reads.
 - A line of the version-1 shape parses to the same value, ref, owner and waker, with every new field empty. The only
   exception is `waker=pid:0`. A test runs the version-1 corpus through both grammars.
 - A line that version 1 refused and version 2 accepts is one that carries a new key.
-- **An older onloop (0.3.x, 0.4.0) refuses a version-2 line** ("`blocked` takes no goal"). It counts the turn as one
-  without an outcome, never as `done`. Roles write the new keys only once their onloop is 0.5.0 or later. The shared
+- **An older onloop (0.3.x) refuses a version-2 line** ("`blocked` takes no goal"). It counts the turn as one
+  without an outcome, never as `done`. Roles write the new keys only once their onloop is 0.4.0 or later. The shared
   paragraph names that version.
 
 ## Alternatives considered

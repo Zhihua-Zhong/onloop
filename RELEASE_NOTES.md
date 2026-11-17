@@ -1,8 +1,70 @@
+# onloop 0.4.0
+
+onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop
+rather than **in** it. The agents open, review and merge pull requests themselves, and the person approves a short
+list of reserved changes and can overturn the rest.
+
+**0.4.0 can act, and every act is off until you switch it on.** Without a `carrier:` block in onloopd.yaml, onloop
+observes and records, as 0.3 did.
+
+## Install
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.4.0/onloop-0.4.0-py3-none-any.whl"
+onloop selftest
+onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790
+```
+
+You need Python 3.11 or later, git, and the GitHub CLI for the commands that talk to GitHub. The page ships inside the
+wheel. A source checkout builds it first, with `cd web && npm ci && npm run build`.
+
+## Upgrading from 0.3
+
+- **Back up your ledger file first.** The first time 0.4.0 opens a 0.3 ledger, it moves it to a newer format (from
+  schema 5 to schema 7). It keeps every event, and 0.3 cannot open the file afterwards.
+- Every outcome line 0.3 accepted means the same, except a placeholder waker `pid:0`, which is now refused. Write the
+  new keys of the outcome line only once everything that reads your ledger runs 0.4.0.
+- Your onloopd.yaml keeps working. The new blocks (`carrier:`, `kpi:`, `adapters:`, `goals:` and `jobs:`) are all
+  optional.
+
+## What is new
+
+- **The person's task list.** Everything that waits on you is one list, in one order: weight first, then how soon the
+  delay starts to cost, then age. Each ask says what it changes, which goal it moves and what waits on it. A task is
+  never dropped: it closes only with a resolution and its evidence. It goes back to whoever asked after 7 days, and
+  to the coordinator after 14. A "since you were away" line says what changed since your last visit.
+- **Goals and outcome measures.** A goal checklist is read from its edit history. Progress is shown as goal items
+  done per merged change, with the checklist's size and the date of it, so splitting work into more pieces shows as
+  a cost, not as progress.
+- **The session carrier** (off by default). onloop can deliver messages into your team's role sessions itself, one
+  session at a time, and it records what each turn did. Until a role opts in and the carrier is started, it only
+  records what it would have sent.
+- **The Conversation view**, where you can read the carried roles' threads and send them a message.
+- **Live pages that keep up.** A page refreshes at least every 2 seconds while events keep arriving.
+
+The full list is in [CHANGELOG.md](CHANGELOG.md).
+
+## Known limits
+
+- **The session carrier is off by default, and you switch it on role by role.** Nothing is delivered without a
+  `carrier:` block in onloopd.yaml, a role's opt-in, and `onloop carrier start`.
+- **It drives your own, unmodified `claude` command-line tool, under your own login.** onloop never asks for, stores
+  or passes on a Claude token, and it refuses to run if a metered API key is set.
+- **Check your use with Anthropic.** Anthropic's terms say that the advertised usage limits of its plans assume
+  ordinary, individual use of Claude Code. A team that runs many roles around the clock should confirm with Anthropic
+  that its use fits its plan before it turns the carrier on.
+- **The browser tests were not run for this release.** They need a browser we have stopped using while an account
+  issue is investigated. The pages were checked by hand in a separate browser, and by their API tests.
+- **Some readers are not live yet:** the GitHub goal reader (a checklist's edit history) and the GitHub checks behind
+  waits on outside events (a CI run, checks, a review) wait for a test repository. Until then, goals are read through
+  other adapters, and a wait on a GitHub event reads "unknown".
+- The batching merge queue is not in 0.4.0.
+
 # onloop 0.3.1
 
-0.3.1 is a patch release of 0.3.0. On Linux, a process that has exited but is not yet reaped (a zombie) no
-longer counts as running, so `onloop daemon stop` reports a clean stop and the dead-waker probe sees a dead
-`pid:` waker. CI now also runs on release branches and tags. Nothing else changed; the notes for 0.3.0 follow.
+0.3.1 is a patch release of 0.3.0. On Linux, a process that has exited but is not yet reaped (a zombie) no longer
+counts as running, so `onloop daemon stop` reports a clean stop, and the dead-waker probe sees a dead `pid:` waker. CI
+now also runs on release branches and tags. Nothing else changed; the notes for 0.3.0 follow.
 
 # onloop 0.3.0
 
