@@ -15,6 +15,10 @@ All notable changes to this project are recorded here. The format follows
   feedback batches, items and links (an item's stage as the team reports it). Contract 1.1 adds check runs, verdicts
   (by role, never a login; a short code, never a body) and who a pull request waits on. A wait on the person is a
   task on their list, and a wait ends only when the export clears it. Ledger schema 8 adds the `import` source and a turn's start time.
+- **Feedback, from both channels** (ledger schema 9). `onloop feedback "item" "item" … [--file F] [--by lead]` gives
+  a batch in one sitting. Each item's title is its first line, scrubbed of secret-shaped strings; the body is kept
+  only as a hash. A team's export reports its own batches, and each item's stage is kept as the team declares it,
+  marked "reported by the team", with the time it reached that stage.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
   sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
   hours or 7 days, with a table view. It works without outcome lines.

@@ -39,7 +39,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .. import events as ev
-from . import goals_proj, human_tasks, schema
+from . import feedback_proj, goals_proj, human_tasks, schema
 
 Event = Mapping[str, Any]
 
@@ -1003,6 +1003,7 @@ def _carrier_state(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
 RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]] = {
     **human_tasks.RULES,
     **goals_proj.RULES,
+    **feedback_proj.RULES,
     "item.opened": _item_opened,
     "item.changed": _item_changed,
     "item.closed": _item_closed,

@@ -1089,6 +1089,61 @@ def cmd_task(args) -> int:
     return 0
 
 
+def cmd_feedback(args) -> int:
+    """Give a batch of feedback: several items in one sitting, with one origin and one time (schema 9). Each item's
+    title is its first line, scrubbed of secret-shaped strings and cut to 120 characters; the rest is kept only as a
+    hash, so the ledger never holds the body."""
+    import hashlib
+    import uuid
+
+    from . import events as ev
+    from .carrier.messages import scrub
+    from .overlay.ledger import Ledger, LedgerError
+
+    texts = list(args.items or [])
+    if args.file:
+        texts += [
+            ln.strip()
+            for ln in pathlib.Path(args.file).read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+    if not texts:
+        _err("onloop: give at least one item, as text or with --file (one item per line)")
+        return 2
+    items = []
+    for text in texts:
+        clean, _ = scrub(text.strip())
+        items.append(
+            {
+                "kind": args.kind,
+                "title": clean.splitlines()[0][:120],
+                "body_sha256": hashlib.sha256(clean.encode("utf-8")).hexdigest(),
+            }
+        )
+    at = ev.now_ts()
+    ref = uuid.uuid4().hex
+    batch = {"origin": "cli", "origin_ref": ref, "given_by": args.by or "human", "given_at": at}
+    if args.title:
+        batch["title"] = scrub(args.title)[0][:120]
+    try:
+        with Ledger(_ledger_path(args)) as led:
+            led.append(
+                {
+                    "id": f"cli-feedback-{ref}",
+                    "source": "cli",
+                    "kind": "feedback.given",
+                    "subject_ref": f"feedback-batch:{ref}",
+                    "actor": "cli",
+                    "payload": {"batch": batch, "items": items},
+                }
+            )
+    except LedgerError as e:
+        _err(f"onloop: {e}")
+        return 2
+    _say(f"feedback: a batch of {len(items)} item(s) logged")
+    return 0
+
+
 def cmd_carrier(args) -> int:
     """Start, stop (the kill switch) or show the session carrier."""
     import uuid
@@ -1712,6 +1767,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--reason", required=True, help="why it is kept")
     sp.add_argument("--by", help="who keeps it: human (default) or a role")
     sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    fp = sub.add_parser("feedback", help="give a batch of feedback items, in one sitting")
+    fp.set_defaults(fn=cmd_feedback)
+    fp.add_argument("items", nargs="*", help="one item per argument; its first line is its title")
+    fp.add_argument("--file", help="a text file with one item per line")
+    fp.add_argument("--kind", default="request", choices=["correction", "request", "direction"])
+    fp.add_argument("--by", help="who gives it: human (default) or a role, such as lead")
+    fp.add_argument("--title", help="the batch's label (default: who gave it, and when)")
+    fp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
 
     cp = sub.add_parser("carrier", help="the session carrier: start, stop (the kill switch), status")
     csub = cp.add_subparsers(dest="action", metavar="<action>")
