@@ -61,6 +61,19 @@ DEFAULT_STUCK_S = {
     "pr": 3 * 86400,  # an open change, with no push, check or review
     "wait": 86400,  # a wait on a role or a resource
 }
+_STUCK_S = dict(DEFAULT_STUCK_S)
+
+
+def set_stuck(overrides: dict[str, int]) -> None:
+    """onloopd sets the thresholds onloopd.yaml gives (`overview: stuck:`); a step not given keeps its default."""
+    _STUCK_S.clear()
+    _STUCK_S.update({**DEFAULT_STUCK_S, **overrides})
+
+
+def stuck_thresholds() -> dict[str, int]:
+    return dict(_STUCK_S)
+
+
 COLOURS = ("red", "amber", "moving", "grey")  # worst first; a block is the worst of its children
 SHAPES = {"red": "!", "amber": "◆", "moving": "▶", "grey": "□", "done": "■"}
 LABELS = {"red": "jammed", "amber": "waits on you", "moving": "moving", "grey": "not started", "done": "done"}
@@ -489,7 +502,7 @@ def _longest_without_a_move(ledger: Any, now: str, hours: int = 24) -> dict[str,
 
 def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[str, Any]:
     """The map's top level: the signals, a block per goal grouped by origin (never by role), and the waits."""
-    stuck = {**DEFAULT_STUCK_S, **(stuck or {})}
+    stuck = {**_STUCK_S, **(stuck or {})}
     open_tasks = your_tasks(ledger, now) or []
     mine = _tasks_by_ref(open_tasks)
     blocks = [

@@ -65,6 +65,7 @@ _TOP = (
     "adapters",
     "goals",
     "jobs",
+    "overview",
 )
 _SCHEDULE = ("id", "name", "period", "grace", "owner")
 _GITHUB = ("repo", "base", "every", "workdir", "policy")
@@ -118,6 +119,8 @@ class OnloopdConfig:
     adapters: tuple[dict[str, Any], ...] = field(default_factory=tuple)  # each as written, with poll_s added
     goals: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)  # (id, adapter, locator)
     jobs: tuple[Any, ...] = field(default_factory=tuple)  # jobs.Job: onloopd's own scheduled work
+    overview_stuck: tuple[tuple[str, int], ...] = field(default_factory=tuple)  # (step, seconds) the map's
+    # stuck thresholds, as written; the rest keep their defaults
 
 
 def _monitors(raw: Any, problems: list[str]) -> list[tuple[str, str]]:
@@ -283,6 +286,41 @@ def _goals(raw: Any, adapters: list[dict[str, Any]], problems: list[str]) -> lis
     return out
 
 
+def _overview(raw: Any, problems: list[str]) -> list[tuple[str, int]]:
+    """`overview: stuck: {given: 2h, declared: 2h, ...}`: how long each agents' step may go without a move before the
+    map shows it red (Q12, Q17). A team that moves in hours sets hours."""
+    from .. import derive
+    from .. import events as ev
+
+    if not isinstance(raw, dict):
+        problems.append("overview must be a mapping (stuck)")
+        return []
+    for key in sorted(set(raw) - {"stuck"}):
+        problems.append(f"overview has an unknown key {key!r}; the keys are stuck")
+    stuck = raw.get("stuck")
+    if stuck is None:
+        return []
+    if not isinstance(stuck, dict):
+        problems.append("overview.stuck must be a mapping of a step to a duration, such as given: 2h")
+        return []
+    out = []
+    for step, value in sorted(stuck.items()):
+        if step not in derive.DEFAULT_STUCK_S:
+            known = ", ".join(sorted(derive.DEFAULT_STUCK_S))
+            problems.append(f"overview.stuck has an unknown step {step!r}; the steps are {known}")
+            continue
+        try:
+            seconds = ev.parse_duration(str(value))
+        except ev.EventError as e:
+            problems.append(f"overview.stuck.{step}: {e}")
+            continue
+        if seconds < 60:
+            problems.append(f"overview.stuck.{step} must be at least 1m")
+            continue
+        out.append((step, seconds))
+    return out
+
+
 def _kpi(raw: Any, problems: list[str]) -> str | None:
     from ..localday import parse_zone
 
@@ -344,6 +382,7 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
     jobs = [jobs_mod.DEFAULT_JOB]
     if "jobs" in data:
         jobs = jobs_mod.parse(data["jobs"], problems) if data["jobs"] is not None else []
+    overview_stuck = _overview(data["overview"], problems) if data.get("overview") is not None else []
     kpi_timezone = None
     if data.get("kpi") is not None:
         kpi_timezone = _kpi(data["kpi"], problems)
@@ -365,6 +404,7 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
         adapters=tuple(adapters),
         goals=tuple(goals),
         jobs=tuple(jobs),
+        overview_stuck=tuple(overview_stuck),
     )
 
 

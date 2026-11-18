@@ -19,6 +19,15 @@ All notable changes to this project are recorded here. The format follows
   a batch in one sitting. Each item's title is its first line, scrubbed of secret-shaped strings; the body is kept
   only as a hash. A team's export reports its own batches, and each item's stage is kept as the team declares it,
   marked "reported by the team", with the time it reached that stage.
+- **The map's zoom 0** (`GET /api/map`, decision 0018): one block per goal, grouped by origin: each checklist, each
+  feedback batch, and "Changes in flight".
+  - A block's colour is the worst of its children (jammed, waits on you, moving, not started), each with a shape.
+    A red or amber block names its child and why in one line.
+  - A stage with no evidence is "not reported", never 0.
+  - An age whose start onloop cannot see shows as a lower bound ("≥ 9 days", "began before the first export").
+  - Signals: waiting on you (the same count as Now), stuck, and the team's longest pause in the last day.
+  - The waits, oldest first.
+  - The stuck thresholds are set with `overview: stuck:` in onloopd.yaml.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
   sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
   hours or 7 days, with a table view. It works without outcome lines.

@@ -264,6 +264,9 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     localday.set_zone(localday.parse_zone(cfg.watch.kpi_timezone) if cfg.watch.kpi_timezone else None)
     if sources.declare_setting(ledger, "kpi.timezone", cfg.watch.kpi_timezone):
         say(f"onloopd: kpi.timezone is now {cfg.watch.kpi_timezone or 'the machine offset'}")
+    from .. import derive
+
+    derive.set_stuck(dict(cfg.watch.overview_stuck))  # the map's stuck thresholds, as onloopd.yaml gives them
     spooled = hook_receiver.ingest_spool(ledger, state)
     if spooled:
         say(f"onloopd: logged {spooled} hook event(s) spooled while it was away")

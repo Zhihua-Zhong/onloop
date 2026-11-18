@@ -27,6 +27,7 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
     GET /api/activity           the Activity view: one lane per role with its turns on a time axis, side sessions under
                                 their role, the longest silence per role, turns per hour (?hours=48; 1 to 336)
+    GET /api/map                the map, zoom 0: the signals, a block per goal (colour, bar, reason), the waits
     GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
@@ -478,6 +479,18 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
+            elif url.path == "/api/map":
+                from .. import derive
+
+                path = (query.get("path", [""])[0] or "").strip("/")
+                if path:
+                    self._send_json(
+                        400,
+                        {"error": "this onloop serves the map's zoom 0 only; zoom 1 comes next"},
+                        head_only,
+                    )
+                    return
+                body = derive.zoom0(reader, ev.now_ts())
             elif url.path == "/api/tasks":
                 body = views.tasks_view(reader, ev.now_ts())
             elif url.path == "/api/digest":
