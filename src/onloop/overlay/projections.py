@@ -490,7 +490,7 @@ def _node_fields(node: Mapping[str, Any]) -> dict[str, Any]:
     if "url" in node:
         out["ref"] = node["url"]
     if "spawned_by" in node:
-        out["parent_id"] = None
+        out["parent_id"] = f"wg:{node['spawned_by']}" if node["spawned_by"] else None
     return out
 
 
