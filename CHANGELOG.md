@@ -33,6 +33,9 @@ All notable changes to this project are recorded here. The format follows
     counted, never named);
   - zoom 2 is who holds what in a stage, linked to where to act;
   - `block.turned` events record each block's and stage's change of colour, on onloopd's tick.
+- **Moving around the map:** a camera move into the block on opening (none with reduced motion); a second click during
+  the move is ignored; the chain of stages never crosses the canvas. See [map.md](docs/map.md).
+- **Known limit:** when a team's export does not say which role opened a change, the map's holder is "the team".
 - **The page recovers when onloopd comes back:** a view in error tries again every few seconds, and the last good data
   stays on screen meanwhile.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side

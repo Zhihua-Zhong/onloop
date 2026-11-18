@@ -43,7 +43,7 @@ On a phone, an at-a-glance strip under the banner keeps the three counts on the 
 
 ### Map
 
-Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`, `#/map/<goal>`), so Back, Forward and a link
+The full guide is [map.md](map.md). Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`, `#/map/<goal>`), so Back, Forward and a link
 land on the same level.
 
 - **The signals:**
@@ -123,6 +123,24 @@ It reconnects by itself.
 
 Light or dark follows the system's `prefers-color-scheme`, live, until the person picks one with the toggle; that
 choice is kept in this browser. `?theme=dark` or `?theme=light` in the URL overrides both (the screenshots use it).
+
+### The state palette
+
+`web/src/styles/tokens.css` is the only place a colour is chosen. The state colours are the only saturated colours on
+the canvas, and each has its own step in dark mode, validated against the dark surface.
+
+| Token | Means on Now, Flow and the task list | On the map | Shape on the map |
+|---|---|---|---|
+| `state-blocked` (red) | blocked | jammed | ! |
+| `state-human` (amber) | waits on you | waits on you, or marked yours by the team | ◆ |
+| `state-open` (blue) | open, in progress | moving | ▶ |
+| `state-void` (grey) | cancelled or missing | not started, or not reported (hatched) | □ |
+| `state-done` (green) | done | done | ■ |
+| `state-external` (violet) | waits on someone else | the bar of a waits row held by a role or the team | — |
+| `state-stall` (magenta) | stalled | — | — |
+
+A colour is never the only sign. Every state also has a shape or a word, and the list form gives the same content as
+text.
 
 ### Conversation
 
