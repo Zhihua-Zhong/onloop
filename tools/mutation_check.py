@@ -1521,8 +1521,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the privacy check is skipped",
         "src/onloop/contract/reader.py",
-        "        found = _check_record(rec) or privacy(rec, deny)",
-        "        found = _check_record(rec)",
+        "        found = _field_gate(rec, minor) or _check_record(rec) or privacy(rec, deny)",
+        "        found = _field_gate(rec, minor) or _check_record(rec)",
         ["tests/test_contract.py::test_a_privacy_hit_in_a_free_field_refuses_the_file_by_path_and_rule_only"],
     ),
     (
@@ -1542,7 +1542,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a reviewer who is no declared role is let in (a login)",
         "src/onloop/contract/reader.py",
-        '        if key and r["data"][key] not in roles:',
+        '        if key and key in r["data"] and r["data"][key] not in roles:',
         "        if False:",
         ["tests/test_contract.py::test_a_login_shaped_reviewer_is_refused_and_never_printed"],
     ),
@@ -1848,6 +1848,45 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "    if (positions[i].y === positions[i + 1].y) edges.push([i, i + 1]);",
         "    edges.push([i, i + 1]);",
         ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map ignores contract 1.2's by: a change that waits on nobody is held by the team",
+        "src/onloop/derive.py",
+        '                _leaf(ref, title, colour, stage=stage, who=opener(pr.get("owner_role")), why=why, age_s=age)',
+        '                _leaf(ref, title, colour, stage=stage, who="the team", why=why, age_s=age)',
+        ["tests/test_contract_1_2.py::test_a_change_that_waits_on_nobody_is_held_by_the_role_that_opened_it"],
+    ),
+    (
+        "the map invents a role for a change whose export gives none",
+        "src/onloop/derive.py",
+        '    if not role or role == "team":\n        return "the team"',
+        '    if not role or role == "team":\n        return "builder"',
+        ["tests/test_contract_1_2.py::test_the_map_never_invents_a_role"],
+    ),
+    (
+        "contract 1.2: a by that is no declared role is let in (a login)",
+        "src/onloop/contract/reader.py",
+        '            "onloop.pr.opened": "by",  # contract 1.2, optional',
+        '            "onloop.pr.opened": "by_unchecked",',
+        [
+            "tests/test_contract_1_2.py::test_a_by_that_is_not_a_declared_role_refuses_the_file_and_is_never_printed"
+        ],
+    ),
+    (
+        "contract 1.2: a role sent after the first copy of a PR is dropped by the id dedupe",
+        "src/onloop/contract/reader.py",
+        '    if rec.get("type") != "onloop.pr.opened" or not d.get("by"):',
+        "    if True:",
+        [
+            "tests/test_contract_1_2.py::test_a_change_first_seen_without_by_gets_its_role_from_a_later_copy_with_the_same_id"
+        ],
+    ),
+    (
+        "contract 1.2: a by in a 1.1 snapshot is read",
+        "src/onloop/contract/reader.py",
+        '        if t == rec.get("type") and f in rec["data"] and since > minor',
+        '        if t == rec.get("type") and f in rec["data"] and since > minor + 1',
+        ["tests/test_contract_1_2.py::test_a_1_1_snapshot_with_by_says_why"],
     ),
     (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",

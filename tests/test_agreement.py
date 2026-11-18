@@ -190,3 +190,25 @@ def test_the_maps_words_never_add_up_to_more_than_the_one_count(which, demo_path
         marked = [lf for lf in b["leaves"] if lf["colour"] == "amber" and lf.get("who") != "you"]
         said_marked = sum(int(n) for n in re.findall(r"(\d+) marked yours by the team", b["tally_text"]))
         assert said_marked == len(marked) and all(lf.get("reported_by_team") for lf in marked), b["id"]
+
+
+def test_the_holder_a_reason_names_is_the_holder_zoom_2_lists(tmp_path_factory):
+    """Contract 1.2: zoom 0 and 1 name who holds a stuck change, and zoom 2 lists the same holder, on a replay where
+    the export says which role opened each change."""
+    root = tmp_path_factory.mktemp("replay12")
+    example.write(root, REPLAY_END, days=2, n=200, seed=3, contract="1.2")
+    (root / "onloop").mkdir()
+    reader.import_snapshots(root, root / "onloop" / "ledger.db")
+    with Ledger(root / "onloop" / "ledger.db", readonly=True) as led:
+        for b in derive.zoom0(led, REPLAY_NOW)["blocks"]:
+            for s in derive.zoom1(led, REPLAY_NOW, b["id"])["stages"]:
+                if not s["reason"]:
+                    continue
+                holders = {h["holder"] for h in derive.zoom2(led, REPLAY_NOW, b["id"], s["stage"])["holders"]}
+                named = s["reason"]["text"].split(": ", 1)[0]
+                assert named in holders or (named == "you" and "you" in holders), (
+                    b["id"],
+                    s["stage"],
+                    named,
+                    holders,
+                )

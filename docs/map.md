@@ -11,7 +11,7 @@ Open it at `#/map`, or from the **Map** tab.
 |---|---|---|---|
 | 0 | `#/map` | a goal | each checklist, each feedback batch, and "Changes in flight", grouped by where they came from, never by role |
 | 1 | `#/map/<goal>` | a stage of that goal | the stages in order, each with its count, colour, oldest item and, when it is red or amber, which item and why |
-| 2 | `#/map/<goal>/<stage>` | who holds the items | you, "you, as the team marks it", the team or a role, the worst first; each item with what it waits on, since when, and a link to where you act |
+| 2 | `#/map/<goal>/<stage>` | who holds the items | you, "marked yours by the team", the team or a role, the worst first; each item with what it waits on, since when, and a link to where you act |
 | 3, 4 | reserved | a role's turns, a turn's tool calls | these come with the tool events of a later contract |
 
 **The stages at zoom 1:**
@@ -101,7 +101,7 @@ A path that names nothing is a 404 with a plain sentence.
 
 ## Known limits in 0.5.0
 
-- **"The team" as a holder.** When a team's export does not say which role opened a change, the map can only say the
-  change is held by "the team". Pinpointing the agent needs the author's role on `pr.opened`, which is under
-  discussion with the producer.
+- **"The team" as a holder.** A change that waits on nobody is held by the role that opened it. A team's export says
+  that role with contract 1.2's `by` (see [data-contract.md](data-contract.md)). With an older export, or with
+  `by: team`, the map can only say "the team".
 - **Zoom 3 and 4** wait for the tool events.

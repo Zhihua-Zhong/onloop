@@ -397,13 +397,13 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
     prs = {
         i["id"]: i
         for i in ledger.select(
-            "SELECT id, title, updated_at FROM items WHERE id LIKE 'pr#%' AND state <> 'done'"
+            "SELECT id, title, updated_at, owner_role FROM items WHERE id LIKE 'pr#%' AND state <> 'done'"
         )
     }
     waits = [w for w in ledger.waits() if (w.get("ref") or w.get("item_id") or "").startswith("pr#")]
     for w in waits:
         ref = w.get("ref") or w["item_id"]
-        prs.setdefault(ref, {"id": ref, "title": None, "updated_at": w["since"]})
+        prs.setdefault(ref, {"id": ref, "title": None, "updated_at": w["since"], "owner_role": None})
     leaves = []
     for ref, pr in sorted(prs.items()):
         ev_ = ledger.select(
@@ -453,7 +453,9 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
             age = _secs(ev_["t"] or pr["updated_at"] or now, now)
             colour = "red" if age > stuck["pr"] else "moving"
             why = f"no move on {ref} for {plain_age(age)}"
-            leaves.append(_leaf(ref, title, colour, stage=stage, who="the team", why=why, age_s=age))
+            leaves.append(
+                _leaf(ref, title, colour, stage=stage, who=opener(pr.get("owner_role")), why=why, age_s=age)
+            )
     stages = []
     for s in CHANGE_STAGES:
         here = [lf for lf in leaves if lf["stage"] == s]
@@ -467,6 +469,16 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
         )
     bar = {"done": None, "of": len(leaves), "label": f"{len(leaves)} open"}
     return _block("changes", "changes", "Changes in flight", leaves, bar, stages=stages)
+
+
+def opener(role: str | None) -> str:
+    """Who holds a change that waits on nobody: the role that opened it, as a team's export says (contract 1.2's `by`).
+    "The team" only when the export does not say, or says `team`; never a role made up."""
+    if not role or role == "team":
+        return "the team"
+    if role == "human":
+        return "you (opened it)"
+    return role
 
 
 def _waits_by_holder(ledger: Any, now: str, open_tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -762,7 +774,7 @@ def _holder(lf: dict[str, Any]) -> tuple[str, str]:
     if who == "you":
         return "you", "you"
     if who == MARKED:
-        return "you, as the team marks it", "marked"
+        return MARKED, "marked"  # the same words as zoom 0 and 1: one phrase, one meaning
     if not who or who == "the team":
         return "the team", "team"
     return who, "role"

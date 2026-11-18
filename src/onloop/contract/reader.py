@@ -25,7 +25,7 @@ from typing import Any
 from .. import disposition, verdicts
 from .. import events as ev
 from ..overlay.ledger import Ledger
-from . import CONTRACT, OWNERS, SINCE, TYPES, Problem, check, privacy, schema
+from . import CONTRACT, FIELD_SINCE, OWNERS, SCHEMA_OF, SINCE, TYPES, Problem, check, privacy, schema
 
 SOURCE = "import"
 REPORT = "import-report.jsonl"
@@ -91,6 +91,28 @@ def _deny(root: pathlib.Path) -> tuple[re.Pattern[str], ...]:
 
 def _norm(ts: str) -> str:
     return ev.norm_ts(ts) or ts
+
+
+def extra_events(rec: dict[str, Any], producer: str) -> list[dict[str, Any]]:
+    """Contract 1.2's `by` on pr.opened is also a `pr.author` event of its own, keyed by the PR and the role. A PR sent
+    first without `by` (its pr.opened is the same event every time, so a later copy is a duplicate) still gets its role
+    from any later record that carries it."""
+    d = rec.get("data") or {}
+    if rec.get("type") != "onloop.pr.opened" or not d.get("by"):
+        return []
+    subject = f"pr#{d['number']}"
+    imported = {"exporttime": _norm(rec["exporttime"]), "producer": producer}
+    return [
+        {
+            "id": ev.event_id(producer, "pr.author", subject, d["by"]),
+            "source": SOURCE,
+            "kind": "pr.author",
+            "subject_ref": subject,
+            "actor": None,
+            "at": _norm(rec["time"]),
+            "payload": {"number": d["number"], "by": d["by"], "imported": imported},
+        }
+    ]
 
 
 def to_event(rec: dict[str, Any], producer: str) -> dict[str, Any]:
@@ -365,7 +387,24 @@ def _check_record(rec: Any) -> list[Problem]:
         return [Problem("/type", "a record type this onloop does not read yet")]
     if rec["dataschema"].rsplit("/", 1)[-1] != rec["type"].removeprefix("onloop."):
         return [Problem("/dataschema", "names another type than /type")]
-    return [Problem(f"/data{p.path}", p.rule) for p in check(rec["data"], schema(f"data/{rec['type']}"))]
+    name = SCHEMA_OF.get((rec["type"], _schema_minor(rec)), rec["type"])
+    return [Problem(f"/data{p.path}", p.rule) for p in check(rec["data"], schema(f"data/{name}"))]
+
+
+def _field_gate(rec: Any, minor: int) -> list[Problem]:
+    """A field newer than the snapshot's contract (contract 1.2's `by` in a 1.1 snapshot), said before any schema
+    rule, so the refusal says why."""
+    if not isinstance(rec, dict) or not isinstance(rec.get("data"), dict):
+        return []
+    return [
+        Problem(f"/data/{f}", f"a contract 1.{since} field in a 1.{minor} snapshot")
+        for (t, f), since in FIELD_SINCE.items()
+        if t == rec.get("type") and f in rec["data"] and since > minor
+    ]
+
+
+def _schema_minor(rec: dict[str, Any]) -> int:
+    return int(rec["dataschema"].split("/")[1].split(".")[1])
 
 
 def _read_file(
@@ -385,9 +424,14 @@ def _read_file(
         except json.JSONDecodeError:
             problems.append({"line": n, "path": "/", "rule": "not JSON"})
             continue
-        found = _check_record(rec) or privacy(rec, deny)
+        found = _field_gate(rec, minor) or _check_record(rec) or privacy(rec, deny)
         if not found and SINCE.get(rec["type"], 0) > minor:
             found = [Problem("/type", f"a contract 1.{SINCE[rec['type']]} type in a 1.{minor} snapshot")]
+        if not found and _schema_minor(rec) > minor:
+            found = [
+                Problem("/dataschema", f"a contract 1.{_schema_minor(rec)} schema in a 1.{minor} snapshot")
+            ]
+
         if found:
             kind = rec.get("type") if isinstance(rec, dict) and rec.get("type") in TYPES else None
             problems.extend({"line": n, "type": kind, **p.as_dict()} for p in found)
@@ -412,9 +456,10 @@ def _owner_problems(records: list[dict[str, Any]], known: frozenset[str]) -> lis
             "onloop.pr.reviewed": "reviewer",
             "onloop.wait.opened": "waits_on",
             "onloop.wait.cleared": "waits_on",
+            "onloop.pr.opened": "by",  # contract 1.2, optional
         }
         key = field.get(r["type"])
-        if key and r["data"][key] not in roles:
+        if key and key in r["data"] and r["data"][key] not in roles:
             out.append(
                 {
                     "line": None,
@@ -522,7 +567,12 @@ def _import_file(led, folder, name, fname, want, producer, deny, minor: int = 0)
     # roles first, then by the time each thing happened: a turn's role exists before the turn
     records.sort(key=lambda r: (r["type"] != "onloop.role.declared", _norm(r["time"])))
     revisions = [r for r in records if r["type"] == "onloop.goal.revision"]
-    events = [to_event(r, producer) for r in records if r["type"] != "onloop.goal.revision"]
+    events = [
+        e
+        for r in records
+        if r["type"] != "onloop.goal.revision"
+        for e in (to_event(r, producer), *extra_events(r, producer))
+    ]
     if led is None:
         goal_events(None, revisions, producer)  # the diff runs, so a dry run fails where a real one would
         return FileResult(name, fname, "checked (dry run)", records=len(records), counts=counts)

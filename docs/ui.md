@@ -79,7 +79,7 @@ land on the same level.
   Each stage has its count, colour, oldest item and, when red or amber, which item and why. A stage with no evidence
   is hatched, "not reported". A change's checks read "checks: 1 failed (e2e) · 4 passed · 1 skipped": skipped runs are
   counted, never named, and a failed or running check is named exactly as recorded.
-- **Zoom 2** (`#/map/<goal>/<stage>`): who holds each item in that stage (you, "you, as the team marks it", the team
+- **Zoom 2** (`#/map/<goal>/<stage>`): who holds each item in that stage (you, "marked yours by the team", the team
   or a role), the worst first. Each item says what it waits on and since when, with a link to your task or the
   change's history.
 - **Zoom 3 and 4** (a role's turns, a turn's tool calls) are reserved in the URLs and say they come with the tool

@@ -35,7 +35,10 @@ All notable changes to this project are recorded here. The format follows
   - `block.turned` events record each block's and stage's change of colour, on onloopd's tick.
 - **Moving around the map:** a camera move into the block on opening (none with reduced motion); a second click during
   the move is ignored; the chain of stages never crosses the canvas. See [map.md](docs/map.md).
-- **Known limit:** when a team's export does not say which role opened a change, the map's holder is "the team".
+- **Contract 1.2:** `pr.opened` may carry `by`, the role that opened the change (a declared role, `team` or `human`,
+  never a login). A PR first sent without it gets its role from a later copy. The map holds a change that waits on
+  nobody by that role, and names it in the reason line ("builder: no move on pr#9 for 5 days"). Without `by`, the
+  holder is "the team".
 - **The page recovers when onloopd comes back:** a view in error tries again every few seconds, and the last good data
   stays on screen meanwhile.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side

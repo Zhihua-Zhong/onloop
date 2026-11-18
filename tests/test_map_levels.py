@@ -98,7 +98,7 @@ def test_the_words_at_every_level_add_up_to_no_more_than_the_header(replay):
         assert sum(int(n) for h in z["holders"] for n in _ON_YOU.findall(h["tally_text"])) <= header
         for h in z["holders"]:
             if h["kind"] == "marked":
-                assert not _ON_YOU.search(h["tally_text"]) and h["holder"] == "you, as the team marks it"
+                assert not _ON_YOU.search(h["tally_text"]) and h["holder"] == derive.MARKED
 
 
 def test_a_stage_with_no_evidence_is_not_reported_at_zoom_1_never_zero(replay_1_0):
