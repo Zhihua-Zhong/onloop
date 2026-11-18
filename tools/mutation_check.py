@@ -1769,6 +1769,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_agreement.py::test_now_flow_and_the_task_list_agree_on_the_generic_replay"],
     ),
     (
+        "the map: a geometric zoom changes the level (Q23)",
+        "web/src/lib/map.ts",
+        "      return path;",
+        '      return move.zoom >= OPEN_HINT_ZOOM ? [...path, "zoomed"] : path;',
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

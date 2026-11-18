@@ -131,7 +131,10 @@ def _reason(block_colour: str, leaves: list[dict[str, Any]]) -> dict[str, Any] |
     return {
         "child": pick["id"],
         "title": pick["title"],
-        "text": f"{pick['who']}: {pick['title']} — {pick['why']}",
+        # the child by its title, unless the reason already names it (a change with no title: "approve pr#7")
+        "text": f"{pick['who']}: {pick['why']}"
+        if pick["id"] in pick["why"]
+        else f"{pick['who']}: {pick['title']} — {pick['why']}",
         "lower_bound": bool(pick.get("lower_bound")),
     }
 
@@ -178,7 +181,10 @@ def _block(bid: str, kind: str, title: str, leaves: list[dict[str, Any]], bar: d
         "title": title,
         "colour": colour,
         "shape": SHAPES[colour],
-        "label": LABELS[colour],
+        # a grey block with done items is not "not started": the rest has not begun
+        "label": "nothing moving"
+        if colour == "grey" and any(lf["colour"] == "done" for lf in leaves)
+        else LABELS[colour],
         "bar": bar,
         "tally": _tally(leaves),
         "reason": _reason(colour, leaves),
@@ -381,7 +387,7 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
             lower = wait_lower_bound(ledger, w)
             age = _secs(w["since"], now)
             colour = "red" if age > stuck["wait"] else "moving"
-            why = f"holds {ref}, for {plain_age(age, lower)}"
+            why = f"holding it for {plain_age(age, lower)}"
             leaves.append(
                 _leaf(ref, title, colour, stage=stage, who=w["on_ref"], why=why, age_s=age, lower_bound=lower)
             )
@@ -442,7 +448,9 @@ def _waits_by_holder(ledger: Any, now: str, open_tasks: list[dict[str, Any]]) ->
                 oldest_s=age,
                 lower_bound=wait_lower_bound(ledger, w),
                 oldest_ref=w.get("ref") or w.get("item_id"),
-                oldest_text=w["reason"].replace("_", " "),
+                oldest_text=f"{w.get('ref') or w.get('item_id')} waits on it"
+                if (w.get("ref") or w.get("item_id"))
+                else w["reason"].replace("_", " "),
             )
     out = sorted(rows.values(), key=lambda r: (-r["oldest_s"], r["holder"]))
     for r in out:
@@ -500,6 +508,12 @@ def _longest_without_a_move(ledger: Any, now: str, hours: int = 24) -> dict[str,
     }
 
 
+def _data_as_of(ledger: Any) -> str | None:
+    from .report import activity
+
+    return activity.data_as_of(ledger)
+
+
 def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[str, Any]:
     """The map's top level: the signals, a block per goal grouped by origin (never by role), and the waits."""
     stuck = {**_STUCK_S, **(stuck or {})}
@@ -515,6 +529,7 @@ def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[st
         "now": now,
         "level": 0,
         "path": [],
+        "data_as_of": _data_as_of(ledger),  # a replay's last export time; None on a live ledger
         "signals": {
             "waiting_on_you": waiting_on_you(ledger, now)["count"],
             "stuck": sum(1 for lf in leaves if lf["colour"] == "red"),

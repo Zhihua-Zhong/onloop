@@ -14,6 +14,8 @@ import { ConversationView } from "@/views/Conversation";
 
 // Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
 const FlowView = lazy(() => import("@/views/Flow"));
+// The map shares React Flow with Flow, so it loads on first use too.
+const MapView = lazy(() => import("@/views/Map"));
 
 // The theme: a `?theme=` in the URL, else the person's own choice from the toggle (kept in this browser), else the
 // system's `prefers-color-scheme`, followed live. Only the toggle stores a choice, so a first visit never pins one.
@@ -136,11 +138,16 @@ export default function App() {
           read then, and reconnects by itself.
         </div>
       )}
-      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" ? "flex flex-col" : "overflow-y-auto")}>
+      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
         {route.view === "now" && <NowView />}
         {route.view === "flow" && (
           <Suspense fallback={<div className="p-4"><Loading what="the flow" /></div>}>
             <FlowView params={route.params} />
+          </Suspense>
+        )}
+        {route.view === "map" && (
+          <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>
+            <MapView params={route.params} path={route.path} />
           </Suspense>
         )}
         {route.view === "outcome" && <OutcomeView params={route.params} />}

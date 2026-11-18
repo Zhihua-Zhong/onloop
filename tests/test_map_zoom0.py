@@ -60,7 +60,9 @@ def test_every_blocks_colour_is_computed_from_its_leaves_never_typed(replay_1_1)
     assert kinds == ["checklist", "feedback", "changes"]  # grouped by origin, never by role
     for b in z["blocks"]:
         assert b["colour"] == derive.worst([lf["colour"] for lf in b["leaves"]]), b["id"]
-        assert b["shape"] == derive.SHAPES[b["colour"]] and b["label"] == derive.LABELS[b["colour"]]
+        some_done = any(lf["colour"] == "done" for lf in b["leaves"])
+        want = "nothing moving" if b["colour"] == "grey" and some_done else derive.LABELS[b["colour"]]
+        assert b["shape"] == derive.SHAPES[b["colour"]] and b["label"] == want, b["id"]
     assert {b["colour"] for b in z["blocks"]} >= {"amber", "red"}  # the replay has both, so the test can bite
 
 
@@ -71,7 +73,9 @@ def test_every_red_or_amber_block_says_which_child_and_why(replay_1_1):
             r = b["reason"]
             assert r is not None, b["id"]
             child = next(lf for lf in b["leaves"] if lf["id"] == r["child"])
-            assert child["colour"] == b["colour"] and child["title"] in r["text"]
+            assert child["colour"] == b["colour"] and (
+                child["title"] in r["text"] or child["id"] in r["text"]
+            )
         else:
             assert b["reason"] is None
 

@@ -14,6 +14,7 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | View | The question it answers | Reads |
 |---|---|---|
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
+| **Map** (`#/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
 | **Flow** (`#/flow`) | Where is the work, what does it wait on, and what does the constraint hold up? | `GET /api/flow` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
@@ -39,6 +40,35 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
   says "dead-man not configured", a neutral note, never OK.
 
 On a phone, an at-a-glance strip under the banner keeps the three counts on the first screen.
+
+### Map
+
+Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`, `#/map/<goal>`), so Back, Forward and a link
+land on the same level.
+
+- **The signals:**
+  - "N wait on you": the same count as Now and the task list;
+  - "N jammed";
+  - the team's longest pause in the data's last day;
+  - the since-you-looked sentence.
+- **A block per goal, grouped by origin, never by role:**
+  - each checklist, done out of its denominator;
+  - each feedback batch, accepted out of given, marked "Stages reported by the team" when an export declares them;
+  - "Changes in flight", with its stages. A stage this team's export does not report is hatched and says "not
+    reported", never 0.
+- **Colour:** a block takes the worst colour of its children: jammed (!), waits on you (◆), moving (▶), not started
+  (□). Every colour has its shape. A red or amber block says in one line which child and why.
+- **Waits, by who holds them:** oldest first. An age shown as "≥ 9 days" began before anything onloop has seen, and
+  the row says "began before the first export".
+- **Moving around:**
+  - the wheel or a pinch zooms the canvas, and a drag pans it;
+  - zooming never changes the level. From 1.6×, each block shows an "Open" button;
+  - a double-click, Enter on a focused block, or a click on its title opens the block;
+  - Escape goes up, and does nothing at zoom 0;
+  - Tab moves across the blocks in reading order.
+- **"Show as a list"** gives the same content as tables, at any width.
+- **Under 768 px,** the page is one column: the signals, "Most waiting work", the batches, the checklists, the changes,
+  then the waits.
 
 ### Flow
 

@@ -30,3 +30,8 @@
 .react-flow__edge.edge-wait-constraint path { stroke: hsl(var(--state-blocked)); }
 .react-flow__edge.edge-wait path { stroke: hsl(var(--muted) / 0.6); stroke-dasharray: 2 4; }
 .react-flow__edge.edge-wait-human .react-flow__arrowhead polyline { stroke: hsl(var(--state-human)); fill: hsl(var(--state-human)); }
+
+/* The map's "not reported" stage: hatched, so it never reads as an empty stage or a zero (Q24). */
+.map-hatch {
+  background-image: repeating-linear-gradient(135deg, hsl(var(--state-void) / 0.16) 0 6px, transparent 6px 12px);
+}
