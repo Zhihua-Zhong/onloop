@@ -81,3 +81,32 @@ def test_they_agree_when_some_asks_are_not_cards_on_the_canvas(demo_path, tmp_pa
 def test_an_empty_ledger_has_nothing_waiting_anywhere(tmp_path):
     with Ledger(tmp_path / "l.db", clock=lambda: NOW) as led:
         assert set(_counts(led, NOW).values()) == {0}
+
+
+def test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same(tmp_path):
+    """The lead's check on the dogfood ledger: tasks, but no items at all. Flow had said nothing (an empty canvas) and
+    "holding up 0 cards" while Now said 9 tasks and "lead holds 1 change"."""
+    with Ledger(tmp_path / "l.db", clock=lambda: NOW) as led:
+        for i, ref in enumerate(("docs/plan.md", "a-decision", "release-checklist")):
+            _v1_ask(led, f"ask{i}", ref)
+        led.append(
+            {
+                "id": "handoff",
+                "source": "hook",
+                "kind": "hook.stop",
+                "subject_ref": "role:builder",
+                "payload": {
+                    "role": "builder",
+                    "session_id": "s2",
+                    "line": "outcome: handoff owner=lead ref=docs/plan.md",
+                    "outcome": {"value": "handoff", "ref": "docs/plan.md", "owner": "lead", "waker": None},
+                },
+            }
+        )
+        c = _counts(led, NOW)
+        n = views.now(led, NOW)
+        f = views.flow(led, NOW)
+    assert f["cards"] == [] and len(set(c.values())) == 1 and c["now"] == 3, c
+    assert n["constraint"] is not None and f["constraint"] is not None
+    assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])
+    assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]

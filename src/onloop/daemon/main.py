@@ -283,7 +283,10 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
         ledger, [s.declaration() for s in cfg.watch.schedules] + [j.declaration() for j in cfg.watch.jobs]
     )
     if declared:
-        say(f"onloopd: declared {len(declared)} new or changed schedule(s) from onloopd.yaml")
+        marks = ",".join("?" * len(declared))
+        rows = ledger.select(f"SELECT payload FROM events WHERE seq IN ({marks})", tuple(declared))
+        names = ", ".join(sorted({r["payload"]["id"] for r in rows}))
+        say(f"onloopd: declared {len(declared)} new or changed schedule(s): {names}")
     if sources.declare_setting(ledger, "heartbeat_schedule", cfg.watch.heartbeat_schedule):
         say(f"onloopd: heartbeat_schedule is now {cfg.watch.heartbeat_schedule or 'not set'}")
     reader = LockedReader(cfg.ledger)

@@ -115,7 +115,7 @@ export interface FlowModel {
   edges: FlowEdge[];
   resources: FlowResource[];
   waits: FlowWait[];
-  constraint: { node: string; on_kind: string; downstream_wait_s: number; cards: string[] } | null;
+  constraint: { node: string; on_kind: string; on_ref: string; waiters: number; direct_wait_s: number; downstream_wait_s: number; cards: string[] } | null;
   /** The one count of "waiting on you" (finding #20): the open task list, the same number as Now's. */
   waiting_on_you: { count: number; task_ids: string[]; cards: string[] };
   schedules: { id: string; name: string; period: string | null; last_result_at: string | null; last_success: string | null; next_due: string | null }[];

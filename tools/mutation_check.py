@@ -1517,6 +1517,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_agreement.py::test_they_agree_when_some_asks_are_not_cards_on_the_canvas"],
     ),
     (
+        "Flow's constraint counts the cards behind it, not what Now counts (finding #20)",
+        "src/onloop/report/views.py",
+        '            "waiters": len(con["waiters"]),',
+        '            "waiters": len(down),',
+        [
+            "tests/test_agreement.py::test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same"
+        ],
+    ),
+    (
         "onloopd's own gap counts as the team's activity (finding #14)",
         "src/onloop/tasks.py",
         "FROM events WHERE source <> 'config'\")",

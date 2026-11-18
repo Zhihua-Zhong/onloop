@@ -748,9 +748,13 @@ def flow(ledger: Any, now_ts: str) -> dict[str, Any]:
         ref = "human" if con["on_kind"] == "human" else con["on_ref"]
         flat = [{**w, "on_ref": "human" if w["on_kind"] == "human" else w["on_ref"]} for w in waits]
         down = _downstream(ref, flat, depends, set(zones_of))
+        # `waiters` is the count Now's banner says (finding #20); `cards` only highlights the canvas
         highlight = {
             "node": ref,
             "on_kind": con["on_kind"],
+            "on_ref": con["on_ref"],
+            "waiters": len(con["waiters"]),
+            "direct_wait_s": con["direct_wait_s"],
             "downstream_wait_s": con["downstream_wait_s"],
             "cards": sorted(down),
         }
