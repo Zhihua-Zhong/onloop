@@ -65,9 +65,24 @@ def test_the_map_api_serves_zoom_0(server):
     assert body["legend"][0] == {"colour": "red", "shape": "!", "label": "jammed"}
 
 
-def test_a_deeper_path_is_refused_in_plain_words_until_zoom_1_ships(server):
-    status, body = _get(server, "/api/map?path=goal:release-plan")
-    assert status == 400 and "zoom 1 comes next" in body["error"]
+def test_each_level_has_its_own_path(server):
+    status, z1 = _get(server, "/api/map?path=goal:release-plan")
+    assert (
+        status == 200
+        and z1["level"] == 1
+        and [s["stage"] for s in z1["stages"]] == ["to do", "in progress", "done"]
+    )
+    status, z2 = _get(server, "/api/map?path=changes/review")
+    assert status == 200 and z2["level"] == 2 and z2["holders"]
+
+
+def test_a_path_that_names_nothing_is_refused_in_plain_words(server):
+    status, body = _get(server, "/api/map?path=goal:nowhere")
+    assert status == 404 and "no goal 'goal:nowhere'" in body["error"]
+    status, body = _get(server, "/api/map?path=changes/nowhere")
+    assert status == 404 and "no stage 'nowhere'" in body["error"]
+    status, body = _get(server, "/api/map?path=changes/review/builder")
+    assert status == 404 and "zoom 3" in body["error"]
 
 
 def test_onloopd_yaml_sets_the_stuck_thresholds_in_hours():

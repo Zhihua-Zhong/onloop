@@ -1736,8 +1736,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map: a block's colour typed by hand, not computed from its children",
         "src/onloop/derive.py",
-        '    colour = worst([lf["colour"] for lf in leaves])',
-        '    colour = "moving"',
+        '    colour = worst([lf["colour"] for lf in leaves])\n    return {',
+        '    colour = "moving"\n    return {',
         ["tests/test_map_zoom0.py::test_every_blocks_colour_is_computed_from_its_leaves_never_typed"],
     ),
     (
@@ -1795,6 +1795,45 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         '  return (q) => (q.state.status === "error" ? RETRY_WHILE_DOWN_MS : normalMs);',
         "  return () => normalMs;",
         ["tests/test_web_units.py::test_a_view_recovers_when_onloopd_comes_back"],
+    ),
+    (
+        "the map, zoom 1: a stage's colour is its first item's, not the worst of its items",
+        "src/onloop/derive.py",
+        '    colour = worst([lf["colour"] for lf in leaves]) if leaves else None',
+        '    colour = leaves[0]["colour"] if leaves else None',
+        [
+            "tests/test_map_levels.py::test_a_stage_is_the_worst_of_its_items_and_a_block_the_worst_of_its_stages"
+        ],
+    ),
+    (
+        "the map, zoom 1: a stage with no evidence is counted, not shown as not reported (Q24)",
+        "src/onloop/derive.py",
+        '            _stage_entry(n, [lf for lf in leaves if lf.get("stage") == n], rep.get(n, True))',
+        '            _stage_entry(n, [lf for lf in leaves if lf.get("stage") == n], True)',
+        ["tests/test_map_levels.py::test_a_stage_with_no_evidence_is_not_reported_at_zoom_1_never_zero"],
+    ),
+    (
+        "the map, zoom 1: a skipped check run is listed by name (the lead's ruling)",
+        "src/onloop/derive.py",
+        "    failed = sorted(n for n, c in latest.items() if c in FAILED)",
+        '    failed = sorted(n for n, c in latest.items() if c in (*FAILED, "skipped"))',
+        [
+            "tests/test_map_levels.py::test_skipped_runs_are_counted_never_named_and_a_failed_check_is_named_as_recorded"
+        ],
+    ),
+    (
+        "the map, zoom 2: an item is lost from its holder, so the holders do not add up to the stage",
+        "src/onloop/derive.py",
+        '    for lf in st["leaves"]:',
+        '    for lf in st["leaves"][1:]:',
+        ["tests/test_map_levels.py::test_every_item_is_in_exactly_one_stage_and_one_holder"],
+    ),
+    (
+        "block.turned is logged on every tick, not only when a block changes colour",
+        "src/onloop/detect/blocks.py",
+        "        if frm == to:",
+        "        if False:",
+        ["tests/test_map_levels.py::test_a_block_that_changes_colour_turns_once"],
     ),
     (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",

@@ -254,7 +254,7 @@ def _checklists(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, in
             key = f"{g['id']}/{it['number']}"
             title = f"item {it['number']}"
             if it["checked"]:
-                leaves.append(_leaf(key, title, "done"))
+                leaves.append(_leaf(key, title, "done", stage="done"))
                 continue
             task = mine.get(key)
             moved = ledger.select(
@@ -264,15 +264,26 @@ def _checklists(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, in
             if task:
                 why = f"{task.get('effect') or task.get('title')}, {plain_age(task['age_s'])}"
                 leaves.append(
-                    _leaf(key, title, "amber", who="you", why=why, age_s=task["age_s"], task_backed=True)
+                    _leaf(
+                        key,
+                        title,
+                        "amber",
+                        stage="in progress",
+                        who="you",
+                        why=why,
+                        age_s=task["age_s"],
+                        task_backed=True,
+                    )
                 )
             elif moved:
                 age = _secs(moved, now)
                 colour = "red" if age > stuck["checklist"] else "moving"
                 why = f"no move for {plain_age(age)} on {title}"
-                leaves.append(_leaf(key, title, colour, who="the team", why=why, age_s=age))
+                leaves.append(
+                    _leaf(key, title, colour, stage="in progress", who="the team", why=why, age_s=age)
+                )
             else:
-                leaves.append(_leaf(key, title, "grey"))
+                leaves.append(_leaf(key, title, "grey", stage="to do"))
         done = sum(1 for lf in leaves if lf["colour"] == "done")
         of = den[0]["count"] if den else len(items)
         bar = {
@@ -588,3 +599,240 @@ def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[st
         "thresholds_s": stuck,
         "legend": [{"colour": c, "shape": SHAPES[c], "label": LABELS[c]} for c in (*COLOURS, "done")],
     }
+
+
+# -- the map, zoom 1 and zoom 2 (decision 0018; the overview plan's §12.2) ---------------------------------------------
+
+CHECKLIST_STAGES = ("to do", "in progress", "done")
+FEEDBACK_STAGES = ("given", "researched", "specified", "spec accepted", "built", "shown", "accepted")
+MERGED_WINDOW_S = 7 * 86400  # zoom 1's "merged" stage: the changes merged in the data's last week
+FAILED = ("failure", "timed_out", "cancelled", "action_required", "startup_failure")
+
+
+class MapPathError(LookupError):
+    """A map path that names no block or stage: the sentence says which."""
+
+
+def check_summary(ledger: Any, pr: str) -> dict[str, Any] | None:
+    """A change's checks, by the lead's ruling: skipped runs are counted, never named; a name appears only for a check
+    that failed or is still running, exactly as recorded (a skipped run's name can be an unexpanded `${{ … }}`). The
+    latest run of each check counts."""
+    rows = ledger.select(
+        "SELECT payload, COALESCE(at, ts_system) AS t FROM events WHERE kind = 'check.completed' AND subject_ref = ? "
+        "ORDER BY t",
+        (pr,),
+    )
+    if not rows:
+        return None
+    import json
+
+    latest: dict[str, str | None] = {}
+    for r in rows:
+        p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"])
+        latest[str(p.get("name"))] = p.get("conclusion")
+    passed = sum(1 for c in latest.values() if c in ("success", "neutral"))
+    skipped = sum(1 for c in latest.values() if c == "skipped")
+    failed = sorted(n for n, c in latest.items() if c in FAILED)
+    running = sorted(n for n, c in latest.items() if not c)
+    parts = []
+    if failed:  # named, exactly as recorded
+        parts.append(f"{len(failed)} failed ({', '.join(failed)})")
+    if running:
+        parts.append(f"{len(running)} running ({', '.join(running)})")
+    if passed:
+        parts.append(f"{passed} passed")
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    return {
+        "passed": passed,
+        "skipped": skipped,
+        "failed": failed,
+        "running": running,
+        "text": "checks: " + (" · ".join(parts) or "none finished"),
+    }
+
+
+def _stage_entry(name: str, leaves: list[dict[str, Any]], reported: bool = True) -> dict[str, Any]:
+    if not reported:
+        return {
+            "stage": name,
+            "reported": False,
+            "count": None,
+            "colour": None,
+            "shape": None,
+            "label": None,
+            "tally_text": "not reported by this team's export",
+            "reason": None,
+            "oldest": None,
+            "leaves": [],
+        }
+    colour = worst([lf["colour"] for lf in leaves]) if leaves else None
+    oldest = max(leaves, key=lambda lf: (lf.get("age_s") or 0, lf["id"])) if leaves else None
+    return {
+        "stage": name,
+        "reported": True,
+        "count": len(leaves),
+        "colour": colour,
+        "shape": SHAPES[colour] if colour else None,
+        "label": _label(colour, leaves) if colour else "empty",
+        "tally_text": tally_text(leaves) if leaves else "empty",
+        "reason": _reason(colour, leaves) if colour else None,
+        "oldest": {
+            "id": oldest["id"],
+            "age_s": oldest.get("age_s"),
+            "age_text": plain_age(oldest.get("age_s"), bool(oldest.get("lower_bound"))),
+            "lower_bound": bool(oldest.get("lower_bound")),
+        }
+        if oldest and oldest.get("age_s") is not None
+        else None,
+        "leaves": leaves,
+    }
+
+
+def _merged(ledger: Any, now: str) -> list[dict[str, Any]]:
+    from . import events as ev
+
+    since = ev.shift_ts(_data_as_of(ledger) or now, -MERGED_WINDOW_S)
+    rows = ledger.select(
+        "SELECT e.subject_ref AS pr, max(COALESCE(e.at, e.ts_system)) AS t, i.title FROM events e "
+        "LEFT JOIN items i ON i.id = e.subject_ref WHERE e.kind = 'pr.merged' AND COALESCE(e.at, e.ts_system) >= ? "
+        "GROUP BY e.subject_ref ORDER BY t DESC",
+        (since,),
+    )
+    return [
+        _leaf(r["pr"], r["title"] or f"change {r['pr']}", "done", stage="merged", age_s=_secs(r["t"], now))
+        for r in rows
+    ]
+
+
+def _find_block(z: dict[str, Any], block_id: str) -> dict[str, Any]:
+    b = next((b for b in z["blocks"] if b["id"] == block_id), None)
+    if b is None:
+        raise MapPathError(f"no goal {block_id!r} on the map")
+    return b
+
+
+def stages_of(ledger: Any, now: str, b: dict[str, Any]) -> list[dict[str, Any]]:
+    import json
+
+    leaves = b["leaves"]
+    if b["kind"] == "checklist":
+        return [_stage_entry(n, [lf for lf in leaves if lf.get("stage") == n]) for n in CHECKLIST_STAGES]
+    if b["kind"] == "changes":
+        rep = {s["stage"]: s["reported"] for s in b.get("stages") or []}
+        for lf in leaves:
+            if lf["id"].startswith("pr#"):
+                lf["checks"] = check_summary(ledger, lf["id"])
+        out = [
+            _stage_entry(n, [lf for lf in leaves if lf.get("stage") == n], rep.get(n, True))
+            for n in CHANGE_STAGES
+        ]
+        return [*out, _stage_entry("merged", _merged(ledger, now))]
+    batch = ledger.select("SELECT stages FROM feedback_batches WHERE id = ?", (b["id"].split(":", 1)[1],))
+    team = json.loads(batch[0]["stages"]) if batch and batch[0]["stages"] else None
+    names = [*team, "accepted"] if team else list(FEEDBACK_STAGES)
+    out = [_stage_entry(n, [lf for lf in leaves if lf.get("stage") == n]) for n in names]
+    known = set(names)
+    other = [lf for lf in leaves if lf.get("stage") not in known]
+    if other:  # a stage the team declared outside its own list is shown, never dropped
+        out.append(_stage_entry("other", other))
+    return out
+
+
+def zoom1(ledger: Any, now: str, block_id: str, stuck: dict[str, int] | None = None) -> dict[str, Any]:
+    """One goal's stages, in order: each with its count, colour, oldest item and, when red or amber, why."""
+    z = zoom0(ledger, now, stuck)
+    b = _find_block(z, block_id)
+    stages = stages_of(ledger, now, b)
+    return {
+        "now": now,
+        "level": 1,
+        "path": [block_id],
+        "data_as_of": z["data_as_of"],
+        "signals": z["signals"],
+        "block": {k: v for k, v in b.items() if k != "leaves"},
+        "stages": stages,
+        "thresholds_s": z["thresholds_s"],
+        "legend": z["legend"],
+    }
+
+
+def _holder(lf: dict[str, Any]) -> tuple[str, str]:
+    who = lf.get("who")
+    if who == "you":
+        return "you", "you"
+    if who == MARKED:
+        return "you, as the team marks it", "marked"
+    if not who or who == "the team":
+        return "the team", "team"
+    return who, "role"
+
+
+def _link(block: dict[str, Any], lf: dict[str, Any]) -> dict[str, str]:
+    if lf.get("task_backed") or lf.get("who") == "you":
+        return {"kind": "your task", "view": "now", "ref": lf["id"]}
+    if lf["id"].startswith("pr#"):
+        return {"kind": "the change", "view": "audit", "ref": lf["id"]}
+    if block["kind"] == "checklist":
+        return {"kind": "the goal's history", "view": "audit", "ref": block["id"]}
+    return {"kind": "the item's history", "view": "audit", "ref": lf["id"]}
+
+
+def zoom2(
+    ledger: Any, now: str, block_id: str, stage: str, stuck: dict[str, int] | None = None
+) -> dict[str, Any]:
+    """Who holds each item in one stage: the person, the team or a role, with what it waits on and since when."""
+    z1 = zoom1(ledger, now, block_id, stuck)
+    st = next((s for s in z1["stages"] if s["stage"] == stage), None)
+    if st is None:
+        raise MapPathError(f"no stage {stage!r} in {z1['block']['title']}")
+    groups: dict[str, dict[str, Any]] = {}
+    for lf in st["leaves"]:
+        name, kind = _holder(lf)
+        g = groups.setdefault(name, {"holder": name, "kind": kind, "items": []})
+        g["items"].append(
+            {
+                **lf,
+                "age_text": plain_age(lf.get("age_s"), bool(lf.get("lower_bound")))
+                if lf.get("age_s") is not None
+                else None,
+                "link": _link(z1["block"], lf),
+            }
+        )
+    holders = []
+    for g in groups.values():
+        colour = worst([i["colour"] for i in g["items"]])
+        holders.append(
+            {
+                **g,
+                "count": len(g["items"]),
+                "colour": colour,
+                "shape": SHAPES[colour],
+                "tally_text": tally_text(g["items"]),
+                "oldest_s": max((i.get("age_s") or 0) for i in g["items"]),
+            }
+        )
+    holders.sort(key=lambda h: (([*COLOURS, "done"]).index(h["colour"]), -h["oldest_s"], h["holder"]))
+    return {
+        "now": now,
+        "level": 2,
+        "path": [block_id, stage],
+        "data_as_of": z1["data_as_of"],
+        "signals": z1["signals"],
+        "block": z1["block"],
+        "stage": {k: v for k, v in st.items() if k != "leaves"},
+        "holders": holders,
+        "thresholds_s": z1["thresholds_s"],
+        "legend": z1["legend"],
+    }
+
+
+def map_level(ledger: Any, now: str, path: list[str], stuck: dict[str, int] | None = None) -> dict[str, Any]:
+    """GET /api/map?path=<goal>/<stage>: one level per call."""
+    if not path:
+        return zoom0(ledger, now, stuck)
+    if len(path) == 1:
+        return zoom1(ledger, now, path[0], stuck)
+    if len(path) == 2:
+        return zoom2(ledger, now, path[0], path[1], stuck)
+    raise MapPathError("zoom 3 (a role's turns) and zoom 4 (a turn's tool calls) come with the tool events")

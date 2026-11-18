@@ -178,6 +178,14 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
             res.errors.append(f"{step}: {type(e).__name__}: {e}"[:300])
     rep = detect.run(ledger, cfg.detectors if cfg.detectors is not None else DETECTORS, now)
     res.errors += [f"detector {e}" for e in rep.errors]
+    try:  # the map's colours, after the detectors: a block that changed colour is one block.turned event
+        from ..detect import blocks
+
+        turned = blocks.turn(ledger, now)
+        if turned:
+            res.detected["block_turned"] = turned
+    except Exception as e:  # noqa: BLE001 - the map's colours failing must not stop the tick
+        res.errors.append(f"block.turned: {type(e).__name__}: {e}"[:300])
     res.detected.update({k: v for k, v in rep.as_dict().items() if k != "errors"})
     res.detected = {k: v for k, v in res.detected.items() if v}
     return res
