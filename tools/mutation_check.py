@@ -1540,6 +1540,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_contract.py::test_an_imported_turn_has_the_id_the_live_hook_would_give_it"],
     ),
     (
+        "a reviewer who is no declared role is let in (a login)",
+        "src/onloop/contract/reader.py",
+        '        if key and r["data"][key] not in roles:',
+        "        if False:",
+        ["tests/test_contract.py::test_a_login_shaped_reviewer_is_refused_and_never_printed"],
+    ),
+    (
+        "a 1.1 record type is read in a 1.0 snapshot",
+        "src/onloop/contract/reader.py",
+        '        if not found and SINCE.get(rec["type"], 0) > minor:',
+        "        if False:",
+        ["tests/test_contract.py::test_a_1_1_type_in_a_1_0_snapshot_is_refused"],
+    ),
+    (
         "a raw outcome line is a task's title (finding #26)",
         "src/onloop/tasks.py",
         '    if title and not str(title).startswith("outcome:"):',

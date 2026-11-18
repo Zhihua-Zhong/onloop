@@ -12,7 +12,9 @@ All notable changes to this project are recorded here. The format follows
   read-only. `onloop import snapshot <folder> --ledger <ledger>` reads `snapshots/<UTC time>/` (manifest last), checks
   every record against the v1 schemas and the privacy rules, imports each file whole or not at all, and prints counts,
   never values. v1 reads roles, ended turns, pull requests (opened, merged, closed), goal checklist revisions, and
-  feedback batches, items and links (an item's stage as the team reports it). Ledger schema 8 adds the `import` source and a turn's start time.
+  feedback batches, items and links (an item's stage as the team reports it). Contract 1.1 adds check runs, verdicts
+  (by role, never a login; a short code, never a body) and who a pull request waits on. A wait on the person is a
+  task on their list, and a wait ends only when the export clears it. Ledger schema 8 adds the `import` source and a turn's start time.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
   sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
   hours or 7 days, with a table view. It works without outcome lines.

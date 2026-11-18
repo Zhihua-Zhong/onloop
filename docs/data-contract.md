@@ -21,6 +21,25 @@ how long, how busy each hour was, and how many roles worked at once.
 - **Feedback:** a batch with its stages, each item's stage as your team sees it today, and the issue each item links
   to. onloop shows that stage as reported by your team.
 
+## Contract 1.1: checks, verdicts, and who a change waits on
+
+Send these only once your manifest says `"contract": "1.1"`.
+
+```json
+{"type": "onloop.pr.checks", "data": {"number": 12, "head_sha": "<40 hex>", "check": "unit tests", "conclusion": "success", "started_at": "2026-11-16T09:01:00.000Z", "completed_at": "2026-11-16T09:07:30.000Z"}, …}
+{"type": "onloop.pr.reviewed", "data": {"number": 12, "head_sha": "<40 hex>", "reviewer": "reviewer", "verdict": "READY", "at": "2026-11-16T10:02:00.000Z"}, …}
+{"type": "onloop.wait.opened", "data": {"on": "pr:12", "waits_on": "human", "waits_for": "approve", "since": "2026-11-16T10:05:00.000Z"}, …}
+{"type": "onloop.wait.cleared", "data": {"on": "pr:12", "waits_on": "human", "since": "2026-11-16T10:05:00.000Z", "cleared_at": "2026-11-17T08:30:00.000Z"}, …}
+```
+
+(`…` is the same envelope as every other record.)
+
+- **A reviewer or a waiter** is one of your role names, `human` or `team`. Never a login: onloop refuses a name that
+  is not a declared role.
+- **A verdict** is a short code such as `READY`, `HOLD` or `NOT READY`. Never the text of a review.
+- **Repeat an open wait** in every export, with the same id. Only `wait.cleared` ends it: a wait you stop listing
+  stays open.
+
 ## Where to put it
 
 Put one folder per export, named by its time in UTC, inside a `snapshots` folder:

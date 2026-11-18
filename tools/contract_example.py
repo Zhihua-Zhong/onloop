@@ -71,7 +71,9 @@ def turns(rng: random.Random, start: dt.datetime, end: dt.datetime, n: int) -> l
     return sorted(out, key=lambda t: t["time"])
 
 
-def write(out: pathlib.Path, end: dt.datetime, days: int, n: int, seed: int) -> list[pathlib.Path]:
+def write(
+    out: pathlib.Path, end: dt.datetime, days: int, n: int, seed: int, contract: str = "1.0"
+) -> list[pathlib.Path]:
     rng = random.Random(seed)
     first = end - dt.timedelta(days=days + 1)
     all_turns = turns(rng, first, end, n)
@@ -90,6 +92,8 @@ def write(out: pathlib.Path, end: dt.datetime, days: int, n: int, seed: int) -> 
                 data["started_at"] = _ts(t["started_at"])
                 lines.append(_record("onloop.turn.ended", t["prompt_id"], t["time"], export, data))
         lines += _work(first, frm, to, export, d)
+        if contract != "1.0":
+            lines += _work_1_1(first, frm, to, export)
         body = ("\n".join(json.dumps(x, sort_keys=True) for x in lines) + "\n").encode("utf-8")
         counts: dict[str, int] = {}
         for x in lines:
@@ -99,7 +103,7 @@ def write(out: pathlib.Path, end: dt.datetime, days: int, n: int, seed: int) -> 
         folder.mkdir(parents=True, exist_ok=False)
         (folder / "events.jsonl").write_bytes(body)
         manifest = {
-            "contract": "1.0",
+            "contract": contract,
             "exporttime": _ts(export),
             "producer": PRODUCER,
             "window": {"from": _ts(frm), "to": _ts(to)},
@@ -112,6 +116,54 @@ def write(out: pathlib.Path, end: dt.datetime, days: int, n: int, seed: int) -> 
         )
         folders.append(folder)
     return folders
+
+
+def _work_1_1(first: dt.datetime, frm: dt.datetime, to: dt.datetime, export: dt.datetime) -> list[dict]:
+    """Contract 1.1, made up: check runs and verdicts on PRs 1-12, and who three PRs wait on. PR 3 waits on the person
+    to approve, from the first day, and is never cleared; PR 4 waits on the builder for a rebase, cleared on the second
+    day; PR 5 waits on the team for a verdict."""
+    out = []
+    for n in range(1, 13):
+        opened = first + dt.timedelta(hours=5 * n)
+        sha = hashlib.sha256(f"pr{n}".encode()).hexdigest()[:40]
+        ran = opened + dt.timedelta(minutes=20)
+        if frm <= ran < to:
+            check = {
+                "number": n,
+                "head_sha": sha,
+                "check": "unit tests",
+                "conclusion": "failure" if n % 5 == 0 else "success",
+                "started_at": _ts(opened + dt.timedelta(minutes=5)),
+                "completed_at": _ts(ran),
+            }
+            out.append(_record("onloop.pr.checks", f"pr-{n}-check-{_ts(ran)}", ran, export, check, f"pr-{n}"))
+        said = opened + dt.timedelta(hours=1)
+        if frm <= said < to:
+            verdict = {
+                "number": n,
+                "head_sha": sha,
+                "reviewer": "reviewer",
+                "verdict": "READY",
+                "at": _ts(said),
+            }
+            out.append(
+                _record("onloop.pr.reviewed", f"pr-{n}-review-{_ts(said)}", said, export, verdict, f"pr-{n}")
+            )
+    waits = [
+        (3, "human", "approve", first + dt.timedelta(hours=16), None),
+        (4, "builder", "rebase", first + dt.timedelta(hours=21), first + dt.timedelta(days=2, hours=1)),
+        (5, "team", "verdict", first + dt.timedelta(hours=26), None),
+    ]
+    for n, who, why, since, cleared in waits:
+        if since < to:  # an open wait is repeated in every export while it is open
+            data = {"on": f"pr:{n}", "waits_on": who, "waits_for": why, "since": _ts(since)}
+            out.append(_record("onloop.wait.opened", f"wait-{n}-{who}", since, export, data, f"pr-{n}"))
+        if cleared and frm <= cleared < to:
+            data = {"on": f"pr:{n}", "waits_on": who, "since": _ts(since), "cleared_at": _ts(cleared)}
+            out.append(
+                _record("onloop.wait.cleared", f"wait-{n}-{who}-cleared", cleared, export, data, f"pr-{n}")
+            )
+    return out
 
 
 STAGES = ["researched", "specified", "spec accepted", "built", "shown"]
@@ -212,9 +264,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--turns", type=int, default=1000)
     ap.add_argument("--end", default="2026-11-17T02:00:00Z")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--contract", default="1.0", choices=("1.0", "1.1"))
     a = ap.parse_args(argv)
     end = dt.datetime.fromisoformat(a.end.replace("Z", "+00:00"))
-    for f in write(pathlib.Path(a.out), end, a.days, a.turns, a.seed):
+    for f in write(pathlib.Path(a.out), end, a.days, a.turns, a.seed, a.contract):
         print(f)
     return 0
 

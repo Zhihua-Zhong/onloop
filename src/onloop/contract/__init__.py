@@ -17,7 +17,7 @@ from functools import cache
 from importlib import resources
 from typing import Any
 
-CONTRACT = "1.0"
+CONTRACT = "1.1"  # the newest minor this reader knows; it reads 1.0 too
 TYPES = (  # what this reader takes; other types are refused by name
     "onloop.role.declared",
     "onloop.turn.ended",
@@ -28,7 +28,15 @@ TYPES = (  # what this reader takes; other types are refused by name
     "onloop.feedback.batch",
     "onloop.feedback.item",
     "onloop.feedback.link",
+    "onloop.pr.checks",
+    "onloop.pr.reviewed",
+    "onloop.wait.opened",
+    "onloop.wait.cleared",
 )
+# the types each minor version added: a record of a newer type in an older snapshot is refused
+SINCE = {"onloop.pr.checks": 1, "onloop.pr.reviewed": 1, "onloop.wait.opened": 1, "onloop.wait.cleared": 1}
+# who may be named as a reviewer or a waiter, besides the declared roles: never a login
+OWNERS = ("human", "team")
 
 
 @dataclass(frozen=True)

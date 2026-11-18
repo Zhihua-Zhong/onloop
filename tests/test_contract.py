@@ -247,3 +247,107 @@ def test_a_feedback_items_stage_is_reported_by_the_team_and_kept_per_export(tmp_
             "FROM events WHERE kind = 'feedback.item.reported' AND subject_ref = 'feedback:2026-11-14/F1' ORDER BY at"
         )
     assert [s["i"] for s in stamps] == [1, 2] and {s["by"] for s in stamps} == {"team"}
+
+
+@pytest.fixture
+def exchange_1_1(tmp_path):
+    root = tmp_path / "exchange"
+    example.write(root, END, days=2, n=120, seed=5, contract="1.1")
+    (root / "onloop").mkdir()
+    return root
+
+
+def test_contract_1_1_checks_reviews_and_waits_join_the_ledgers_wait_model(exchange_1_1):
+    results = reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))
+    assert {r.status for r in results} == {"imported"}
+    with Ledger(_ledger(exchange_1_1), readonly=True) as led:
+        kinds = {
+            r["kind"]: r["n"] for r in led.select("SELECT kind, count(*) AS n FROM events GROUP BY kind")
+        }
+        waits = {r["id"]: r for r in led.select("SELECT * FROM waits")}
+        tasks = led.select("SELECT origin, ref, effect, stage FROM human_tasks")
+        con = led.constraint(NOW)
+    assert kinds["check.completed"] == 12 and kinds["review.submitted"] == 12
+    human = next(w for w in waits.values() if w["on_kind"] == "human")
+    assert human["item_id"] == "pr#3" and human["cleared_at"] is None
+    rebase = next(w for w in waits.values() if w["on_ref"] == "builder")
+    assert rebase["cleared_at"] is not None  # cleared by its wait.cleared, and only by it
+    team = next(w for w in waits.values() if w["on_ref"] == "team")
+    assert team["cleared_at"] is None
+    # the person's wait is a task on their list, saying what is asked
+    assert tasks == [
+        {
+            "origin": "wait",
+            "ref": "pr#3",
+            "effect": "approve the change (pr#3), so it can move",
+            "stage": "open",
+        }
+    ]
+    assert any(b["on_kind"] == "human" for b in con["bottlenecks"])
+
+
+def test_a_wait_missing_from_a_later_export_stays_open(exchange_1_1):
+    """Only wait.cleared clears a wait: an export that no longer lists it says nothing about it."""
+    first = _snap(exchange_1_1, 0)
+    reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1), only=first.name)
+
+    def drop_waits(lines):
+        lines[:] = [x for x in lines if not x["type"].startswith("onloop.wait.")]
+
+    last = _snap(exchange_1_1)
+    _rewrite(last, drop_waits)
+    m = json.loads((last / "manifest.json").read_text(encoding="utf-8"))
+    counts = m["files"]["events.jsonl"]["counts"]
+    for t in ("onloop.wait.opened", "onloop.wait.cleared"):
+        counts.pop(t, None)
+    (last / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    assert reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))[-1].status == "imported"
+    with Ledger(_ledger(exchange_1_1), readonly=True) as led:
+        open_ = led.select("SELECT on_ref FROM waits WHERE cleared_at IS NULL ORDER BY on_ref")
+    assert [w["on_ref"] for w in open_] == ["builder", "human", "team"]
+
+
+def test_a_1_1_type_in_a_1_0_snapshot_is_refused(exchange_1_1):
+    folder = _snap(exchange_1_1)
+    m = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    m["contract"] = "1.0"
+    (folder / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    result = reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))[-1]
+    assert result.status == "refused"
+    assert any("a contract 1.1 type in a 1.0 snapshot" in p["rule"] for p in result.problems)
+
+
+def test_a_login_shaped_reviewer_is_refused_and_never_printed(exchange_1_1):
+    """A login fits the role-name pattern; only the declared roles tell them apart."""
+
+    def login(lines):
+        r = next(x for x in lines if x["type"] == "onloop.pr.reviewed")
+        r["data"]["reviewer"] = "octocat"
+
+    _rewrite(_snap(exchange_1_1), login)
+    result = reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))[-1]
+    assert result.status == "refused"
+    assert {p["path"] for p in result.problems} == {"/data/reviewer"}
+    assert "octocat" not in (exchange_1_1 / "onloop" / reader.REPORT).read_text(encoding="utf-8")
+
+
+def test_a_body_shaped_verdict_is_refused_and_never_printed(exchange_1_1):
+    body = "Looks good to me, but please split the migration first."
+
+    def chatty(lines):
+        r = next(x for x in lines if x["type"] == "onloop.pr.reviewed")
+        r["data"]["verdict"] = body
+
+    _rewrite(_snap(exchange_1_1), chatty)
+    result = reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))[-1]
+    assert result.status == "refused" and result.problems[0]["path"] == "/data/verdict"
+    assert "split the migration" not in (exchange_1_1 / "onloop" / reader.REPORT).read_text(encoding="utf-8")
+
+
+def test_an_imported_verdict_never_resolves_the_persons_approval_at_the_merge_gate(exchange_1_1):
+    reader.import_snapshots(exchange_1_1, _ledger(exchange_1_1))
+    with Ledger(_ledger(exchange_1_1), readonly=True) as led:
+        gate_done = led.select(
+            "SELECT count(*) AS n FROM human_tasks WHERE origin = 'gate' AND resolution = 'done'"
+        )
+    assert gate_done[0]["n"] == 0

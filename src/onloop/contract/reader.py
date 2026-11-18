@@ -22,10 +22,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import disposition
+from .. import disposition, verdicts
 from .. import events as ev
 from ..overlay.ledger import Ledger
-from . import CONTRACT, TYPES, Problem, check, privacy, schema
+from . import CONTRACT, OWNERS, SINCE, TYPES, Problem, check, privacy, schema
 
 SOURCE = "import"
 REPORT = "import-report.jsonl"
@@ -110,7 +110,7 @@ def to_event(rec: dict[str, Any], producer: str) -> dict[str, Any]:
             "at": at,
             "payload": payload,
         }
-    if kind.startswith("onloop.pr."):
+    if kind in ("onloop.pr.opened", "onloop.pr.merged", "onloop.pr.closed"):
         # One repository per producer: the natural key is (producer, kind, number). The head commit is the PR's head
         # now, not at the event, so it is kept as a fact about the PR and never keys the event.
         pk = kind.removeprefix("onloop.")
@@ -131,6 +131,10 @@ def to_event(rec: dict[str, Any], producer: str) -> dict[str, Any]:
         }
     if kind.startswith("onloop.feedback."):
         return _feedback_event(kind, d, at, imported, producer)
+    if kind in ("onloop.pr.checks", "onloop.pr.reviewed"):
+        return _check_or_review_event(kind, d, at, imported, producer)
+    if kind.startswith("onloop.wait."):
+        return _wait_event(kind, d, at, imported, producer)
     role, session, prompt = d["role"], d["session_id"], d["prompt_id"]
     out: dict[str, Any] = {"role": role, "session_id": session, "prompt_id": prompt, "imported": imported}
     out["grammar"] = disposition.GRAMMAR
@@ -185,6 +189,106 @@ def _feedback_event(kind: str, d: dict[str, Any], at: str, imported: dict, produ
         "actor": None,
         "at": at,
         "payload": {**d, "declared_by": "team", "imported": imported},
+    }
+
+
+def _check_or_review_event(
+    kind: str, d: dict[str, Any], at: str, imported: dict, producer: str
+) -> dict[str, Any]:
+    """A check run or a verdict, as the live GitHub ingest's kinds. An imported verdict is the team's code (READY,
+    HOLD), not the code host's APPROVED, so it never resolves the person's approval at the merge gate."""
+    subject = f"pr#{d['number']}"
+    if kind == "onloop.pr.checks":
+        payload = {
+            "name": d["check"],
+            "conclusion": d["conclusion"],
+            "head": d["head_sha"],
+            "started_at": _norm(d["started_at"]),
+            "completed_at": _norm(d["completed_at"]),
+            "imported": imported,
+        }
+        key = f"{d['check']}/{d['head_sha']}/{_norm(d['completed_at'])}"
+        return {
+            "id": ev.event_id(producer, "check.completed", subject, key),
+            "source": SOURCE,
+            "kind": "check.completed",
+            "subject_ref": subject,
+            "actor": None,
+            "at": at,
+            "payload": payload,
+        }
+    payload = {
+        "author": f"{d['reviewer']}/role",
+        "reviewer_role": d["reviewer"],
+        "state": d["verdict"],
+        "head": d["head_sha"],
+        "commit": d["head_sha"],
+        "imported": imported,
+    }
+    key = f"{d['reviewer']}/{d['head_sha']}/{_norm(d['at'])}"
+    return {
+        "id": ev.event_id(producer, verdicts.KIND, subject, key),
+        "source": SOURCE,
+        "kind": verdicts.KIND,
+        "subject_ref": subject,
+        "actor": d["reviewer"],
+        "at": at,
+        "payload": payload,
+    }
+
+
+WAITS_FOR = {
+    "approve": "approve",
+    "walk": "walk through",
+    "verdict": "give a verdict on",
+    "rebase": "rebase",
+    "deploy-go": "give the go to deploy",
+    "other": "answer on",
+}
+
+
+def _wait_event(kind: str, d: dict[str, Any], at: str, imported: dict, producer: str) -> dict[str, Any]:
+    """Who a pull request waits on, into the ledger's one wait model (the constraint, Now, the task list, the map).
+
+    A wait on the person opens a task on their list. It ends only with `wait.cleared`; a wait missing from a later
+    export stays open. `team` is held as a pseudo-role named "team" until the overview's owner classes (schema 9)."""
+    pr = "pr#" + d["on"].split(":", 1)[1]
+    since = _norm(d["since"])
+    wid = f"import:{pr}/{d['waits_on']}/{since}"
+    if kind == "onloop.wait.cleared":
+        return {
+            "id": ev.event_id(producer, "wait.cleared", pr, f"{d['waits_on']}/{since}"),
+            "source": SOURCE,
+            "kind": "wait.cleared",
+            "subject_ref": pr,
+            "actor": None,
+            "at": at,
+            "payload": {"id": wid, "imported": imported},
+        }
+    human = d["waits_on"] == "human"
+    payload = {
+        "id": wid,
+        "item_id": pr,
+        "waiter": pr,
+        "on_kind": "human" if human else "role",
+        "on_ref": "human" if human else d["waits_on"],
+        "reason": "needs_human" if human else "blocked",
+        "ref": pr,
+        "since": since,
+        "waits_for": d.get("waits_for"),
+        "imported": imported,
+    }
+    if human:
+        verb = WAITS_FOR.get(d.get("waits_for") or "other", "answer on")
+        payload["effect"] = f"{verb} the change ({pr}), so it can move"
+    return {
+        "id": ev.event_id(producer, "wait.opened", pr, f"{d['waits_on']}/{since}"),
+        "source": SOURCE,
+        "kind": "wait.opened",
+        "subject_ref": pr,
+        "actor": None,
+        "at": at,
+        "payload": payload,
     }
 
 
@@ -265,7 +369,7 @@ def _check_record(rec: Any) -> list[Problem]:
 
 
 def _read_file(
-    path: pathlib.Path, want: dict[str, Any], deny
+    path: pathlib.Path, want: dict[str, Any], deny, minor: int = 0, known_roles: frozenset[str] = frozenset()
 ) -> tuple[list[dict[str, Any]], list[dict], dict, int]:
     raw = path.read_bytes()  # read-only; the file is never opened for writing
     problems: list[dict[str, Any]] = []
@@ -282,6 +386,8 @@ def _read_file(
             problems.append({"line": n, "path": "/", "rule": "not JSON"})
             continue
         found = _check_record(rec) or privacy(rec, deny)
+        if not found and SINCE.get(rec["type"], 0) > minor:
+            found = [Problem("/type", f"a contract 1.{SINCE[rec['type']]} type in a 1.{minor} snapshot")]
         if found:
             kind = rec.get("type") if isinstance(rec, dict) and rec.get("type") in TYPES else None
             problems.extend({"line": n, "type": kind, **p.as_dict()} for p in found)
@@ -290,7 +396,34 @@ def _read_file(
         counts[rec["type"]] = counts.get(rec["type"], 0) + 1
     if counts != {k: v for k, v in want["counts"].items() if v}:
         problems.append({"line": None, "path": "/", "rule": "its counts per type differ from the manifest's"})
+    problems.extend(_owner_problems(records, known_roles))
     return records, problems, counts, len(lines)
+
+
+def _owner_problems(records: list[dict[str, Any]], known: frozenset[str]) -> list[dict[str, Any]]:
+    """A reviewer or a waiter is a declared role, `human` or `team`: a login fits the role-name pattern, so only the
+    declared roles tell them apart. Roles declared in the same file count."""
+    roles = (
+        set(known) | {r["data"]["role"] for r in records if r["type"] == "onloop.role.declared"} | set(OWNERS)
+    )
+    out = []
+    for r in records:
+        field = {
+            "onloop.pr.reviewed": "reviewer",
+            "onloop.wait.opened": "waits_on",
+            "onloop.wait.cleared": "waits_on",
+        }
+        key = field.get(r["type"])
+        if key and r["data"][key] not in roles:
+            out.append(
+                {
+                    "line": None,
+                    "type": r["type"],
+                    "path": f"/data/{key}",
+                    "rule": "not a declared role, human or team (a login is never sent)",
+                }
+            )
+    return out
 
 
 def import_snapshots(
@@ -339,7 +472,10 @@ def import_snapshots(
                 )
                 continue
             for fname, want in sorted(manifest["files"].items()):
-                results.append(_import_file(led, folder, name, fname, want, manifest["producer"], deny))
+                minor = int(manifest["contract"].split(".")[1])
+                results.append(
+                    _import_file(led, folder, name, fname, want, manifest["producer"], deny, minor)
+                )
     finally:
         if led is not None:
             led.close()
@@ -352,7 +488,7 @@ def import_snapshots(
     return results
 
 
-def _import_file(led, folder, name, fname, want, producer, deny) -> FileResult:
+def _import_file(led, folder, name, fname, want, producer, deny, minor: int = 0) -> FileResult:
     path = folder / fname
     key = f"{name}/{fname}"
     if not path.exists():
@@ -379,7 +515,8 @@ def _import_file(led, folder, name, fname, want, producer, deny) -> FileResult:
                     }
                 ],
             )
-    records, problems, counts, _ = _read_file(path, want, deny)
+    known = frozenset(r["id"] for r in led.select("SELECT id FROM roles")) if led is not None else frozenset()
+    records, problems, counts, _ = _read_file(path, want, deny, minor, known)
     if problems:
         return FileResult(name, fname, "refused", records=len(records), counts=counts, problems=problems)
     # roles first, then by the time each thing happened: a turn's role exists before the turn

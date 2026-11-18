@@ -43,6 +43,22 @@ only interface is a file export that the customer writes and onloop reads.
      "reported by the team" mark, and flags any disagreement with the stage that links prove.
 
    A type not listed is refused by name. A new key or type comes with a contract version change.
+
+   **Contract 1.1 (2026-11-18)** adds four types. Nothing in 1.0 changes, and the reader reads both versions:
+   - `onloop.pr.checks` (`number`, `head_sha`, `check`, `conclusion`, `started_at`, `completed_at`), logged as the
+     live ingest's `check.completed`. Never a check's log;
+   - `onloop.pr.reviewed` (`number`, `head_sha`, `reviewer`, `verdict`, `at`), logged as `review.submitted`.
+     - The reviewer is a declared role, `human` or `team`, never a login. A login fits the role-name pattern, so
+       the reader refuses any reviewer that is not a declared role.
+     - The verdict is a short code (`A–Z`, `_` and space, at most 24 characters), never a comment body.
+     - An imported verdict never resolves the person's approval at the merge gate; that stays the code host's;
+   - `onloop.wait.opened` (`on: pr:<n>`, `waits_on`, `waits_for`, `since`) and `onloop.wait.cleared`, into the
+     ledger's one wait model (the constraint, Now, the task list and the map).
+     - A wait on the person opens a task on their list ("approve the change (pr#12), so it can move").
+     - A wait is cleared only by `wait.cleared`: one missing from a later export stays open.
+     - `team` is held as a pseudo-role named "team" until the overview's owner classes (schema 9).
+
+   A 1.1 type in a snapshot whose manifest says 1.0 is refused.
 5. **The reader is `onloop import snapshot <folder> --ledger <ledger>`.**
    - It imports each file whole or not at all, and it is idempotent: a cursor per snapshot file and its hash.
    - A file is refused for any of these, and the report names the line, field path and rule, never the value:
