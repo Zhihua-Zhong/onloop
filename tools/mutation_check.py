@@ -1836,6 +1836,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_map_levels.py::test_a_block_that_changes_colour_turns_once"],
     ),
     (
+        "the map: a double-click during the camera's move opens a second level",
+        "web/src/lib/map.ts",
+        "    if (busy) return false;",
+        "    if (false) return false;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map, zoom 1: a chain edge crosses the canvas where a row wraps",
+        "web/src/lib/map.ts",
+        "    if (positions[i].y === positions[i + 1].y) edges.push([i, i + 1]);",
+        "    edges.push([i, i + 1]);",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

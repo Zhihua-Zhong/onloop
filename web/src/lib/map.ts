@@ -209,3 +209,40 @@ export function cardLayout(heights: number[], width: number): GridLayout & { hei
   }
   return { ...g, positions, heights };
 }
+
+// Opening a block (the overview plan's §12.5): the camera moves into it for about 250 ms, then the level opens; with
+// prefers-reduced-motion there is no move. A second open while one is under way (a double-click during the move) is
+// ignored, so a person never lands two levels down by accident.
+export const OPEN_MOVE_MS = 250;
+export function openMoveMs(reducedMotion: boolean): number {
+  return reducedMotion ? 0 : OPEN_MOVE_MS;
+}
+export function createOpener(wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  let busy = false;
+  return async (move: () => void, ms: number, open: () => void): Promise<boolean> => {
+    if (busy) return false;
+    busy = true;
+    try {
+      if (ms > 0) {
+        move();
+        await wait(ms);
+      }
+      open();
+      return true;
+    } finally {
+      busy = false;
+    }
+  };
+}
+
+// The chain between a goal's stages: an edge joins two stages only when they sit in the same row. Where a row wraps,
+// the last stage says what comes next instead of an edge crossing the canvas.
+export function chainLinks(positions: { x: number; y: number }[]): { edges: [number, number][]; wraps: number[] } {
+  const edges: [number, number][] = [];
+  const wraps: number[] = [];
+  for (let i = 0; i + 1 < positions.length; i++) {
+    if (positions[i].y === positions[i + 1].y) edges.push([i, i + 1]);
+    else wraps.push(i);
+  }
+  return { edges, wraps };
+}

@@ -46,6 +46,12 @@ have to ask the agents to explain, piece by piece. Meanwhile the views multiplie
    - Every level has a list form for the keyboard and screen readers.
 6. **The libraries are already in use:** React Flow (MIT) for the viewport and ELK.js (EPL-2.0, unmodified, named in
    `NOTICE`, ruling Q22) for the layered layout.
+
+   **Amended 2026-11-18 (accepted by the lead at 3a9da3a): zoom 0–2 use no ELK.**
+   - Zoom 0 is a fixed grid. Zoom 1 is a single chain of stages, and zoom 2 a set of holders, so the same fixed grid
+     lays out both, at scale 1.
+   - This keeps the map's chunk at about 29 kB; ELK's bundled worker is about 1.4 MB.
+   - ELK stays the option for a flow that branches. Flow uses it today.
 7. **Where the views go.** Flow becomes zoom 1 for changes, and Activity becomes zoom 3, with a team-activity strip
    at zoom 0 for a team without outcome lines (ruling Q29). Both stay until the map covers them, and their removal
    waits on the project lead. Now stays as the person's inbox.

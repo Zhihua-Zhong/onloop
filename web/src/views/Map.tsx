@@ -7,6 +7,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
   useStore,
   type Edge,
   type Node,
@@ -21,8 +22,11 @@ import { href } from "@/lib/route";
 import {
   BLOCK_H,
   cardLayout,
+  chainLinks,
+  createOpener,
   isReserved,
   nextPath,
+  openMoveMs,
   phoneOrder,
   showsOpenHint,
   thresholdsText,
@@ -240,7 +244,7 @@ function Stages({ b }: { b: MapBlock }) {
   );
 }
 
-function BlockCard({ b, onOpen, hint = false, inCanvas = false, className }: { b: MapBlock; onOpen: () => void; hint?: boolean; inCanvas?: boolean; className?: string }) {
+function BlockCard({ b, onOpen, hint = false, className }: { b: MapBlock; onOpen: () => void; hint?: boolean; className?: string }) {
   const t = TONE_OF[b.colour];
   const notReported = b.stages?.filter((s) => !s.reported).map((s) => s.stage) ?? [];
   return (
@@ -256,7 +260,7 @@ function BlockCard({ b, onOpen, hint = false, inCanvas = false, className }: { b
           onOpen();
         }
       }}
-      onDoubleClick={inCanvas ? undefined : onOpen}
+      onDoubleClick={onOpen}
       className={cn(
         "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent",
         tone(t).edge,
@@ -293,14 +297,40 @@ function BlockCard({ b, onOpen, hint = false, inCanvas = false, className }: { b
   );
 }
 
-type CardData = { render: (hint: boolean) => ReactNode; onOpen?: () => void; chain: boolean };
+type Opener = ReturnType<typeof createOpener>;
+type CardData = {
+  render: (hint: boolean, open?: () => void) => ReactNode;
+  onOpen?: () => void;
+  chain: boolean;
+  next?: string; // where a row wraps: what comes next, instead of an edge across the canvas
+  opener: Opener;
+};
 
-const CardNode = memo(function CardNode({ data }: NodeProps<Node<CardData>>) {
+const REDUCED = "(prefers-reduced-motion: reduce)";
+
+const CardNode = memo(function CardNode({ id, data, width, height }: NodeProps<Node<CardData>>) {
   const zoom = useStore((s) => s.transform[2]);
+  const rf = useReactFlow();
+  const open = data.onOpen
+    ? () => {
+        const ms = openMoveMs(window.matchMedia?.(REDUCED).matches ?? false);
+        const n = rf.getNode(id);
+        void data.opener(
+          () => n && rf.fitBounds({ x: n.position.x, y: n.position.y, width: width ?? 0, height: height ?? 0 }, { duration: ms, padding: 0.04 }),
+          ms,
+          data.onOpen as () => void,
+        );
+      }
+    : undefined;
   return (
     <>
       {data.chain && <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />}
-      {data.render(showsOpenHint(zoom) && !!data.onOpen)}
+      {data.render(showsOpenHint(zoom) && !!open, open)}
+      {data.next && (
+        <span className="absolute -bottom-5 right-2 text-xs text-muted" data-testid="chain-next">
+          then: {data.next} ↓
+        </span>
+      )}
       {data.chain && <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" />}
     </>
   );
@@ -310,7 +340,8 @@ const nodeTypes = { card: CardNode };
 interface CanvasCard {
   id: string;
   height: number;
-  render: (hint: boolean) => ReactNode;
+  label?: string;
+  render: (hint: boolean, open?: () => void) => ReactNode;
   onOpen?: () => void;
 }
 
@@ -394,9 +425,11 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
   const [box, width] = useWidthOf<HTMLDivElement>();
   const heights = cards.map((c) => c.height);
   const grid = useMemo(() => cardLayout(heights, width), [heights.join(","), width]); // eslint-disable-line react-hooks/exhaustive-deps
+  const opener = useMemo(() => createOpener(), []);
+  const links = useMemo(() => (chain ? chainLinks(grid.positions) : { edges: [], wraps: [] }), [chain, grid]);
   const edges = useMemo<Edge[]>(
-    () => (chain ? cards.slice(1).map((c, i) => ({ id: `chain:${i}`, source: cards[i].id, target: c.id, type: "smoothstep", focusable: false })) : []),
-    [cards, chain],
+    () => links.edges.map(([a, b]) => ({ id: `chain:${a}`, source: cards[a].id, target: cards[b].id, type: "smoothstep", focusable: false })),
+    [cards, links],
   );
   const nodes = useMemo<Node<CardData>[]>(
     () =>
@@ -404,7 +437,13 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
         id: c.id,
         type: "card",
         position: grid.positions[i],
-        data: { render: c.render, onOpen: c.onOpen, chain },
+        data: {
+          render: c.render,
+          onOpen: c.onOpen,
+          chain,
+          opener,
+          next: links.wraps.includes(i) ? cards[i + 1]?.label : undefined,
+        },
         draggable: false,
         selectable: false,
         focusable: false, // the block itself is the one Tab stop, in reading order
@@ -412,7 +451,7 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
         // title, Open hint and double-click need them, and a node's own style wins
         style: { width: grid.blockW, height: c.height, pointerEvents: "all" },
       })),
-    [cards, grid, chain],
+    [cards, grid, chain, opener, links],
   );
   return (
     <div
@@ -435,7 +474,6 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
           zoomOnPinch
           panOnDrag
           zoomOnDoubleClick={false}
-          onNodeDoubleClick={(_, n) => (n.data as CardData).onOpen?.()}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
@@ -560,7 +598,7 @@ function Zoom0({ m, table }: { m: MapModel; table: boolean }) {
               id: b.id,
               height: BLOCK_H,
               onOpen: open(b),
-              render: (hint: boolean) => <BlockCard b={b} onOpen={open(b)} hint={hint} inCanvas />,
+              render: (hint: boolean, through?: () => void) => <BlockCard b={b} onOpen={through ?? open(b)} hint={hint} />,
             }))}
           />
           <aside className="flex w-80 shrink-0 flex-col gap-5 overflow-y-auto" aria-label="Waits and legend">
@@ -615,6 +653,7 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
           onOpen();
         }
       }}
+      onDoubleClick={onOpen}
       className={cn(
         "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line px-3.5 py-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent",
         s.reported ? "bg-surface" : "map-hatch border-dashed",
@@ -716,9 +755,10 @@ function Zoom1({ m, table }: { m: Zoom1Model; table: boolean }) {
             chain
             cards={m.stages.map((s) => ({
               id: `stage:${s.stage}`,
+              label: s.stage,
               height: stageHeight(s),
               onOpen: open(s),
-              render: (hint: boolean) => <StageCard s={s} onOpen={open(s)} hint={hint} />,
+              render: (hint: boolean, through?: () => void) => <StageCard s={s} onOpen={through ?? open(s)} hint={hint} />,
             }))}
           />
           <aside className="flex w-80 shrink-0 flex-col gap-5 overflow-y-auto" aria-label="Legend">
