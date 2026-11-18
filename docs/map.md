@@ -101,7 +101,7 @@ A path that names nothing is a 404 with a plain sentence.
 
 ## Known limits in 0.5.0
 
-- **"The team" as a holder.** A change that waits on nobody is held by the role that opened it. A team's export says
-  that role with contract 1.2's `by` (see [data-contract.md](data-contract.md)). With an older export, or with
-  `by: team`, the map can only say "the team".
+- **Who holds a change that waits on nobody** depends on the export. When it sends `by` (contract 1.2, see
+  [data-contract.md](data-contract.md)), the change is held by its role, such as "builder". Only without
+  `by`, from a 1.0 or 1.1 export, or with `by: team`, is it held by "the team".
 - **Zoom 3 and 4** wait for the tool events.
