@@ -184,7 +184,7 @@ def _open_change(tmp_path, by):
 
 @pytest.mark.parametrize(
     ("by", "holder"),
-    [("platform", "platform"), (None, "the team"), ("team", "the team"), ("human", "you (opened it)")],
+    [("docs-writer", "docs-writer"), (None, "the team"), ("team", "the team"), ("human", "you (opened it)")],
 )
 def test_a_change_that_waits_on_nobody_is_held_by_the_role_that_opened_it(tmp_path, by, holder):
     path = _open_change(tmp_path, by)
