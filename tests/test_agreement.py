@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from onloop import tasks
+from onloop import derive, tasks
 from onloop.contract import reader
 from onloop.overlay.ledger import Ledger
 from onloop.report import views
@@ -27,7 +27,11 @@ def _counts(led, now):
     f = views.flow(led, now)
     t = views.tasks_view(led, now)
     human = next((r for r in f["resources"] if r["id"] == "human"), None)
+    z = derive.zoom0(led, now)
+    you = next((w for w in z["waits"] if w["holder"] == "you"), None)
     return {
+        "map_signal": z["signals"]["waiting_on_you"],
+        "map_you_row": you["count"] if you else 0,
         "now": len(n["waiting_on_you"]),
         "flow": f["waiting_on_you"]["count"],
         "flow_you_node": human["waiting"] if human else f["waiting_on_you"]["count"],
@@ -108,6 +112,11 @@ def test_now_flow_and_the_task_list_agree_on_the_generic_replay(replay_path):
         f = views.flow(led, REPLAY_NOW)
     assert len(set(c.values())) == 1 and c["now"] > 0, c
     assert (n["constraint"] is None) == (f["constraint"] is None)
+    with Ledger(replay_path, readonly=True) as led:
+        z = derive.zoom0(led, REPLAY_NOW)
+        refs = {t["ref"] for t in tasks.open_tasks(led, REPLAY_NOW)}
+    leaves = {lf["id"]: lf for b in z["blocks"] for lf in b["leaves"]}
+    assert refs & set(leaves) and all(leaves[r]["colour"] == "amber" for r in refs & set(leaves))
     if n["constraint"] is not None:
         assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]
         assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])

@@ -1733,6 +1733,48 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "if False:",
         ["tests/test_adapters_goals.py::test_an_adapter_ask_opens_amends_and_closes_a_task_with_evidence"],
     ),
+    (
+        "the map: a block's colour typed by hand, not computed from its children",
+        "src/onloop/derive.py",
+        '    colour = worst([lf["colour"] for lf in leaves])',
+        '    colour = "moving"',
+        ["tests/test_map_zoom0.py::test_every_blocks_colour_is_computed_from_its_leaves_never_typed"],
+    ),
+    (
+        "the map: a block's colour is not the worst of its children",
+        "src/onloop/derive.py",
+        "    return min(live, key=COLOURS.index)",
+        "    return max(live, key=COLOURS.index)",
+        ["tests/test_map_zoom0.py::test_a_block_is_the_worst_of_its_children_in_a_fixed_order"],
+    ),
+    (
+        "the map: a stage with no evidence is shown as 0, not as not reported (Q24)",
+        "src/onloop/derive.py",
+        '"count": len(here) if reported[s] else None,',
+        '"count": len(here),',
+        ["tests/test_map_zoom0.py::test_a_stage_with_no_evidence_is_not_reported_never_zero"],
+    ),
+    (
+        "the map: a red or amber block without its reason line",
+        "src/onloop/derive.py",
+        '    if block_colour not in ("red", "amber"):',
+        "    if True:",
+        ["tests/test_map_zoom0.py::test_every_red_or_amber_block_says_which_child_and_why"],
+    ),
+    (
+        "the map counts waiting on you from its own amber leaves, not the one count",
+        "src/onloop/derive.py",
+        '            "waiting_on_you": waiting_on_you(ledger, now)["count"],',
+        '            "waiting_on_you": sum(1 for lf in leaves if lf["colour"] == "amber"),',
+        ["tests/test_agreement.py::test_now_flow_and_the_task_list_agree_on_the_generic_replay"],
+    ),
+    (
+        "the map shows a lower-bound age as exact (a wait that began before the first export)",
+        "src/onloop/derive.py",
+        '    return first is None or first >= w["since"]',
+        "    return False",
+        ["tests/test_map_zoom0.py::test_an_age_whose_start_onloop_cannot_see_is_shown_as_a_lower_bound"],
+    ),
 ]
 
 
