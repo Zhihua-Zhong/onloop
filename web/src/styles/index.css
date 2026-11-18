@@ -35,3 +35,14 @@
 .map-hatch {
   background-image: repeating-linear-gradient(135deg, hsl(var(--state-void) / 0.16) 0 6px, transparent 6px 12px);
 }
+
+/* The map's move into a block (§12.5): the new level grows into place over about 250 ms. It is only a look: the level
+   has already opened. None with reduced motion. */
+@keyframes map-enter {
+  from { opacity: 0.4; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.map-enter { animation: map-enter 250ms ease-out; transform-origin: 50% 30%; }
+@media (prefers-reduced-motion: reduce) {
+  .map-enter { animation: none; }
+}

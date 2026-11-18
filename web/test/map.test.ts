@@ -5,6 +5,7 @@ import {
   cardLayout,
   chainLinks,
   createOpener,
+  opensOn,
   gridLayout,
   isReserved,
   nextPath,
@@ -85,17 +86,31 @@ test("opening moves the camera for about 250 ms, and not at all with reduced mot
   assert.equal(openMoveMs(true), 0);
 });
 
-test("a second open during the camera's move is ignored: one level, never two", async () => {
-  let release: () => void = () => undefined;
-  const opener = createOpener(() => new Promise<void>((r) => (release = r)));
+test("a double-click opens exactly one level: click, click, dblclick, as a browser sends them", () => {
+  // The real sequence on a block: pointerdown, click (detail 1), pointerdown, click (detail 2), dblclick. The first
+  // click opens the goal; by the second click the page shows the goal's stages, so it lands on a stage's title.
+  let t = 0;
+  const open = createOpener(() => t);
   const opened: string[] = [];
-  const first = opener(() => undefined, 250, () => opened.push("first"));
-  const second = await opener(() => undefined, 250, () => opened.push("second"));
-  release();
-  assert.equal(await first, true);
-  assert.equal(second, false);
-  assert.deepEqual(opened, ["first"]);
-  assert.equal(await opener(() => undefined, 0, () => opened.push("later")), true); // free again afterwards
+  const block = { click: () => open(() => opened.push("goal")), dblclick: () => open(() => opened.push("goal")) };
+  const stage = { click: () => open(() => opened.push("stage")), dblclick: () => open(() => opened.push("stage")) };
+  t = 0;
+  block.click(); // detail 1: opens the goal at once, no timer
+  assert.deepEqual(opened, ["goal"]);
+  t = 120;
+  stage.click(); // detail 2, now on the next level
+  t = 125;
+  stage.dblclick();
+  assert.deepEqual(opened, ["goal"]); // one level, never two, and the first open stands
+  t = 900;
+  stage.click(); // a click of its own, later
+  assert.deepEqual(opened, ["goal", "stage"]);
+});
+
+test("Enter and Space open a focused block; other keys do not", () => {
+  assert.equal(opensOn("Enter"), true);
+  assert.equal(opensOn(" "), true);
+  assert.equal(opensOn("Tab"), false);
 });
 
 test("the stages' chain never crosses the canvas: no edge where a row wraps", () => {

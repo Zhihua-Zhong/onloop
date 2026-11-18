@@ -7,7 +7,6 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  useReactFlow,
   useStore,
   type Edge,
   type Node,
@@ -23,10 +22,10 @@ import {
   BLOCK_H,
   cardLayout,
   chainLinks,
-  createOpener,
   isReserved,
   nextPath,
-  openMoveMs,
+  opener,
+  opensOn,
   phoneOrder,
   showsOpenHint,
   thresholdsText,
@@ -65,6 +64,13 @@ function go(path: string[], table: boolean) {
   window.location.hash = href("map", { table: table ? "1" : undefined }, path);
 }
 
+// Going in: a click, a double-click, Enter, Space or Open, all through the one guarded opener.
+function goIn(path: string[], table: boolean): () => void {
+  return () => {
+    opener(() => go(path, table));
+  };
+}
+
 export default function MapView({ params, path }: { params: URLSearchParams; path: string[] }) {
   const table = params.get("table") === "1"; // in the URL, so back, reload and a shared link keep it
   const reserved = isReserved(path);
@@ -94,9 +100,16 @@ export default function MapView({ params, path }: { params: URLSearchParams; pat
       {downMessage(q.error)} This is the map as last read.
     </p>
   );
-  if (m.level === 1) return <>{stale}<Zoom1 m={m as Zoom1Model} table={table} /></>;
-  if (m.level === 2) return <>{stale}<Zoom2 m={m as Zoom2Model} table={table} /></>;
-  return <>{stale}<Zoom0 m={m as MapModel} table={table} /></>;
+  const level =
+    m.level === 1 ? <Zoom1 m={m as Zoom1Model} table={table} /> : m.level === 2 ? <Zoom2 m={m as Zoom2Model} table={table} /> : <Zoom0 m={m as MapModel} table={table} />;
+  return (
+    <>
+      {stale}
+      <div key={key} className="map-enter flex h-full min-h-0 flex-col" data-testid="map-enter">
+        {level}
+      </div>
+    </>
+  );
 }
 
 function Breadcrumb({ path, names, table }: { path: string[]; names: string[]; table: boolean }) {
@@ -253,16 +266,17 @@ function BlockCard({ b, onOpen, hint = false, className }: { b: MapBlock; onOpen
       data-block={b.id}
       data-colour={b.colour}
       tabIndex={0}
-      aria-label={`${b.title}: ${b.label}. ${b.bar.label}. ${b.tally_text}.${b.reason ? ` ${b.reason.text}.` : ""}`}
+      role="button"
+      aria-label={`Open ${b.title}: ${b.label}. ${b.bar.label}. ${b.tally_text}.${b.reason ? ` ${b.reason.text}.` : ""}`}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
+        if (opensOn(e.key)) {
           e.preventDefault();
           onOpen();
         }
       }}
       onDoubleClick={onOpen}
       className={cn(
-        "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "relative flex h-full min-w-0 cursor-pointer flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
         tone(t).edge,
         className,
       )}
@@ -297,31 +311,16 @@ function BlockCard({ b, onOpen, hint = false, className }: { b: MapBlock; onOpen
   );
 }
 
-type Opener = ReturnType<typeof createOpener>;
 type CardData = {
   render: (hint: boolean, open?: () => void) => ReactNode;
   onOpen?: () => void;
   chain: boolean;
   next?: string; // where a row wraps: what comes next, instead of an edge across the canvas
-  opener: Opener;
 };
 
-const REDUCED = "(prefers-reduced-motion: reduce)";
-
-const CardNode = memo(function CardNode({ id, data, width, height }: NodeProps<Node<CardData>>) {
+const CardNode = memo(function CardNode({ data }: NodeProps<Node<CardData>>) {
   const zoom = useStore((s) => s.transform[2]);
-  const rf = useReactFlow();
-  const open = data.onOpen
-    ? () => {
-        const ms = openMoveMs(window.matchMedia?.(REDUCED).matches ?? false);
-        const n = rf.getNode(id);
-        void data.opener(
-          () => n && rf.fitBounds({ x: n.position.x, y: n.position.y, width: width ?? 0, height: height ?? 0 }, { duration: ms, padding: 0.04 }),
-          ms,
-          data.onOpen as () => void,
-        );
-      }
-    : undefined;
+  const open = data.onOpen;
   return (
     <>
       {data.chain && <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />}
@@ -425,7 +424,6 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
   const [box, width] = useWidthOf<HTMLDivElement>();
   const heights = cards.map((c) => c.height);
   const grid = useMemo(() => cardLayout(heights, width), [heights.join(","), width]); // eslint-disable-line react-hooks/exhaustive-deps
-  const opener = useMemo(() => createOpener(), []);
   const links = useMemo(() => (chain ? chainLinks(grid.positions) : { edges: [], wraps: [] }), [chain, grid]);
   const edges = useMemo<Edge[]>(
     () => links.edges.map(([a, b]) => ({ id: `chain:${a}`, source: cards[a].id, target: cards[b].id, type: "smoothstep", focusable: false })),
@@ -441,7 +439,6 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
           render: c.render,
           onOpen: c.onOpen,
           chain,
-          opener,
           next: links.wraps.includes(i) ? cards[i + 1]?.label : undefined,
         },
         draggable: false,
@@ -449,9 +446,13 @@ function Canvas({ cards, chain = false }: { cards: CanvasCard[]; chain?: boolean
         focusable: false, // the block itself is the one Tab stop, in reading order
         // React Flow turns pointer events off on a node that is neither draggable, selectable nor clickable; a block's
         // title, Open hint and double-click need them, and a node's own style wins
+        // the node's own size: React Flow keeps a node it has not measured hidden, and a page that is not drawn (a
+        // background tab) never measures, so its blocks could be neither clicked nor focused
+        width: grid.blockW,
+        height: c.height,
         style: { width: grid.blockW, height: c.height, pointerEvents: "all" },
       })),
-    [cards, grid, chain, opener, links],
+    [cards, grid, chain, links],
   );
   return (
     <div
@@ -562,7 +563,7 @@ function MapTable({ m }: { m: MapModel }) {
 function Zoom0({ m, table }: { m: MapModel; table: boolean }) {
   const phone = usePhone();
   const you = m.waits.find((w) => w.holder === "you");
-  const open = (b: MapBlock) => () => go(nextPath([], { kind: "open", block: b.id }), table);
+  const open = (b: MapBlock) => goIn(nextPath([], { kind: "open", block: b.id }), table);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4 max-[420px]:p-3" data-testid="map-level" data-level={0}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -646,16 +647,18 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
       data-colour={s.colour ?? ""}
       data-reported={s.reported}
       tabIndex={0}
-      aria-label={`${s.stage}: ${s.reported ? `${s.count}, ${s.tally_text}` : "not reported"}.${s.reason ? ` ${s.reason.text}.` : ""}`}
+      role={onOpen ? "button" : "group"}
+      aria-label={`${onOpen ? "Open " : ""}${s.stage}: ${s.reported ? `${s.count}, ${s.tally_text}` : "not reported"}.${s.reason ? ` ${s.reason.text}.` : ""}`}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && onOpen) {
+        if (opensOn(e.key) && onOpen) {
           e.preventDefault();
           onOpen();
         }
       }}
       onDoubleClick={onOpen}
       className={cn(
-        "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line px-3.5 py-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+        onOpen && "cursor-pointer",
         s.reported ? "bg-surface" : "map-hatch border-dashed",
         tone(t).edge,
       )}
@@ -702,7 +705,7 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
 function Zoom1({ m, table }: { m: Zoom1Model; table: boolean }) {
   const phone = usePhone();
   const path = m.path;
-  const open = (s: MapStageEntry) => (s.reported && s.count ? () => go(nextPath(path, { kind: "open", block: s.stage }), table) : undefined);
+  const open = (s: MapStageEntry) => (s.reported && s.count ? goIn(nextPath(path, { kind: "open", block: s.stage }), table) : undefined);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4 max-[420px]:p-3" data-testid="map-level" data-level={1}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -785,7 +788,8 @@ function HolderCard({ h }: { h: MapHolder }) {
       data-colour={h.colour}
       tabIndex={0}
       aria-label={`${h.holder}: ${h.count}, ${h.tally_text}`}
-      className={cn("flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent", tone(t).edge)}
+      role="group"
+      className={cn("flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg", tone(t).edge)}
     >
       <header className="flex min-w-0 items-start gap-2">
         <h2 className={cn("min-w-0 flex-1 text-[15px] font-semibold leading-snug", h.kind === "you" && tone("human").text)}>{h.holder}</h2>

@@ -1836,10 +1836,24 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_map_levels.py::test_a_block_that_changes_colour_turns_once"],
     ),
     (
-        "the map: a double-click during the camera's move opens a second level",
+        "the map: the rest of a double-click (click 2, dblclick) opens a second level",
         "web/src/lib/map.ts",
-        "    if (busy) return false;",
+        "    if (t - last < OPEN_GUARD_MS) return false;",
         "    if (false) return false;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map: a double-click opens nothing (the first click's open is lost)",
+        "web/src/lib/map.ts",
+        "    last = t;\n    open();\n    return true;",
+        "    last = t;\n    return true;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map: Space does not open a focused block",
+        "web/src/lib/map.ts",
+        '  return key === "Enter" || key === " ";',
+        '  return key === "Enter";',
         ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
     ),
     (

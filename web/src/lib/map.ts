@@ -210,29 +210,31 @@ export function cardLayout(heights: number[], width: number): GridLayout & { hei
   return { ...g, positions, heights };
 }
 
-// Opening a block (the overview plan's §12.5): the camera moves into it for about 250 ms, then the level opens; with
-// prefers-reduced-motion there is no move. A second open while one is under way (a double-click during the move) is
-// ignored, so a person never lands two levels down by accident.
+// Opening a block (the overview plan's §12.5). The level opens at once, on the first click, never behind a timer: a
+// page in a background tab throttles timers, and a double-click's own events must not undo it. A double-click is
+// click (detail 1), click (detail 2), dblclick: the first opens, and the rest of the gesture, within OPEN_GUARD_MS,
+// is ignored, even when it lands on the new level's cards. One opener serves the whole page, across levels. The
+// "camera into the block" is the new level's entry: about 250 ms, and none with prefers-reduced-motion (index.css).
 export const OPEN_MOVE_MS = 250;
+export const OPEN_GUARD_MS = 500;
 export function openMoveMs(reducedMotion: boolean): number {
   return reducedMotion ? 0 : OPEN_MOVE_MS;
 }
-export function createOpener(wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
-  let busy = false;
-  return async (move: () => void, ms: number, open: () => void): Promise<boolean> => {
-    if (busy) return false;
-    busy = true;
-    try {
-      if (ms > 0) {
-        move();
-        await wait(ms);
-      }
-      open();
-      return true;
-    } finally {
-      busy = false;
-    }
+export function createOpener(now: () => number = () => Date.now()): (open: () => void) => boolean {
+  let last = -Infinity;
+  return (open) => {
+    const t = now();
+    if (t - last < OPEN_GUARD_MS) return false;
+    last = t;
+    open();
+    return true;
   };
+}
+export const opener = createOpener();
+
+// Enter and Space open a focused block, as a button's keys do.
+export function opensOn(key: string): boolean {
+  return key === "Enter" || key === " ";
 }
 
 // The chain between a goal's stages: an edge joins two stages only when they sit in the same row. Where a row wraps,
