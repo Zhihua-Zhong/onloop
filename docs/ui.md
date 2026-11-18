@@ -49,17 +49,22 @@ land on the same level.
 - **The signals:**
   - "N wait on you": the same count as Now and the task list;
   - "N jammed";
-  - the team's longest pause in the data's last day;
+  - "Team quiet at most": the team's longest pause in the data's last day. An item's own "no move" is its reason
+    line, never this;
   - the since-you-looked sentence.
 - **A block per goal, grouped by origin, never by role:**
   - each checklist, done out of its denominator;
-  - each feedback batch, accepted out of given, marked "Stages reported by the team" when an export declares them;
+  - each feedback batch, accepted out of given, marked "Stages reported by the team" when an export declares them.
+    An item the team's export marks as the person's step reads "marked yours by the team", never "waits on you":
+    only the person's own tasks say that, so the blocks never add up past the header's count;
   - "Changes in flight", with its stages. A stage this team's export does not report is hatched and says "not
     reported", never 0.
 - **Colour:** a block takes the worst colour of its children: jammed (!), waits on you (◆), moving (▶), not started
   (□). Every colour has its shape. A red or amber block says in one line which child and why.
 - **Waits, by who holds them:** oldest first. An age shown as "≥ 9 days" began before anything onloop has seen, and
   the row says "began before the first export".
+- **The first view** opens at scale 1, never fitted smaller, with the blocks sharing the canvas's width.
+- **A goal with no title** shows its id in plain words ("Release plan").
 - **Moving around:**
   - the wheel or a pinch zooms the canvas, and a drag pans it;
   - zooming never changes the level. From 1.6×, each block shows an "Open" button;

@@ -40,6 +40,9 @@ def test_line_1_the_feedback_batch_says_how_far_it_is_in_one_line(zoom0):
     b = _block(zoom0, "feedback")
     assert b["bar"]["label"] == "0 of 3 accepted" and b["reported_by_team"]
     assert (b["tally"]["amber"], b["tally"]["moving"]) == (2, 1)
+    assert (
+        b["tally_text"] == "2 marked yours by the team · 1 moving"
+    )  # the team's mark, not the person's tasks
 
 
 def test_line_2_the_oldest_wait_says_whose_it_is_and_how_old(zoom0):
@@ -50,9 +53,9 @@ def test_line_2_the_oldest_wait_says_whose_it_is_and_how_old(zoom0):
     assert top["holder"] == "you" and you["note"] is None  # the opening is in the export: an exact age
 
 
-def test_line_3_the_longest_pause_is_on_the_signal_row(zoom0):
-    lw = zoom0["signals"]["longest_without_a_move"]
-    assert lw["text"] == "1 h 38 min, the whole team" and lw["seconds"] < 2 * 3600
+def test_line_3_the_teams_longest_quiet_is_on_the_signal_row(zoom0):
+    q = zoom0["signals"]["team_quiet"]
+    assert q["text"] == "1 h 38 min" and q["seconds"] < 2 * 3600
 
 
 def test_the_most_jammed_block_and_why_are_read_without_a_click(zoom0):

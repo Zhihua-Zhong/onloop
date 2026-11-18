@@ -61,7 +61,14 @@ def test_every_blocks_colour_is_computed_from_its_leaves_never_typed(replay_1_1)
     for b in z["blocks"]:
         assert b["colour"] == derive.worst([lf["colour"] for lf in b["leaves"]]), b["id"]
         some_done = any(lf["colour"] == "done" for lf in b["leaves"])
-        want = "nothing moving" if b["colour"] == "grey" and some_done else derive.LABELS[b["colour"]]
+        yours = any(lf["colour"] == "amber" and lf.get("who") == "you" for lf in b["leaves"])
+        want = (
+            "nothing moving"
+            if b["colour"] == "grey" and some_done
+            else derive.LABEL_MARKED
+            if b["colour"] == "amber" and not yours
+            else derive.LABELS[b["colour"]]
+        )
         assert b["shape"] == derive.SHAPES[b["colour"]] and b["label"] == want, b["id"]
     assert {b["colour"] for b in z["blocks"]} >= {"amber", "red"}  # the replay has both, so the test can bite
 
@@ -168,7 +175,7 @@ def test_a_teams_unmoved_stage_turns_red_past_its_threshold_and_hours_can_be_set
     assert hours["colour"] == "red" and "no move for 1 h" in hours["reason"]["text"]
 
 
-def test_longest_without_a_move_is_the_teams_longest_pause_in_the_last_day(tmp_path):
+def test_team_quiet_is_the_teams_longest_pause_in_the_last_day(tmp_path):
     """Turns that overlap are one stretch of work; the longest gap between stretches is the answer (Q17)."""
     path = tmp_path / "l.db"
     export = dt.datetime(2026, 11, 17, 2, 40, tzinfo=dt.UTC)
@@ -180,8 +187,8 @@ def test_longest_without_a_move_is_the_teams_longest_pause_in_the_last_day(tmp_p
             e_ = dt.datetime(2026, 11, 17, *end, tzinfo=dt.UTC)
             data = {"role": role, "session_id": "s", "prompt_id": f"p{n}", "started_at": example._ts(s_)}
             led.append(reader.to_event(example._record("onloop.turn.ended", f"t{n}", e_, export, data), "p"))
-    m = _zoom0(path)["signals"]["longest_without_a_move"]
-    assert m["text"] == "1 h 38 min, the whole team" and m["ongoing"] is False
+    m = _zoom0(path)["signals"]["team_quiet"]
+    assert m["text"] == "1 h 38 min" and m["ongoing"] is False
     assert m["from"] == "2026-11-17T00:20:00.000Z" and m["to"] == "2026-11-17T01:58:00.000Z"
 
 
@@ -190,3 +197,13 @@ def test_plain_ages():
     assert derive.plain_age(98 * 60) == "1 h 38 min"
     assert derive.plain_age(14 * 3600) == "14 h"
     assert derive.plain_age(86400) == "1 day" and derive.plain_age(9 * 86400 + 5, True) == "≥ 9 days"
+
+
+def test_a_goal_without_a_title_reads_in_plain_words():
+    assert derive.plain_title("release-plan") == "Release plan"
+    assert derive.plain_title("demo_checklist") == "Demo checklist"
+
+
+def test_the_checklist_block_has_its_plain_title(replay_1_1):
+    b = next(b for b in _zoom0(replay_1_1)["blocks"] if b["kind"] == "checklist")
+    assert b["title"] == "Release plan"

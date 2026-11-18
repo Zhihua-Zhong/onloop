@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -169,3 +170,23 @@ def test_activity_counts_each_roles_turns_from_the_one_derivation(which, demo_pa
     lanes = {lane["role"]: lane["turns"] for lane in a["lanes"]}
     assert a["turns"] > 0 and sum(lanes.values()) == a["turns"], (a["turns"], lanes)
     assert {r: n for r, n in lanes.items() if n} == per_role
+
+
+_ON_YOU = re.compile(r"(\d+) waits? on you")
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_the_maps_words_never_add_up_to_more_than_the_one_count(which, demo_path, replay_path):
+    """The lead's check: a reader sums every "N wait on you" on the page against the header. Only the person's own
+    tasks and waits say it; what a team's export marks as theirs is worded as the team's mark."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        z = derive.zoom0(led, now)
+    said = sum(int(n) for b in z["blocks"] for n in _ON_YOU.findall(b["tally_text"]))
+    assert said <= z["signals"]["waiting_on_you"], (said, [b["tally_text"] for b in z["blocks"]])
+    for b in z["blocks"]:
+        if b["label"] == "waits on you":
+            assert _ON_YOU.search(b["tally_text"]), b["id"]
+        marked = [lf for lf in b["leaves"] if lf["colour"] == "amber" and lf.get("who") != "you"]
+        said_marked = sum(int(n) for n in re.findall(r"(\d+) marked yours by the team", b["tally_text"]))
+        assert said_marked == len(marked) and all(lf.get("reported_by_team") for lf in marked), b["id"]

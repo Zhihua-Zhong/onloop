@@ -1776,6 +1776,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
     ),
     (
+        "the map: zoom 0 opens fitted below scale 1, so its text is too small to read (the lead's fix 1)",
+        "web/src/lib/map.ts",
+        "export const OPENING_ZOOM = 1;",
+        "export const OPENING_ZOOM = 0.52;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map words what the team marks as yours as waiting on you, so its counts add up past the header's",
+        "src/onloop/derive.py",
+        '    return lf["colour"] == "amber" and lf.get("who") == "you"',
+        '    return lf["colour"] == "amber"',
+        ["tests/test_agreement.py::test_the_maps_words_never_add_up_to_more_than_the_one_count"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

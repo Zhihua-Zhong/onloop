@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gridPosition, nextPath, phoneOrder, showsOpenHint, tallyText, type MapBlock } from "../src/lib/map.ts";
+import { BLOCK_MIN_W, gridLayout, nextPath, phoneOrder, showsOpenHint, type MapBlock } from "../src/lib/map.ts";
 
 test("a geometric zoom never changes the level; only an explicit open or up does (Q23)", () => {
   for (const zoom of [0.2, 1, 1.6, 2, 8]) {
@@ -29,6 +29,7 @@ const block = (kind: MapBlock["kind"], tally: Partial<MapBlock["tally"]>, leaves
   label: "not started",
   bar: { done: 0, of: leaves, label: "" },
   tally: { red: 0, amber: 0, moving: 0, grey: 0, done: 0, ...tally },
+  tally_text: "",
   reason: null,
   leaves: Array.from({ length: leaves }, (_, i) => ({ id: String(i), title: "", colour: "grey", shape: "□" })),
 });
@@ -38,15 +39,19 @@ test("a phone reads the batches, then the checklists, then the changes", () => {
   assert.deepEqual(order, ["feedback", "checklist", "changes"]);
 });
 
-test("a tally in words, worst first, without zeros", () => {
-  assert.equal(tallyText(block("feedback", { amber: 3, moving: 5 })), "3 wait on you · 5 moving");
-  assert.equal(tallyText(block("feedback", { red: 1, grey: 2 })), "1 jammed · 2 not started");
-  assert.equal(tallyText(block("checklist", { done: 4 })), "all done");
-  assert.equal(tallyText(block("changes", {}, 0)), "nothing in it yet");
+test("zoom 0 opens at scale 1, so its smallest text (12 px) renders at 12 px or more", () => {
+  for (const width of [360, 800, 1072, 1600]) {
+    const g = gridLayout(3, width);
+    assert.ok(g.zoom >= 1, `opening zoom ${g.zoom} at ${width} px`);
+  }
 });
 
-test("the grid places three blocks a row", () => {
-  assert.deepEqual(gridPosition(0), { x: 0, y: 0 });
-  assert.equal(gridPosition(3).x, 0);
-  assert.ok(gridPosition(3).y > 0 && gridPosition(1).x > 0);
+test("the blocks share the width: three a row at 1440's canvas, one on a narrow one", () => {
+  const wide = gridLayout(3, 1072); // 1440 minus the page's padding and the waits column
+  assert.equal(wide.perRow, 3);
+  assert.ok(wide.blockW >= BLOCK_MIN_W);
+  assert.ok(wide.positions[2].x + wide.blockW <= 1072);
+  const narrow = gridLayout(3, 600);
+  assert.equal(narrow.perRow, 1);
+  assert.ok(narrow.positions[1].y > narrow.positions[0].y);
 });

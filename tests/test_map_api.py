@@ -61,7 +61,7 @@ def test_the_map_api_serves_zoom_0(server):
     status, body = _get(server, "/api/map")
     assert status == 200 and body["level"] == 0 and body["path"] == []
     assert [b["kind"] for b in body["blocks"]] == ["checklist", "feedback", "changes"]
-    assert set(body["signals"]) == {"waiting_on_you", "stuck", "longest_without_a_move"}
+    assert set(body["signals"]) == {"waiting_on_you", "stuck", "team_quiet"}
     assert body["legend"][0] == {"colour": "red", "shape": "!", "label": "jammed"}
 
 

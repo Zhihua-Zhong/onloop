@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Background, BackgroundVariant, ReactFlow, ReactFlowProvider, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { ChevronRight } from "lucide-react";
@@ -7,12 +7,10 @@ import { clock, duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
 import {
   BLOCK_H,
-  BLOCK_W,
-  gridPosition,
+  gridLayout,
   nextPath,
   phoneOrder,
   showsOpenHint,
-  tallyText,
   thresholdsText,
   TONE_OF,
   type MapBlock,
@@ -97,7 +95,7 @@ function NotYet({ m, path, table }: { m: MapModel; path: string[]; table: boolea
 function Signals({ m }: { m: MapModel }) {
   const s = m.signals;
   const d = useQuery({ queryKey: ["digest"], queryFn: () => get<DigestModel>("/api/digest"), refetchInterval: 60_000 });
-  const lw = s.longest_without_a_move;
+  const lw = s.team_quiet;
   return (
     <section aria-label="Signals" data-testid="signals" className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
@@ -109,9 +107,9 @@ function Signals({ m }: { m: MapModel }) {
           <span aria-hidden>! </span>
           {s.stuck} jammed
         </span>
-        <span data-testid="sig-longest" className="text-sm text-fg">
-          Longest without a move: <span className="font-semibold">{lw ? lw.text : "no turns in the last day"}</span>
-          {lw?.ongoing && <span className="text-muted"> (still going)</span>}
+        <span data-testid="sig-quiet" className="text-sm text-fg" title="The longest stretch in the last day when no role had a turn running or ending">
+          Team quiet at most: <span className="font-semibold">{lw ? `${lw.text} in the last ${lw.team_activity.hours} h` : "no turns in the last day"}</span>
+          {lw?.ongoing && <span className="text-muted"> (still quiet)</span>}
         </span>
       </div>
       <p className="text-[13px] text-muted" data-testid="since">
@@ -212,7 +210,7 @@ function BlockCard({ b, onOpen, hint = false, inCanvas = false, className }: { b
       data-block={b.id}
       data-colour={b.colour}
       tabIndex={0}
-      aria-label={`${b.title}: ${b.label}. ${b.bar.label}. ${tallyText(b)}.${b.reason ? ` ${b.reason.text}.` : ""}`}
+      aria-label={`${b.title}: ${b.label}. ${b.bar.label}. ${b.tally_text}.${b.reason ? ` ${b.reason.text}.` : ""}`}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -238,14 +236,14 @@ function BlockCard({ b, onOpen, hint = false, inCanvas = false, className }: { b
       {b.reported_by_team && <p className="mt-0.5 text-xs text-muted" data-testid="reported">Stages reported by the team</p>}
       <Bar b={b} />
       {b.kind === "changes" && <p className="mt-1 text-[13px] font-medium tabular-nums">{b.bar.label}</p>}
-      <p className="mt-1 text-[13px] text-muted" data-testid="tally">{tallyText(b)}</p>
+      <p className="mt-1 text-[13px] text-muted" data-testid="tally">{b.tally_text}</p>
       {b.reason && (
         <p className={cn("mt-1.5 text-[13px] font-medium leading-snug", tone(t).text)} data-testid="reason">
           <span className="line-clamp-2">{b.reason.text}</span>
         </p>
       )}
       <Stages b={b} />
-      {notReported.length > 0 && <p className="mt-1 text-[11.5px] text-muted">Not reported by this team's export: {notReported.join(", ")}.</p>}
+      {notReported.length > 0 && <p className="mt-1 text-xs text-muted">Not reported by this team's export: {notReported.join(", ")}.</p>}
       <Cells b={b} />
       {hint && (
         <button type="button" tabIndex={-1} onClick={onOpen} data-testid="open-hint" className="absolute bottom-2 right-2 inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1 text-xs font-semibold text-white shadow">
@@ -322,32 +320,56 @@ function Legend({ m }: { m: MapModel }) {
   );
 }
 
+function useWidthOf<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(0);
+  // measured at once, then on every resize: a ResizeObserver reports only on a rendering step, and a page in a
+  // background tab may not render one for a while (Activity's lanes do the same)
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
+
 function Canvas({ m, table }: { m: MapModel; table: boolean }) {
+  const [box, width] = useWidthOf<HTMLDivElement>();
+  const grid = useMemo(() => gridLayout(m.blocks.length, width), [m.blocks.length, width]);
   const nodes = useMemo<Node<BlockData>[]>(
     () =>
       m.blocks.map((b, i) => ({
         id: b.id,
         type: "block",
-        position: gridPosition(i),
+        position: grid.positions[i],
         data: { b, onOpen: () => go(nextPath([], { kind: "open", block: b.id }), table) },
         draggable: false,
         selectable: false,
         focusable: false, // the block itself is the one Tab stop, in reading order
         // React Flow turns pointer events off on a node that is neither draggable, selectable nor clickable; a block's
         // title, Open hint and double-click need them, and a node's own style wins
-        style: { width: BLOCK_W, height: BLOCK_H, pointerEvents: "all" },
+        style: { width: grid.blockW, height: BLOCK_H, pointerEvents: "all" },
       })),
-    [m.blocks, table],
+    [m.blocks, table, grid],
   );
   return (
-    <div className="relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-ui border border-line bg-bg" data-testid="map-canvas">
-      <ReactFlowProvider>
+    <div
+      ref={box}
+      className="relative min-h-[420px] min-w-0 flex-1 overflow-hidden rounded-ui border border-line bg-bg"
+      data-testid="map-canvas"
+      data-zoom={grid.zoom}
+      data-per-row={grid.perRow}
+    >
+      {width > 0 && (
+      <ReactFlowProvider key={grid.perRow}>
         <ReactFlow
           nodes={nodes}
           edges={[]}
           nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
+          defaultViewport={{ x: 0, y: 0, zoom: grid.zoom }}
           minZoom={0.3}
           maxZoom={2.5}
           zoomOnScroll
@@ -364,6 +386,7 @@ function Canvas({ m, table }: { m: MapModel; table: boolean }) {
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color="hsl(var(--line))" />
         </ReactFlow>
       </ReactFlowProvider>
+      )}
     </div>
   );
 }
@@ -402,7 +425,7 @@ function MapTable({ m }: { m: MapModel }) {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2">{tallyText(b)}</td>
+                <td className="px-3 py-2">{b.tally_text}</td>
                 <td className="px-3 py-2">{b.reason?.text ?? ""}</td>
               </tr>
             ))}

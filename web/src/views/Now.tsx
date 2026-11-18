@@ -267,7 +267,9 @@ function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: 
             {quiet.onloop_down_s ? ` (onloop was down for ${duration(quiet.onloop_down_s)} of it)` : ""}:{" "}
             {quiet.state === "idle"
               ? "every role's last outcome is idle; nothing to do."
-              : `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`}
+              : quiet.waits.length
+                ? `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`
+                : "no role has said what it waits on."}
           </p>
         )}
       </Card>

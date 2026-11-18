@@ -80,6 +80,12 @@ LABELS = {"red": "jammed", "amber": "waits on you", "moving": "moving", "grey": 
 CHANGE_STAGES = ("opened", "checks", "review")  # an open change's stages; merged ones have left the flow
 
 
+def plain_title(slug: str) -> str:
+    """A goal's id in plain words, when its source gives no title: "release-plan" reads "Release plan"."""
+    words = slug.replace("_", " ").replace("-", " ").split()
+    return " ".join(words).capitalize() if words else slug
+
+
 def plain_age(age_s: float | None, lower_bound: bool = False) -> str:
     """ "3 days", "14 h", "1 h 38 min", "40 min"; with "≥ " in front when onloop cannot see when it began."""
     if age_s is None:
@@ -173,6 +179,45 @@ def wait_lower_bound(ledger: Any, w: dict[str, Any] | None) -> bool:
     return first is None or first >= w["since"]
 
 
+MARKED = "marked yours by the team"
+LABEL_MARKED = "marked yours"  # the block's short label; its tally line says by whom
+
+
+def _yours(lf: dict[str, Any]) -> bool:
+    """An amber leaf that is the person's own: one of their tasks, or a wait on them. Only these say "waits on you",
+    so a block's words add up to no more than the header's count."""
+    return lf["colour"] == "amber" and lf.get("who") == "you"
+
+
+def _label(colour: str, leaves: list[dict[str, Any]]) -> str:
+    if colour == "grey" and any(lf["colour"] == "done" for lf in leaves):
+        return "nothing moving"  # a grey block with done items is not "not started": the rest has not begun
+    if colour == "amber" and not any(_yours(lf) for lf in leaves):
+        return LABEL_MARKED
+    return LABELS[colour]
+
+
+def tally_text(leaves: list[dict[str, Any]]) -> str:
+    """A block's children in words, worst first, without zeros: "1 jammed · 2 wait on you · 5 moving"."""
+    red = sum(1 for lf in leaves if lf["colour"] == "red")
+    you = sum(1 for lf in leaves if _yours(lf))
+    marked = sum(1 for lf in leaves if lf["colour"] == "amber" and not _yours(lf))
+    moving = sum(1 for lf in leaves if lf["colour"] == "moving")
+    grey = sum(1 for lf in leaves if lf["colour"] == "grey")
+    parts = []
+    if red:
+        parts.append(f"{red} jammed")
+    if you:
+        parts.append(f"{you} {'waits' if you == 1 else 'wait'} on you")
+    if marked:
+        parts.append(f"{marked} {MARKED}")
+    if moving:
+        parts.append(f"{moving} moving")
+    if grey:
+        parts.append(f"{grey} not started")
+    return " · ".join(parts) or ("all done" if leaves else "nothing in it yet")
+
+
 def _block(bid: str, kind: str, title: str, leaves: list[dict[str, Any]], bar: dict, **more: Any) -> dict:
     colour = worst([lf["colour"] for lf in leaves])
     return {
@@ -182,11 +227,10 @@ def _block(bid: str, kind: str, title: str, leaves: list[dict[str, Any]], bar: d
         "colour": colour,
         "shape": SHAPES[colour],
         # a grey block with done items is not "not started": the rest has not begun
-        "label": "nothing moving"
-        if colour == "grey" and any(lf["colour"] == "done" for lf in leaves)
-        else LABELS[colour],
+        "label": _label(colour, leaves),
         "bar": bar,
         "tally": _tally(leaves),
+        "tally_text": tally_text(leaves),
         "reason": _reason(colour, leaves),
         "leaves": leaves,
         **more,
@@ -237,7 +281,7 @@ def _checklists(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, in
             "label": f"{done} of {of} items done",
             "as_of": den[0]["at"] if den else None,
         }
-        out.append(_block(f"goal:{g['id']}", "checklist", g["title"] or g["id"], leaves, bar))
+        out.append(_block(f"goal:{g['id']}", "checklist", g["title"] or plain_title(g["id"]), leaves, bar))
     return out
 
 
@@ -274,7 +318,10 @@ def _batches(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
                 age = _secs(f["declared_since"], now)
                 stage = f["declared_stage"]
                 if f["declared_waits_on"] == "human":
-                    colour, who, why = "amber", "you", f"at '{stage}' for {plain_age(age, lower)}"
+                    # the person's step as the team declares it: amber, but not one of the person's tasks, so it
+                    # never says "waits on you" with a number the header does not count (the lead's fix 2)
+                    who = "you" if task else MARKED
+                    colour, why = "amber", f"at '{stage}' for {plain_age(age, lower)}"
                 elif age > stuck["declared"]:
                     colour, who, why = "red", "the team", f"no move for {plain_age(age, lower)} at '{stage}'"
                 else:
@@ -459,8 +506,9 @@ def _waits_by_holder(ledger: Any, now: str, open_tasks: list[dict[str, Any]]) ->
     return out
 
 
-def _longest_without_a_move(ledger: Any, now: str, hours: int = 24) -> dict[str, Any] | None:
-    """Q17: the longest stretch in the data's last day when no role had a turn running or ending, so the answer
+def _team_quiet(ledger: Any, now: str, hours: int = 24) -> dict[str, Any] | None:
+    """Q17, "team quiet at most": the longest stretch in the data's last day when no role had a turn running or
+    ending. An item's own "no move" is its reason line, never this. So the answer
     ("nothing has stalled for more than 2 h") never depends on a threshold. It ends at the data's end (a replay's
     last export), as Activity does, and a stretch still going at the end counts."""
     from . import events as ev
@@ -502,7 +550,7 @@ def _longest_without_a_move(ledger: Any, now: str, hours: int = 24) -> dict[str,
         "from": best["from"],
         "to": best["to"],
         "ongoing": best["to"] == end,
-        "text": f"{plain_age(seconds)}, the whole team",
+        "text": plain_age(seconds),
         "as_of": end,
         "team_activity": {"turns": len(rows), "roles": roles, "hours": hours},
     }
@@ -533,7 +581,7 @@ def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[st
         "signals": {
             "waiting_on_you": waiting_on_you(ledger, now)["count"],
             "stuck": sum(1 for lf in leaves if lf["colour"] == "red"),
-            "longest_without_a_move": _longest_without_a_move(ledger, now),
+            "team_quiet": _team_quiet(ledger, now),
         },
         "blocks": blocks,
         "waits": _waits_by_holder(ledger, now, open_tasks),

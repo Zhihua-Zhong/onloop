@@ -28,6 +28,7 @@ export interface MapBlock {
   label: string;
   bar: { done: number | null; of: number; label: string; as_of?: string | null };
   tally: Record<Colour, number>;
+  tally_text: string; // the server's words, so the agreement test holds the words as well as the numbers
   reason: { child: string; title: string; text: string; lower_bound: boolean } | null;
   leaves: MapLeaf[];
   reported_by_team?: boolean;
@@ -54,7 +55,7 @@ export interface MapModel {
   signals: {
     waiting_on_you: number;
     stuck: number;
-    longest_without_a_move: {
+    team_quiet: {
       seconds: number;
       text: string;
       as_of: string;
@@ -104,18 +105,6 @@ export function phoneOrder(blocks: MapBlock[]): MapBlock[] {
   return [...blocks].sort((a, b) => PHONE_ORDER[a.kind] - PHONE_ORDER[b.kind]);
 }
 
-// A block's tally in words, worst first, leaving out what is zero: "2 wait on you · 5 moving".
-export function tallyText(b: MapBlock): string {
-  const words: [Colour, string, string][] = [
-    ["red", "jammed", "jammed"],
-    ["amber", "waits on you", "wait on you"],
-    ["moving", "moving", "moving"],
-    ["grey", "not started", "not started"],
-  ];
-  const parts = words.filter(([c]) => b.tally[c]).map(([c, one, many]) => `${b.tally[c]} ${b.tally[c] === 1 ? one : many}`);
-  return parts.join(" · ") || (b.leaves.length ? "all done" : "nothing in it yet");
-}
-
 // The legend's thresholds, in plain words: "given 2 d · declared 3 d".
 export function thresholdsText(t: Record<string, number>, fmt: (s: number) => string): string {
   const names: Record<string, string> = { given: "given", declared: "a team's stage", checklist: "checklist item", pr: "change", wait: "wait" };
@@ -124,10 +113,30 @@ export function thresholdsText(t: Record<string, number>, fmt: (s: number) => st
     .join(" · ");
 }
 
-// The 1440 grid: three blocks a row, in the order the API gives (by origin), at fixed sizes.
-export const BLOCK_W = 380;
+// Zoom 0 opens at scale 1, never fitted smaller: the blocks' text is set at 12 px and up, and a glance must read it
+// (the lead's fix 1). The blocks share the canvas's width instead, as many a row as fit at their least width.
+export const OPENING_ZOOM = 1;
+export const BLOCK_MIN_W = 320;
+export const BLOCK_MAX_W = 520;
 export const BLOCK_H = 236;
-export const GAP = 28;
-export function gridPosition(i: number, perRow = 3): { x: number; y: number } {
-  return { x: (i % perRow) * (BLOCK_W + GAP), y: Math.floor(i / perRow) * (BLOCK_H + GAP) };
+export const GAP = 24;
+export const PAD = 16;
+
+export interface GridLayout {
+  zoom: number;
+  perRow: number;
+  blockW: number;
+  positions: { x: number; y: number }[];
+}
+
+export function gridLayout(n: number, width: number): GridLayout {
+  const room = Math.max(BLOCK_MIN_W, width - 2 * PAD);
+  const fit = Math.floor((room + GAP) / (BLOCK_MIN_W + GAP));
+  const perRow = Math.max(1, Math.min(n || 1, fit));
+  const blockW = Math.min(BLOCK_MAX_W, Math.floor((room - (perRow - 1) * GAP) / perRow));
+  const positions = Array.from({ length: n }, (_, i) => ({
+    x: PAD + (i % perRow) * (blockW + GAP),
+    y: PAD + Math.floor(i / perRow) * (BLOCK_H + GAP),
+  }));
+  return { zoom: OPENING_ZOOM, perRow, blockW, positions };
 }
