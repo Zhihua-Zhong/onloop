@@ -145,3 +145,18 @@ def test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same(t
     assert n["constraint"] is not None and f["constraint"] is not None
     assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])
     assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_activity_counts_each_roles_turns_from_the_one_derivation(which, demo_path, replay_path):
+    """Activity's lanes and the map count a role's turns the same way: `onloop.derive`, never their own loop."""
+    from onloop import derive
+    from onloop.report import activity
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        a = activity.activity(led, now, hours=72)
+        per_role = derive.turns_per_role(led, a["from"], a["to"])
+    lanes = {lane["role"]: lane["turns"] for lane in a["lanes"]}
+    assert a["turns"] > 0 and sum(lanes.values()) == a["turns"], (a["turns"], lanes)
+    assert {r: n for r, n in lanes.items() if n} == per_role

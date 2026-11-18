@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .. import derive
 from .. import events as ev
 
 MAX_HOURS = 24 * 14
@@ -54,10 +55,13 @@ def activity(reader: Any, now: str, hours: int = 48) -> dict[str, Any]:
     by_role: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         by_role.setdefault(r["role"], []).append(r)
+    counts = derive.turns_per_role(reader, start, end)  # the one count the map shows too (decision 0018)
     lanes = []
     for role in sorted(set(declared) | set(by_role)):
         turns = by_role.get(role, [])
-        lanes.append(_lane(role, kinds.get(role), turns, start, end, now, reader))
+        lanes.append(
+            {**_lane(role, kinds.get(role), turns, start, end, now, reader), "turns": counts.get(role, 0)}
+        )
     # the busiest first, then the quiet ones, then the never-active: a person reads down to where it went quiet
     lanes.sort(key=lambda lane: (-lane["turns"], lane["role"]))
     per_hour = _per_hour(rows, start, int(-(-_sec(start, end) // 3600)))
