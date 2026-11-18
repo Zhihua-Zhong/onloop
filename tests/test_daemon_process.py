@@ -179,7 +179,7 @@ def test_a_job_pings_onloopd_for_a_schedule_its_config_declares(tmp_path):
 
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "onloopd.yaml").write_text(
-        "schedules:\n  - id: nightly-backup\n    period: 1d\n    owner: ops\n", encoding="utf-8"
+        "schedules:\n  - id: nightly-backup\n    period: 1d\n    owner: ops\njobs: []\n", encoding="utf-8"
     )
     proc, state = start(tmp_path)
     try:

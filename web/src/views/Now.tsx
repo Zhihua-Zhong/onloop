@@ -5,6 +5,7 @@ import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/
 import { DigestBand, TaskList, TaskRows } from "@/views/Tasks";
 import { ago, clock, duration, plural, reason } from "@/lib/format";
 import { href } from "@/lib/route";
+import { constraintSentence } from "@/lib/constraint";
 import { Card, Command, Dot, Empty, Loading, Meta, Pill, Problem, Section, Ticks, tone, type Tone } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +23,6 @@ function Banner({ m }: { m: NowModel }) {
     );
   }
   const n = c.waiters.length;
-  const what = c.on_kind === "human" ? "you" : c.on_ref;
   const oldest = Math.max(0, ...c.waits.map((w) => w.wait_s));
   const noun = c.on_kind === "human" ? "item" : "change";
   const facts = [
@@ -42,8 +42,7 @@ function Banner({ m }: { m: NowModel }) {
         <div className="min-w-0 flex-[2_1_420px]">
           <p className="text-xs font-semibold uppercase tracking-wide text-state-blocked">Biggest constraint</p>
           <h1 className="mt-1 text-[22px] font-semibold leading-tight max-sm:text-[19px]" data-testid="constraint-headline">
-            <span className="font-mono text-[0.92em]">{what}</span> holds {plural(n, c.on_kind === "human" ? "item" : "change")}
-            {c.on_kind === "resource" ? " in its queue" : ""}
+            {constraintSentence({ on_kind: c.on_kind, on_ref: c.on_ref, waiters: n })}
           </h1>
           <p className="mt-1.5 flex flex-wrap gap-x-2 text-[15px] leading-snug" data-testid="constraint-numbers">
             {facts.map((f, i) => (
@@ -94,7 +93,6 @@ function Banner({ m }: { m: NowModel }) {
 function CompactBanner({ m }: { m: NowModel }) {
   const c = m.constraint;
   if (!c) return null;
-  const what = c.on_kind === "human" ? "you" : c.on_ref;
   const n = c.waiters.length;
   return (
     <section
@@ -104,8 +102,7 @@ function CompactBanner({ m }: { m: NowModel }) {
     >
       <span className="text-[11px] font-semibold uppercase tracking-wide text-state-blocked">Constraint</span>
       <span className="font-semibold" data-testid="constraint-headline">
-        <span className="font-mono">{what}</span> holds {plural(n, c.on_kind === "human" ? "item" : "change")}
-        {c.on_kind === "resource" ? " in its queue" : ""}
+        {constraintSentence({ on_kind: c.on_kind, on_ref: c.on_ref, waiters: n })}
       </span>
       <span className="text-muted max-sm:hidden">{duration(c.direct_wait_s)} waiting in total</span>
       {m.next && (
@@ -207,6 +204,12 @@ function StallCard({ s }: { s: Stall }) {
   );
 }
 
+const GAP_CAUSE: Record<string, string> = {
+  "unclean shutdown": "after the machine lost power or crashed",
+  "clean shutdown": "the machine was shut down",
+  sleep: "the machine slept",
+};
+
 function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: NowModel["quiet"] }) {
   const beat = h.onloopd;
   const dm = h.dead_man;
@@ -235,7 +238,7 @@ function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: 
           </Meta>
         </Card>
       ))}
-      <Card t={!beat || beat.stale ? "blocked" : "done"} testid="health-onloopd">
+      <Card t={!beat || beat.stale ? "blocked" : h.gaps.length ? "human" : "done"} testid="health-onloopd">
         <h3 className="text-[15px] font-semibold">onloop itself</h3>
         <Meta>
           <span data-testid="heartbeat">
@@ -246,9 +249,22 @@ function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: 
             {dm.configured ? `dead-man switch ${dm.state === "ok" ? "OK" : dm.state} (${dm.schedule})` : "dead-man not configured"}
           </span>
         </Meta>
+        {h.gaps.slice(0, 3).map((g) => (
+          <p key={g.from} className="mt-1 text-[13px] leading-snug" data-testid="gap">
+            <span className="font-medium">
+              {g.while_running ? "No record" : "onloop was down"} for {duration(g.seconds)}
+            </span>{" "}
+            <span className="text-muted">
+              ({clock(g.from, now)} to {clock(g.to, now)}
+              {g.cause ? `, ${GAP_CAUSE[g.cause] ?? g.cause}` : g.while_running ? ", the machine slept or onloop was paused" : ""}). Nothing was recorded then, so work in that
+              time is missing, not quiet.
+            </span>
+          </p>
+        ))}
         {quiet && (
           <p className="mt-1 text-[13px] leading-snug" data-testid="quiet">
-            Quiet since {clock(quiet.since, now, true)}:{" "}
+            Quiet since {clock(quiet.since, now, true)}
+            {quiet.onloop_down_s ? ` (onloop was down for ${duration(quiet.onloop_down_s)} of it)` : ""}:{" "}
             {quiet.state === "idle"
               ? "every role's last outcome is idle; nothing to do."
               : `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`}

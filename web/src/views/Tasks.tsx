@@ -1,6 +1,7 @@
+import { markError, marks, usePending } from "@/lib/marks";
 import { isUrl } from "@/lib/url";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { tasksApi, uiPost, type DigestModel, type TaskCard } from "@/lib/api";
 import { ago, duration, plural } from "@/lib/format";
@@ -60,11 +61,8 @@ function stage(t: TaskCard, now: string): string | null {
 }
 
 export function TaskCardView({ t, now, onHide }: { t: TaskCard; now: string; onHide: (id: string) => void }) {
-  const qc = useQueryClient();
-  const mark = useMutation({
-    mutationFn: (resolution: "done" | "declined") => uiPost("/ui/tasks/resolve", { id: t.id, resolution }),
-    onSuccess: () => qc.invalidateQueries(),
-  });
+  const pending = usePending(t.id);
+  const failed = markError(t.id);
   const band = BAND[t.band];
   const st = stage(t, now);
   const critical = t.weight === "critical";
@@ -128,13 +126,14 @@ export function TaskCardView({ t, now, onHide }: { t: TaskCard; now: string; onH
           <code className="rounded bg-raised px-1.5 py-0.5 text-[12px]">onloop role resume {t.ref?.replace(/^role:/, "")}</code>
         ) : (
           <>
-            <Button size="sm" variant="outline" disabled={mark.isPending} onClick={() => mark.mutate("done")} data-testid="mark-done">Done</Button>
-            <Button size="sm" variant="ghost" disabled={mark.isPending} onClick={() => mark.mutate("declined")} data-testid="mark-declined">Decline</Button>
+            <Button size="sm" variant="outline" disabled={!!pending} onClick={() => marks.mark(t.id, "done")} data-testid="mark-done">Done</Button>
+            <Button size="sm" variant="ghost" disabled={!!pending} onClick={() => marks.mark(t.id, "declined")} data-testid="mark-declined">Decline</Button>
           </>
         )}
         <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onHide(t.id)} data-testid="not-now">Not now</Button>
       </div>
-      {mark.isError && <p className="mt-1 text-[12px] text-state-blocked">{String((mark.error as Error).message)}</p>}
+      {pending && <UndoStrip id={t.id} />}
+      {failed && !pending && <p className="mt-1 text-[12px] text-state-blocked">Not taken: {failed}</p>}
     </Card>
   );
 }
@@ -275,6 +274,27 @@ function shortAge(seconds: number): string {
   return `${Math.round(seconds / 86400)} d`;
 }
 
+/** "Marked done · Undo (6 s)": the mark is sent when the count ends; Undo, or leaving the page, sends nothing. */
+export function UndoStrip({ id }: { id: string }) {
+  const p = usePending(id);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const h = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(h);
+  }, []);
+  if (!p) return null;
+  const left = Math.max(0, Math.ceil((p.sendAt - Date.now()) / 1000));
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 rounded-md bg-raised px-2 py-1 text-[13px]" role="status" data-testid="undo-strip">
+      <span className="font-medium">{p.resolution === "done" ? "Marked done" : "Declined"}</span>
+      <span className="text-muted">· sent in {left} s; leaving the page cancels it</span>
+      <button type="button" onClick={() => marks.undo(id)} className="ml-auto font-medium text-accent hover:underline" data-testid="undo">
+        Undo
+      </button>
+    </p>
+  );
+}
+
 export function TaskRows({ tasks, now }: { tasks: TaskCard[]; now: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -321,6 +341,11 @@ export function TaskRows({ tasks, now }: { tasks: TaskCard[]; now: string }) {
                   <span className="w-10 text-right text-muted">{shortAge(t.age_s)}</span>
                 </span>
               </button>
+              {!isOpen && (
+                <div className="px-3 pb-1 empty:hidden">
+                  <UndoStrip id={t.id} />
+                </div>
+              )}
               {isOpen && (
                 <div className="px-3 pb-3">
                   <TaskCardView t={t} now={now} onHide={(id) => { setHidden(new Set([...hidden, id])); setOpen(null); }} />

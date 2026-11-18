@@ -386,7 +386,8 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
 
 def quiet(ledger, now: str) -> dict[str, Any] | None:
     """When nothing has happened for a day: is the team idle, or is someone waiting on someone?"""
-    last = ledger.select("SELECT MAX(ts_system) AS t FROM events WHERE kind NOT IN ('config.set')")[0]["t"]
+    # onloopd's own records (settings, declarations, its gaps) are not the team's work
+    last = ledger.select("SELECT MAX(ts_system) AS t FROM events WHERE source <> 'config'")[0]["t"]
     if not last or (ev.parse_ts(now) - ev.parse_ts(last)).total_seconds() < 86400:
         return None
     latest = ledger.select(

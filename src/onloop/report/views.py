@@ -387,6 +387,24 @@ def heartbeat_schedule(ledger: Any) -> str | None:
     return (rows[0]["payload"] or {}).get("value") if rows else None
 
 
+GAP_DAYS = 7
+
+
+def recent_gaps(ledger: Any, now: str, days: int = GAP_DAYS) -> list[dict[str, Any]]:
+    """onloopd's own gaps (`daemon.gap`) that ended in the last week, newest first (finding #14). While onloopd was
+    down nothing was recorded, so the views show this time as a gap in the record, never as a quiet team."""
+    since = ev.shift_ts(now, -days * 86400)
+    rows = ledger.select(
+        "SELECT payload FROM events WHERE kind = 'daemon.gap' AND json_extract(payload, '$.to') >= ? ORDER BY seq DESC",
+        (since,),
+    )
+    out = []
+    for r in rows:
+        p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"])
+        out.append({k: p.get(k) for k in ("from", "to", "seconds", "cause", "while_running")})
+    return out
+
+
 def _health(
     ledger: Any, alerts: list[dict[str, Any]], now: str, heartbeat: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -429,12 +447,26 @@ def _health(
         }
     problems = [r for r in rows if r["state"] != "ok"]
     return {
+        "gaps": recent_gaps(ledger, now),
         "schedules": problems,
         "schedules_ok": sum(1 for r in rows if r["state"] == "ok"),
         "schedules_total": len(rows),
         "onloopd": beat,
         "dead_man": dead_man,
     }
+
+
+def _quiet_with_gaps(ledger: Any, now_ts: str) -> dict[str, Any] | None:
+    """The quiet reading, with how much of the quiet time onloopd itself was down: that part is unknown, not quiet."""
+    q = _quiet(ledger, now_ts)
+    if not q:
+        return q
+    down = 0.0
+    for g in recent_gaps(ledger, now_ts, days=30):
+        lo, hi = max(g["from"] or "", q["since"]), min(g["to"] or "", now_ts)
+        if lo < hi:
+            down += (ev.parse_ts(hi) - ev.parse_ts(lo)).total_seconds()
+    return {**q, "onloop_down_s": int(down)}
 
 
 def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -465,7 +497,7 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
         "waiting_on_you": _tasks_or_waits(ledger, waits, items, now_ts),
         "stalls": _stalls(ledger, alerts, now_ts),
         "health": _health(ledger, alerts, now_ts, heartbeat),
-        "quiet": _quiet(ledger, now_ts),
+        "quiet": _quiet_with_gaps(ledger, now_ts),
     }
 
 
@@ -474,6 +506,21 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
 
 def _has_tasks(ledger: Any) -> bool:
     return bool(ledger.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'human_tasks'"))
+
+
+def waiting_on_you(
+    ledger: Any, now_ts: str, card_ids: set[str] | frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    """The one definition of "waiting on you" that every view counts (finding #20): the person's open tasks, the task
+    list's system of record. Flow adds the cards on its canvas that wait on the person: fewer or more than the tasks,
+    since one task (resume a paused role) can hold several cards, and an ask on a document is no card."""
+    if not _has_tasks(ledger):
+        return {"count": 0, "task_ids": [], "cards": []}
+    from .. import tasks
+
+    open_ = tasks.open_tasks(ledger, now_ts)
+    cards = sorted({t["ref"] for t in open_ if t.get("ref") in card_ids})
+    return {"count": len(open_), "task_ids": [t["id"] for t in open_], "cards": cards}
 
 
 def _tasks_or_waits(ledger: Any, waits: list[dict[str, Any]], items: Mapping[str, Any], now_ts: str) -> list:
@@ -685,15 +732,29 @@ def flow(ledger: Any, now_ts: str) -> dict[str, Any]:
                 "age_s": _age(w["since"], now_ts),
             }
         )
+    yours = waiting_on_you(ledger, now_ts, {c["id"] for c in cards})
+    # the cards on this canvas that wait on the person, through a task of theirs or a wait (a paused role's queue)
+    yours["cards"] = sorted(
+        set(yours["cards"]) | {w["card"] for w in wait_rows if w["on_kind"] == "human" and w["card"]}
+    )
+    if (
+        "human" in nodes
+    ):  # the "You" node counts the task list, as Now does; its lines are the cards that wait
+        nodes["human"]["lines"] = nodes["human"]["waiting"]
+        nodes["human"]["waiting"] = yours["count"] if _has_tasks(ledger) else nodes["human"]["waiting"]
     con = ledger.constraint(now_ts)["constraint"]
     highlight = None
     if con:
         ref = "human" if con["on_kind"] == "human" else con["on_ref"]
         flat = [{**w, "on_ref": "human" if w["on_kind"] == "human" else w["on_ref"]} for w in waits]
         down = _downstream(ref, flat, depends, set(zones_of))
+        # `waiters` is the count Now's banner says (finding #20); `cards` only highlights the canvas
         highlight = {
             "node": ref,
             "on_kind": con["on_kind"],
+            "on_ref": con["on_ref"],
+            "waiters": len(con["waiters"]),
+            "direct_wait_s": con["direct_wait_s"],
             "downstream_wait_s": con["downstream_wait_s"],
             "cards": sorted(down),
         }
@@ -705,6 +766,7 @@ def flow(ledger: Any, now_ts: str) -> dict[str, Any]:
         "resources": sorted(nodes.values(), key=lambda n: n["id"]),
         "waits": wait_rows,
         "constraint": highlight,
+        "waiting_on_you": yours,
         "schedules": [
             {
                 "id": s["id"],

@@ -21,6 +21,7 @@ import { api, type FlowCard, type FlowModel } from "@/lib/api";
 import { CARD_W, layout, lookOf, traced, type CardData, type ResData } from "@/lib/flow";
 import { clock, duration, plural, reason } from "@/lib/format";
 import { href, setParams } from "@/lib/route";
+import { constraintSentence } from "@/lib/constraint";
 import { cn } from "@/lib/utils";
 import { Command, Empty, Loading, Pill, Problem, tone } from "@/components/kit";
 import { CardNode, ResourceNode, ZoneNode } from "@/components/FlowNodes";
@@ -77,11 +78,23 @@ function Toolbar({ mode, overlay, hideDone, params, m }: { mode: Mode; overlay: 
           </label>
         </div>
       )}
-      {m.constraint && (
-        <p className="ml-auto text-[13px] text-muted max-lg:hidden" data-testid="flow-constraint">
-          Constraint: <span className="font-mono font-medium text-state-blocked">{m.constraint.node === "human" ? "you" : m.constraint.node}</span>, holding{" "}
-          {plural(m.constraint.cards.length, "card")} ({duration(m.constraint.downstream_wait_s)} of waiting)
+      {mode === "you" ? (
+        <p className="ml-auto text-[13px] max-lg:basis-full" data-testid="flow-waiting-on-you">
+          <a href={href("now")} className="font-medium text-accent hover:underline">
+            {plural(m.waiting_on_you.count, "task")} {m.waiting_on_you.count === 1 ? "waits" : "wait"} on you
+          </a>
+          <span className="text-muted">
+            {" "}
+            (the same list as Now) · on this canvas, {plural(m.waiting_on_you.cards.length, "card")} {m.waiting_on_you.cards.length === 1 ? "waits" : "wait"} on you
+          </span>
         </p>
+      ) : (
+        m.constraint && (
+          <p className="ml-auto text-[13px] text-muted max-lg:hidden" data-testid="flow-constraint">
+            Constraint: <span className="font-medium text-state-blocked">{constraintSentence(m.constraint)}</span> ·{" "}
+            {duration(m.constraint.direct_wait_s)} waiting in total
+          </p>
+        )
       )}
     </div>
   );
@@ -237,7 +250,23 @@ function Canvas({ m, mode, overlay, hideDone }: { m: FlowModel; mode: "graph" | 
   const shownEdges = useMemo(() => traced(edges, focus), [edges, focus]);
   const card = selected ? m.cards.find((c) => c.id === selected) ?? null : null;
   if (!laid) return <div className="p-4"><Loading what="the layout" /></div>;
-  if (laid.nodes.length === 0) return <div className="p-4"><Empty>{mode === "you" ? "Nothing on the canvas waits on you." : "No items in the ledger yet."}</Empty></div>;
+  if (laid.nodes.length === 0)
+    return (
+      <div className="p-4">
+        <Empty testid="flow-empty">
+          {mode === "you" ? "No card on this canvas waits on you." : "No cards on this canvas yet."}
+          {m.waiting_on_you.count > 0 && (
+            <>
+              {" "}
+              <a href={href("now")} className="font-medium text-accent hover:underline">
+                {plural(m.waiting_on_you.count, "task")} {m.waiting_on_you.count === 1 ? "waits" : "wait"} on you
+              </a>{" "}
+              on Now: asks on documents and decisions are tasks, not cards.
+            </>
+          )}
+        </Empty>
+      </div>
+    );
   return (
     <div className="relative min-h-0 flex-1" data-testid="canvas" data-opening={opening} data-focus={focus ?? ""}>
       <ReactFlow

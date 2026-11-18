@@ -1553,6 +1553,39 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "        if False:",
         ["tests/test_contract.py::test_a_1_1_type_in_a_1_0_snapshot_is_refused"],
     ),
+    # -- phase A, the trust fixes ---------------------------------------------------------------------------------
+    (
+        "Flow's You node counts its waits, not the task list (finding #20)",
+        "src/onloop/report/views.py",
+        '        nodes["human"]["waiting"] = yours["count"] if _has_tasks(ledger) else nodes["human"]["waiting"]',
+        '        nodes["human"]["waiting"] = nodes["human"]["waiting"]',
+        ["tests/test_agreement.py::test_they_agree_when_some_asks_are_not_cards_on_the_canvas"],
+    ),
+    (
+        "Flow's constraint counts the cards behind it, not what Now counts (finding #20)",
+        "src/onloop/report/views.py",
+        '            "waiters": len(con["waiters"]),',
+        '            "waiters": len(down),',
+        [
+            "tests/test_agreement.py::test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same"
+        ],
+    ),
+    (
+        "onloopd's own gap counts as the team's activity (finding #14)",
+        "src/onloop/tasks.py",
+        "FROM events WHERE source <> 'config'\")",
+        "FROM events WHERE kind NOT IN ('config.set')\")",
+        [
+            "tests/test_trust_base.py::test_now_shows_the_gap_and_the_quiet_reading_says_onloop_was_down_for_part_of_it"
+        ],
+    ),
+    (
+        "the daily report runs only when declared (finding #15)",
+        "src/onloop/daemon/config.py",
+        "    jobs = [jobs_mod.DEFAULT_JOB]",
+        "    jobs = []",
+        ["tests/test_trust_base.py::test_the_daily_report_runs_unless_turned_off"],
+    ),
     (
         "a raw outcome line is a task's title (finding #26)",
         "src/onloop/tasks.py",

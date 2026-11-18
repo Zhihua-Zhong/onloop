@@ -150,7 +150,7 @@ export function ResourceNode({ data }: NodeProps<Node<ResData>>) {
         </div>
       </div>
       <p className="flex items-center gap-1.5 text-xs text-muted" title="Select it to trace the cards that wait on it">
-        <span className={cn("shrink-0 whitespace-nowrap font-semibold", constraint ? "text-state-blocked" : "text-fg")}>{res.waiting} waiting</span>
+        <span className={cn("shrink-0 whitespace-nowrap font-semibold", constraint ? "text-state-blocked" : "text-fg")}>{isHuman ? `${res.waiting} ${res.waiting === 1 ? "task" : "tasks"} for you` : `${res.waiting} waiting`}</span>
         {constraint && <span className="ml-auto shrink-0 rounded-full bg-state-blocked px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-surface">constraint</span>}
       </p>
     </div>
