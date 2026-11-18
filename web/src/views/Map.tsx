@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Background, BackgroundVariant, ReactFlow, ReactFlowProvider, useStore, type Node, type NodeProps } from "@xyflow/react";
 import { ChevronRight } from "lucide-react";
 import { get, type DigestModel } from "@/lib/api";
+import { downMessage, refetchEvery, viewState } from "@/lib/recovery";
 import { clock, duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
 import {
@@ -44,7 +45,7 @@ function go(path: string[], table: boolean) {
 
 export default function MapView({ params, path }: { params: URLSearchParams; path: string[] }) {
   const table = params.get("table") === "1"; // in the URL, so back, reload and a shared link keep it
-  const q = useQuery({ queryKey: ["map"], queryFn: () => get<MapModel>("/api/map"), refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["map"], queryFn: () => get<MapModel>("/api/map"), refetchInterval: refetchEvery(30_000) });
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
@@ -54,11 +55,17 @@ export default function MapView({ params, path }: { params: URLSearchParams; pat
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   }, [path, table]);
-  if (q.isPending) return <div className="p-4"><Loading what="the map" /></div>;
-  if (q.isError) return <div className="p-4"><Problem error={q.error} /></div>;
-  const m = q.data;
-  if (path.length) return <NotYet m={m} path={path} table={table} />;
-  return <Zoom0 m={m} table={table} />;
+  const state = viewState(q.status, q.data !== undefined);
+  if (state === "loading") return <div className="p-4"><Loading what="the map" /></div>;
+  if (state === "down") return <div className="p-4"><Problem error={new Error(downMessage(q.error))} /></div>;
+  const m = q.data as MapModel;
+  const stale = state === "data-stale" && (
+    <p role="status" data-testid="map-stale" className="border-b border-state-human/40 bg-state-human/10 px-4 py-1.5 text-[13px]">
+      {downMessage(q.error)} This is the map as last read.
+    </p>
+  );
+  if (path.length) return <>{stale}<NotYet m={m} path={path} table={table} /></>;
+  return <>{stale}<Zoom0 m={m} table={table} /></>;
 }
 
 function Breadcrumb({ m, path, table }: { m: MapModel; path: string[]; table: boolean }) {

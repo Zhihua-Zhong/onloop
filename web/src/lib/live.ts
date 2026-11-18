@@ -20,12 +20,19 @@ export function useLive(): Live {
     let retry: number | undefined;
     let closed = false;
     let lostAt: number | null = null;
+    // set when onloopd did not answer (the first read or the stream): the next open fetches every query again, so a
+    // view that failed while onloopd was down recovers at once instead of waiting for its next event or interval
+    let missed = false;
     const open = () => {
       if (closed) return;
       source = new EventSource(`/api/stream?plain=1&after=${after.current}`);
       source.onopen = () => {
         window.clearTimeout(staleTimer);
         lostAt = null;
+        if (missed) {
+          missed = false;
+          void client.invalidateQueries();
+        }
         setLive({ state: "live", since: null });
       };
       source.onmessage = (e: MessageEvent) => {
@@ -35,6 +42,7 @@ export function useLive(): Live {
       };
       source.onerror = () => {
         source?.close();
+        missed = true;
         // The clock starts at the first failure and runs through the retries; only a reconnect stops it.
         if (lostAt === null) {
           lostAt = Date.now();
@@ -47,11 +55,16 @@ export function useLive(): Live {
     };
     // The page has just read everything: the stream starts at the newest event.
     fetch("/api/events?latest=1&limit=1", { method: "GET", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { events: [] }))
+      .then((r) => {
+        if (!r.ok) missed = true;
+        return r.ok ? r.json() : { events: [] };
+      })
       .then((b: { events: { seq: number }[] }) => {
         after.current = b.events[0]?.seq ?? 0;
       })
-      .catch(() => undefined)
+      .catch(() => {
+        missed = true;
+      })
       .finally(open);
     return () => {
       closed = true;

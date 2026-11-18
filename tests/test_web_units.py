@@ -29,3 +29,11 @@ def test_the_maps_rules_hold_in_the_page():
     """A geometric zoom never changes the level (Q23); Escape at zoom 0 goes nowhere; the phone's order."""
     r = _node_test("map.test.ts")
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_view_recovers_when_onloopd_comes_back():
+    """The lead's finding on 28edd47: a query in error is tried again every few seconds, the last data stays on
+    screen while a refresh fails, and "Failed to fetch" is said in plain words."""
+    r = _node_test("recovery.test.ts")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]

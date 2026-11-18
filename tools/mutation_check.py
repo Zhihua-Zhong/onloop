@@ -1790,6 +1790,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_agreement.py::test_the_maps_words_never_add_up_to_more_than_the_one_count"],
     ),
     (
+        "a view in error waits its normal pace before trying again, so it stays on the error after onloopd returns",
+        "web/src/lib/recovery.ts",
+        '  return (q) => (q.state.status === "error" ? RETRY_WHILE_DOWN_MS : normalMs);',
+        "  return () => normalMs;",
+        ["tests/test_web_units.py::test_a_view_recovers_when_onloopd_comes_back"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

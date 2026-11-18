@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Eye, Moon, Sun } from "lucide-react";
 import { useLive, type Live } from "@/lib/live";
+import { retrying } from "@/lib/recovery";
 import { href, useRoute, VIEW_LABEL, VIEWS, type View } from "@/lib/route";
 import { cn } from "@/lib/utils";
 import { Loading } from "@/components/kit";
@@ -13,9 +14,9 @@ import { AuditView } from "@/views/Audit";
 import { ConversationView } from "@/views/Conversation";
 
 // Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
-const FlowView = lazy(() => import("@/views/Flow"));
+const FlowView = lazy(retrying(() => import("@/views/Flow")));
 // The map shares React Flow with Flow, so it loads on first use too.
-const MapView = lazy(() => import("@/views/Map"));
+const MapView = lazy(retrying(() => import("@/views/Map")));
 
 // The theme: a `?theme=` in the URL, else the person's own choice from the toggle (kept in this browser), else the
 // system's `prefers-color-scheme`, followed live. Only the toggle stores a choice, so a first visit never pins one.
