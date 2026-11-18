@@ -28,6 +28,13 @@ All notable changes to this project are recorded here. The format follows
   - Signals: waiting on you (the same count as Now), stuck, and the team's longest pause in the last day.
   - The waits, oldest first.
   - The stuck thresholds are set with `overview: stuck:` in onloopd.yaml.
+- **The map's zoom 1 and zoom 2** (`#/map/<goal>[/<stage>]`, `GET /api/map?path=`):
+  - zoom 1 is a goal's stages, each with its count, colour, oldest item and reason, and a change's checks (skipped runs
+    counted, never named);
+  - zoom 2 is who holds what in a stage, linked to where to act;
+  - `block.turned` events record each block's and stage's change of colour, on onloopd's tick.
+- **The page recovers when onloopd comes back:** a view in error tries again every few seconds, and the last good data
+  stays on screen meanwhile.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
   sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
   hours or 7 days, with a table view. It works without outcome lines.

@@ -71,7 +71,22 @@ land on the same level.
   - a double-click, Enter on a focused block, or a click on its title opens the block;
   - Escape goes up, and does nothing at zoom 0;
   - Tab moves across the blocks in reading order.
-- **"Show as a list"** gives the same content as tables, at any width.
+- **Zoom 1** (`#/map/<goal>`): the goal's stages, in order, linked one to the next:
+  - a checklist: to do, in progress, done;
+  - a feedback batch: the team's own stages, then accepted;
+  - changes: opened, checks, review, merged in the last week.
+
+  Each stage has its count, colour, oldest item and, when red or amber, which item and why. A stage with no evidence
+  is hatched, "not reported". A change's checks read "checks: 1 failed (e2e) · 4 passed · 1 skipped": skipped runs are
+  counted, never named, and a failed or running check is named exactly as recorded.
+- **Zoom 2** (`#/map/<goal>/<stage>`): who holds each item in that stage (you, "you, as the team marks it", the team
+  or a role), the worst first. Each item says what it waits on and since when, with a link to your task or the
+  change's history.
+- **Zoom 3 and 4** (a role's turns, a turn's tool calls) are reserved in the URLs and say they come with the tool
+  events.
+- **"Show as a list"** gives the same content as tables, at every level and any width.
+- **When onloopd is down,** the page keeps the map as last read, with a line saying so, and tries again every few
+  seconds. It shows the map again as soon as onloopd answers.
 - **Under 768 px,** the page is one column: the signals, "Most waiting work", the batches, the checklists, the changes,
   then the waits.
 

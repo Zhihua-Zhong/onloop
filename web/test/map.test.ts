@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BLOCK_MIN_W, gridLayout, nextPath, phoneOrder, showsOpenHint, type MapBlock } from "../src/lib/map.ts";
+import { BLOCK_MIN_W, cardLayout, gridLayout, isReserved, nextPath, phoneOrder, showsOpenHint, type MapBlock } from "../src/lib/map.ts";
 
 test("a geometric zoom never changes the level; only an explicit open or up does (Q23)", () => {
   for (const zoom of [0.2, 1, 1.6, 2, 8]) {
@@ -54,4 +54,16 @@ test("the blocks share the width: three a row at 1440's canvas, one on a narrow 
   const narrow = gridLayout(3, 600);
   assert.equal(narrow.perRow, 1);
   assert.ok(narrow.positions[1].y > narrow.positions[0].y);
+});
+
+test("cards of different heights: each row as tall as its tallest, still at scale 1", () => {
+  const g = cardLayout([200, 320, 180, 240], 1072);
+  assert.equal(g.zoom, 1);
+  assert.equal(g.perRow, 3);
+  assert.equal(g.positions[3].y, g.positions[0].y + 320 + 24); // the second row starts under the tallest card
+});
+
+test("zoom 3 and 4 are reserved; 0 to 2 are built", () => {
+  assert.equal(isReserved(["goal:a", "built"]), false);
+  assert.equal(isReserved(["goal:a", "built", "builder"]), true);
 });

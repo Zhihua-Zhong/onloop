@@ -140,3 +140,72 @@ export function gridLayout(n: number, width: number): GridLayout {
   }));
   return { zoom: OPENING_ZOOM, perRow, blockW, positions };
 }
+
+// Zoom 1: one goal's stages. Zoom 2: who holds what in one stage (GET /api/map?path=<goal>[/<stage>]).
+export interface MapChecks { passed: number; skipped: number; failed: string[]; running: string[]; text: string }
+export interface MapStageLeaf extends MapLeaf { checks?: MapChecks | null }
+export interface MapStageEntry {
+  stage: string;
+  reported: boolean;
+  count: number | null;
+  colour: Colour | null;
+  shape: string | null;
+  label: string | null;
+  tally_text: string;
+  reason: MapBlock["reason"];
+  oldest: { id: string; age_s: number | null; age_text: string; lower_bound: boolean } | null;
+  leaves: MapStageLeaf[];
+}
+export interface MapLevelBase {
+  now: string;
+  level: number;
+  path: string[];
+  data_as_of: string | null;
+  signals: MapModel["signals"];
+  thresholds_s: Record<string, number>;
+  legend: MapModel["legend"];
+}
+export interface Zoom1Model extends MapLevelBase {
+  block: Omit<MapBlock, "leaves">;
+  stages: MapStageEntry[];
+}
+export interface MapHolderItem extends MapStageLeaf {
+  age_text: string | null;
+  link: { kind: string; view: "now" | "audit"; ref: string };
+}
+export interface MapHolder {
+  holder: string;
+  kind: "you" | "marked" | "team" | "role";
+  count: number;
+  colour: Colour;
+  shape: string;
+  tally_text: string;
+  oldest_s: number;
+  items: MapHolderItem[];
+}
+export interface Zoom2Model extends MapLevelBase {
+  block: Omit<MapBlock, "leaves">;
+  stage: Omit<MapStageEntry, "leaves">;
+  holders: MapHolder[];
+}
+
+// The levels that are built (decision 0018): 0, 1 and 2. Zoom 3 (a role's turns) and 4 (a turn's tool calls) are
+// reserved in the URLs and come with the tool events.
+export const BUILT_LEVELS = 2;
+export function isReserved(path: string[]): boolean {
+  return path.length > BUILT_LEVELS;
+}
+
+// The same grid for cards of different heights (zoom 1's stages, zoom 2's holders): rows as many as fit, each row as
+// tall as its tallest card, at scale 1.
+export function cardLayout(heights: number[], width: number): GridLayout & { heights: number[] } {
+  const g = gridLayout(heights.length, width);
+  const positions: { x: number; y: number }[] = [];
+  let y = PAD;
+  for (let r = 0; r * g.perRow < heights.length; r++) {
+    const row = heights.slice(r * g.perRow, (r + 1) * g.perRow);
+    row.forEach((_, c) => positions.push({ x: PAD + c * (g.blockW + GAP), y }));
+    y += Math.max(...row) + GAP;
+  }
+  return { ...g, positions, heights };
+}
