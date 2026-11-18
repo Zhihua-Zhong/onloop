@@ -63,3 +63,20 @@ def test_the_most_jammed_block_and_why_are_read_without_a_click(zoom0):
     red = [b for b in zoom0["blocks"] if b["colour"] == "red"]
     assert [b["id"] for b in red] == ["changes"]
     assert red[0]["reason"]["text"] == "team: change pr#5 — holding it for 1 day"
+
+
+def test_the_most_jammed_place_and_who_holds_it_are_three_clicks_away_at_most(zoom0, tmp_path_factory):
+    """The timed trial's question (§12.9): from zoom 0, the reddest block, its reddest stage, then the holder."""
+    root = tmp_path_factory.mktemp("clicks")
+    example.write(root, END, days=2, n=400, seed=3, contract="1.1")
+    (root / "onloop").mkdir()
+    reader.import_snapshots(root, root / "onloop" / "ledger.db")
+    path = [next(b["id"] for b in zoom0["blocks"] if b["colour"] == "red")]  # click 1
+    with Ledger(root / "onloop" / "ledger.db", readonly=True) as led:
+        z1 = derive.zoom1(led, NOW, path[0])
+        path.append(next(s["stage"] for s in z1["stages"] if s["colour"] == "red"))  # click 2
+        z2 = derive.zoom2(led, NOW, *path)
+    holder = z2["holders"][0]  # the worst first: read without a third click
+    assert path == ["changes", "review"] and len(path) <= 3
+    assert (holder["holder"], holder["colour"]) == ("team", "red")
+    assert holder["items"][0]["id"] == "pr#5" and "holding it for 1 day" in holder["items"][0]["why"]
