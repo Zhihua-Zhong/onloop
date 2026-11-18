@@ -614,6 +614,41 @@ def _ledger_path(args) -> pathlib.Path:
     return pathlib.Path(args.ledger) if getattr(args, "ledger", None) else default_path()
 
 
+def cmd_import(args) -> int:
+    """`onloop import snapshot`: counts per file, never a record's values (decision 0017)."""
+    from .contract import reader
+
+    if args.action != "snapshot":
+        _err("onloop: say what to import: snapshot")
+        return 2
+    folder = pathlib.Path(args.folder)
+    only = None
+    if folder.parent.name == "snapshots" and (folder / "manifest.json").exists():
+        folder, only = folder.parent.parent, folder.name
+    try:
+        results = reader.import_snapshots(folder, pathlib.Path(args.ledger), only=only, dry_run=args.dry_run)
+    except reader.ImportRefused as e:
+        _err(f"onloop: not imported: {e}")
+        return 2
+    if args.json:
+        _say(json.dumps([r.as_dict() for r in results], indent=2, sort_keys=True))
+    else:
+        if not results:
+            _say("no complete snapshot to read (a snapshot is complete once its manifest.json is written)")
+        for r in results:
+            counts = ", ".join(f"{n} {t.removeprefix('onloop.')}" for t, n in sorted(r.counts.items()))
+            line = f"{r.snapshot}/{r.file}: {r.status}"
+            if r.status == "imported":
+                line += f", {r.records} records ({counts}), {r.new_events} new events"
+            elif r.status == "refused":
+                line += f", {len(r.problems)} problem(s)"
+            _say(line)
+            for p in r.problems[:10]:
+                where = f"line {p['line']} " if p.get("line") else ""
+                _say(f"  {where}{p.get('path', '/')}: {p['rule']}")
+    return 2 if any(r.status == "refused" for r in results) else 0
+
+
 def cmd_overlay(args) -> int:
     """The overlay ledger: import the legacy stores into it, replay it, or print its state."""
     import hashlib
@@ -1515,6 +1550,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--holder", help="the holder, releasing its own lease")
     sp.add_argument("--by", help="anyone else releasing it; recorded under this identity")
     sp = slot_cmd("status", "who holds each slot and who waits (read-only)", True, False)
+    sp.add_argument("--json", action="store_true")
+
+    ip = sub.add_parser(
+        "import", help="replay a team's daily snapshots into a ledger beside them (read-only on them)"
+    )
+    isub = ip.add_subparsers(dest="action", metavar="<action>")
+    sp = isub.add_parser(
+        "snapshot",
+        help="import every new snapshot under FOLDER (or the one snapshot FOLDER is), by file, whole or not at all",
+        description="Reads FOLDER/snapshots/<UTC time>/ (manifest.json last), checks every record against the "
+        "contract and the privacy rules, and appends the new ones to --ledger. Writes only the ledger and "
+        "import-report.jsonl next to it. Prints counts, never a record's values.",
+    )
+    sp.set_defaults(fn=cmd_import)
+    sp.add_argument("folder", help="the exchange folder that holds snapshots/, or one snapshot folder")
+    sp.add_argument("--ledger", required=True, help="the ledger file, outside any git work tree")
+    sp.add_argument("--dry-run", action="store_true", help="check only; write nothing")
     sp.add_argument("--json", action="store_true")
 
     op = sub.add_parser(

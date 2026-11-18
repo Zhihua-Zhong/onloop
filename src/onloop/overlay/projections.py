@@ -161,6 +161,11 @@ ROLE_FIELDS = ("session_id", "state", "paused_by", "budget")
 
 
 def _role_declared(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    if _exists(
+        conn, "roles", p["id"]
+    ):  # a turn of an imported role came first: the declaration completes its row
+        _set(conn, "roles", p["id"], _pick(p, ROLE_FIELDS), e["seq"])
+        return
     _insert(conn, "roles", {"id": p["id"], "state": "idle", **_pick(p, ROLE_FIELDS), "last_seq": e["seq"]})
 
 
@@ -698,6 +703,8 @@ def _hook_stop(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None
         "parse_error": None if out else (p.get("parse_error") or "no outcome"),
         "last_seq": e["seq"],
     }
+    if p.get("started_at") and _has_column(conn, "turns", "started_at"):
+        row["started_at"] = p["started_at"]  # from version 8, when the source says when the turn began
     _insert(conn, "turns", row)
     _outcome_wait(conn, e, role, out)
     if _HAS_TASKS(conn):
@@ -736,6 +743,10 @@ def _HAS_TASKS(conn: sqlite3.Connection) -> bool:  # noqa: N802 - reads as a con
     """True from ledger schema 7 on. An older file being migrated replays its events under schema 7's rules, so this
     is only False inside a migration test that stops at an older version."""
     return _has_table(conn, "human_tasks")
+
+
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(r[1] == column for r in conn.execute(f"PRAGMA table_info({table})").fetchall())
 
 
 def _has_table(conn: sqlite3.Connection, table: str) -> bool:

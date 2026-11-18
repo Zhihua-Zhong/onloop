@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.1/pr.reviewed",
+  "title": "One verdict on a pull request: who gave it by role (never a login), a short code, and when. Never a comment body",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["number", "head_sha", "reviewer", "verdict", "at"],
+  "properties": {
+    "number": {"type": "integer", "minimum": 1},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "reviewer": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,39}$"},
+    "verdict": {"type": "string", "pattern": "^[A-Z_ ]{1,24}$"},
+    "at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"}
+  }
+}

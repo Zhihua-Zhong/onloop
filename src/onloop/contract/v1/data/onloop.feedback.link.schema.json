@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/feedback.link",
+  "title": "A feedback item links to an issue, by number",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["batch", "item", "issue"],
+  "properties": {
+    "batch": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,80}$"},
+    "item": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,40}$"},
+    "issue": {"type": "integer", "minimum": 1}
+  }
+}

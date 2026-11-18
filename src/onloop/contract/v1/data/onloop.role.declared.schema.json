@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/role.declared",
+  "title": "A role of the team, by its role name: never a person's name",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role"],
+  "properties": {
+    "role": {"$ref": "#/$defs/role"},
+    "kind": {"enum": ["agent", "coordinator", "reviewer"]},
+    "schedule": {"type": "string", "maxLength": 80}
+  },
+  "$defs": {"role": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,39}$"}}
+}

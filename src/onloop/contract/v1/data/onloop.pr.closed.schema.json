@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.0/pr.closed",
+  "title": "A pull request was closed: its number, its title, and its current head commit. Never its body or who wrote it",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["number"],
+  "properties": {
+    "number": {"type": "integer", "minimum": 1},
+    "title": {"type": "string", "maxLength": 120},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"}
+  }
+}

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Loading } from "@/components/kit";
 import { NowView } from "@/views/Now";
 import { OutcomeView } from "@/views/Outcome";
+import { ActivityView } from "@/views/Activity";
 import { TeamView } from "@/views/Team";
 import { SchedulesView } from "@/views/Schedules";
 import { AuditView } from "@/views/Audit";
@@ -143,6 +144,7 @@ export default function App() {
           </Suspense>
         )}
         {route.view === "outcome" && <OutcomeView params={route.params} />}
+        {route.view === "activity" && <ActivityView params={route.params} />}
         {route.view === "team" && <TeamView />}
         {route.view === "conversation" && <ConversationView params={route.params} />}
         {route.view === "schedules" && <SchedulesView params={route.params} />}

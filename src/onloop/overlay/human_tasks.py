@@ -321,6 +321,8 @@ def on_wait_opened(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
     if _open_ids(conn, "wait_id = ?", (p["id"],)):
         return
     ask, title = _item_ask(conn, p.get("item_id"))
+    if p.get("effect"):  # an imported wait says what is asked ("approve the change (pr#12), so it can move")
+        ask = {**ask, "effect": str(p["effect"])[:200]}
     open_task(
         conn,
         e,

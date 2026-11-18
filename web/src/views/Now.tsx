@@ -174,6 +174,20 @@ function Waiting({ w }: { w: WaitCard }) {
 
 function StallCard({ s }: { s: Stall }) {
   const why = (s.detail.parse_error as string | undefined) ?? (s.detail.reason as string | undefined);
+  if (s.detail.summary) {
+    // a team without outcome lines: one fact about the team, not a stalled turn; activity shows whether it moves
+    return (
+      <Card t="stall" testid={`stall-${s.id}`}>
+        <h3 className="text-[15px] font-semibold leading-snug">{s.title}</h3>
+        <p className="mt-1 text-[13px] leading-snug text-muted">
+          Without them onloop cannot tell what a turn decided or waits on, so it shows when each role worked instead.
+        </p>
+        <a href={href("activity")} className="mt-1.5 inline-block text-[13px] font-medium text-accent hover:underline" data-testid="see-activity">
+          See when the team worked
+        </a>
+      </Card>
+    );
+  }
   return (
     <Card t="stall" testid={`stall-${s.id}`}>
       <h3 className="text-[15px] font-semibold leading-snug">{s.title}</h3>

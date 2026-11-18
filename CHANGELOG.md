@@ -6,6 +6,24 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The data contract** ([data-contract.md](docs/data-contract.md), decision 0017): a team's daily export, replayed
+  read-only. `onloop import snapshot <folder> --ledger <ledger>` reads `snapshots/<UTC time>/` (manifest last), checks
+  every record against the v1 schemas and the privacy rules, imports each file whole or not at all, and prints counts,
+  never values. v1 reads roles, ended turns, pull requests (opened, merged, closed), goal checklist revisions, and
+  feedback batches, items and links (an item's stage as the team reports it). Contract 1.1 adds check runs, verdicts
+  (by role, never a login; a short code, never a body) and who a pull request waits on. A wait on the person is a
+  task on their list, and a wait ends only when the export clears it. Ledger schema 8 adds the `import` source and a turn's start time.
+- **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
+  sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
+  hours or 7 days, with a table view. It works without outcome lines.
+
+### Changed
+
+- A team that writes no outcome lines gets one summary ("Outcome lines not adopted: 0 of N turns end with one")
+  instead of a stall for each role's latest turn.
+
 ### Fixed
 
 - **An ask logged before 0.4.0 is no longer closed by its author's next turn.** After an upgrade, every outcome-line

@@ -23,7 +23,9 @@ SOURCES_5 = (*SOURCES_3, "gate")  # version 5: the merge gate's own decisions, n
 # version 6: the session carrier's own events (leases, runs, deliveries, timers), and what a person sends by the CLI
 SOURCES_6 = (*SOURCES_5, "carrier", "cli")
 # version 7: a read adapter other than the built-in GitHub ingest (decision 0013)
-SOURCES = (*SOURCES_6, "adapter")
+SOURCES_7 = (*SOURCES_6, "adapter")
+# version 8: a team's daily snapshot, replayed by `onloop import snapshot` (decision 0017)
+SOURCES = (*SOURCES_7, "import")
 ITEM_KINDS = ("task", "decision", "followup", "alert")
 ITEM_STATES = ("open", "ready", "blocked", "in_review", "done")
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
@@ -560,7 +562,7 @@ CREATE TABLE events_v7 (
   seq         INTEGER PRIMARY KEY AUTOINCREMENT,
   id          TEXT NOT NULL UNIQUE,
   {_ts("ts_system", nullable=False)},
-  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_7)}),
   kind        TEXT NOT NULL,
   subject_ref TEXT NOT NULL,
   actor       TEXT,
@@ -709,6 +711,32 @@ CREATE TABLE links (
 CREATE UNIQUE INDEX one_live_link ON links(from_kind, from_ref, COALESCE(goal_id, ''), COALESCE(goal_item, 0)) WHERE withdrawn_at IS NULL
 """
 
+# Version 8: the data contract (decision 0017).
+# - `events.source` also takes `import`: a team's daily snapshot replayed by `onloop import snapshot`. Projections read
+#   an imported event like the live kind it maps to; every view can still tell replayed evidence from live evidence;
+# - `turns.started_at`, when the source says when the turn began (an imported turn, and the activity lanes).
+SCHEMA_8 = f"""
+CREATE TABLE events_v8 (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id          TEXT NOT NULL UNIQUE,
+  {_ts("ts_system", nullable=False)},
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  kind        TEXT NOT NULL,
+  subject_ref TEXT NOT NULL,
+  actor       TEXT,
+  {_ts("at")},
+  payload     TEXT NOT NULL CHECK (json_valid(payload))
+);
+INSERT INTO events_v8 (seq, id, ts_system, source, kind, subject_ref, actor, at, payload) SELECT seq, id, ts_system, source, kind, subject_ref, actor, at, payload FROM events ORDER BY seq;
+DROP TABLE events;
+ALTER TABLE events_v8 RENAME TO events;
+CREATE INDEX events_kind ON events(kind, seq);
+CREATE INDEX events_subject ON events(subject_ref, seq);
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+ALTER TABLE turns ADD COLUMN {_ts("started_at")}
+"""
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
@@ -717,6 +745,7 @@ MIGRATIONS: list[str] = [
     SCHEMA_5,
     SCHEMA_6,
     SCHEMA_7,
+    SCHEMA_8,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 
