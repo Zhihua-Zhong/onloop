@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from onloop import tasks
+from onloop.contract import reader
 from onloop.overlay.ledger import Ledger
 from onloop.report import views
 
@@ -76,6 +78,39 @@ def test_they_agree_when_some_asks_are_not_cards_on_the_canvas(demo_path, tmp_pa
         f = views.flow(led, NOW)["waiting_on_you"]
     assert len(set(c.values())) == 1, c
     assert f["count"] == len(f["task_ids"]) and f["count"] > len([c for c in f["cards"] if c == "pr#99"])
+
+
+EXAMPLE = Path(__file__).resolve().parent.parent / "tools" / "contract_example.py"
+_espec = importlib.util.spec_from_file_location("contract_example", EXAMPLE)
+example = importlib.util.module_from_spec(_espec)
+sys.modules.setdefault("contract_example", example)
+_espec.loader.exec_module(example)
+REPLAY_END = dt.datetime(2026, 11, 17, 2, 0, 0, tzinfo=dt.UTC)
+REPLAY_NOW = "2026-11-17T03:00:00.000Z"
+
+
+@pytest.fixture(scope="module")
+def replay_path(tmp_path_factory):
+    """The generic replay: two daily snapshots in contract 1.1, made up, imported as a team's export is. It has the
+    shapes the demo lacks: imported turns, a wait on the person that opens a task, waits on a role and on the team."""
+    root = tmp_path_factory.mktemp("replay")
+    example.write(root, REPLAY_END, days=2, n=400, seed=3, contract="1.1")
+    (root / "onloop").mkdir()
+    results = reader.import_snapshots(root, root / "onloop" / "ledger.db")
+    assert [r.status for r in results] == ["imported", "imported"], [r.as_dict() for r in results]
+    return root / "onloop" / "ledger.db"
+
+
+def test_now_flow_and_the_task_list_agree_on_the_generic_replay(replay_path):
+    with Ledger(replay_path, readonly=True) as led:
+        c = _counts(led, REPLAY_NOW)
+        n = views.now(led, REPLAY_NOW)
+        f = views.flow(led, REPLAY_NOW)
+    assert len(set(c.values())) == 1 and c["now"] > 0, c
+    assert (n["constraint"] is None) == (f["constraint"] is None)
+    if n["constraint"] is not None:
+        assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]
+        assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])
 
 
 def test_an_empty_ledger_has_nothing_waiting_anywhere(tmp_path):
