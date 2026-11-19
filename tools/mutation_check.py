@@ -1924,6 +1924,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
     ),
     (
+        "a view's heartbeat is the page-load value: Now's Health card ages it while the header reads a newer one",
+        "web/src/lib/tick.ts",
+        "    if (best === null || t > Date.parse(best.at)) best =",
+        "    if (best === null) best =",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "the header's data age counts the digest, read once, so a healthy page looks older by the minute",
+        "web/src/lib/tick.ts",
+        "  const times = answers.filter((a) => a.refreshes && a.key",
+        "  const times = answers.filter((a) => a.key",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
         "a quiet onloopd reads as live: no news for minutes is never said",
         "web/src/lib/tick.ts",
         '  if (quietS > QUIET_PERIODS * periodS) return { state: "quiet", forS: quietS };',

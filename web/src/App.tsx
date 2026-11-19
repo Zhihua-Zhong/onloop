@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Eye, Moon, Sun } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useHeartbeat } from "@/lib/heartbeat";
 import { useNowMs } from "@/lib/clock";
-import { beatAtMs, HEARTBEAT_POLL_MS, liveness, type LiveState } from "@/lib/tick";
+import { beatAtMs, dataAgeS, liveness, type LiveState } from "@/lib/tick";
 import { duration } from "@/lib/format";
 import { retrying } from "@/lib/recovery";
 import { href, useRoute, VIEW_LABEL, VIEWS, type View } from "@/lib/route";
@@ -64,37 +65,28 @@ function useTheme(): [boolean, () => void] {
   return [dark, toggle];
 }
 
-interface Beat { now: string; at: string | null; age_s: number | null; period_s: number }
-
 // The header's clock and liveness (the project lead's finding on 8796): a clock that ticks every second, so a page
 // that has stopped is seen to have stopped; what onloopd last said, from its stream and its heartbeat; and how old
 // the data on this page is. The rules and thresholds are in lib/tick.ts.
 function LiveBadge({ live }: { live: Live }) {
   const nowMs = useNowMs();
   const client = useQueryClient();
-  const hb = useQuery({
-    queryKey: ["heartbeat"],
-    queryFn: async (): Promise<Beat> => {
-      const r = await fetch("/api/heartbeat", { method: "GET", cache: "no-store" });
-      if (!r.ok) throw new Error(`onloopd answered ${r.status}`);
-      return r.json();
-    },
-    refetchInterval: HEARTBEAT_POLL_MS,
-    refetchIntervalInBackground: true,
-    retry: false,
-  });
+  const hb = useHeartbeat(); // the same reading Now's Health card shows
   const beatNews = hb.data ? beatAtMs(hb.data.age_s, hb.dataUpdatedAt) : null;
   const news = Math.max(streamNews() ?? 0, beatNews ?? 0) || null;
   const lost = streamLost();
   // down: neither the stream nor the heartbeat answers; counted from the last time either did
   const downSince = lost !== null && hb.isError ? Math.max(lost, hb.dataUpdatedAt || 0, streamNews() ?? 0) : null;
   const { state, forS } = liveness({ nowMs, newsAtMs: news, downSinceMs: downSince, periodS: hb.data?.period_s ?? 10 });
-  const ages = client
+  const answers = client
     .getQueryCache()
     .findAll({ type: "active" })
-    .filter((q) => q.queryKey[0] !== "heartbeat" && q.state.dataUpdatedAt > 0)
-    .map((q) => q.state.dataUpdatedAt);
-  const dataAge = ages.length ? (nowMs - Math.min(...ages)) / 1000 : null;
+    .map((q) => ({
+      key: String(q.queryKey[0]),
+      updatedAtMs: q.state.dataUpdatedAt,
+      refreshes: q.observers.some((o) => Boolean(o.options.refetchInterval)),
+    }));
+  const dataAge = dataAgeS(answers, nowMs);
   const words: Record<LiveState, string> = {
     connecting: "Connecting",
     live: "Live",

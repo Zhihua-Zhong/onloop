@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { beatAtMs, DOWN_AFTER_MS, liveAge, liveNow, liveness, plainAge, QUIET_PERIODS, sinceFetch, tickModel } from "../src/lib/tick.ts";
+import { beatAtMs, currentBeat, dataAgeS, DOWN_AFTER_MS, liveAge, liveNow, liveness, plainAge, QUIET_PERIODS, sinceFetch, tickModel } from "../src/lib/tick.ts";
 
 const T0 = Date.parse("2026-11-19T23:09:28.000Z");
 
@@ -63,4 +63,33 @@ test("a view's answer moves on as a whole: ages rise, time left falls, the map's
   assert.equal(t.count, 3);
   assert.equal(tickModel(m, 0), m); // nothing has passed: the same answer, so nothing re-renders
   assert.equal(m.waits[0].oldest_s, 3590); // the answer itself is never changed
+});
+
+test("when a newer heartbeat arrives, the card's age resets: every display shows the newest (finding on 2d51352)", () => {
+  const load = T0; // the page read /api/now with a heartbeat 1 s old, written at 23:09:27
+  const atLoad = "2026-11-19T23:09:27.000Z";
+  const later = T0 + 21_000; // the header's /api/heartbeat read, 21 s later, found a beat 9.5 s old
+  const newer = "2026-11-19T23:09:39.500Z";
+  const nowMs = T0 + 22_000;
+  const own = { at: atLoad, age_s: liveAge(1, load, nowMs), fetchedAtMs: nowMs }; // Now's own, ticked to now: 23 s
+  assert.equal(own.age_s, 23);
+  const b = currentBeat([own, { at: newer, age_s: 9.5, fetchedAtMs: later }], nowMs);
+  assert.equal(b?.at, newer);
+  assert.equal(b?.age_s, 10.5); // not 23 s and climbing
+  assert.equal(b?.stale, false);
+  // the order of the readings does not matter, and an old heartbeat alone is still aged honestly
+  assert.equal(currentBeat([{ at: newer, age_s: 9.5, fetchedAtMs: later }, own], nowMs)?.at, newer);
+  assert.equal(currentBeat([own], T0 + 70_000)?.stale, true);
+  assert.equal(currentBeat([{ at: null, age_s: null, fetchedAtMs: later }], nowMs), null);
+});
+
+test("the data's age counts only answers that refresh: a digest read once never makes a healthy page look old", () => {
+  const nowMs = T0 + 300_000;
+  const answers = [
+    { key: "now", updatedAtMs: T0 + 290_000, refreshes: true },
+    { key: "digest", updatedAtMs: T0, refreshes: false },
+    { key: "heartbeat", updatedAtMs: T0 + 299_000, refreshes: true },
+  ];
+  assert.equal(dataAgeS(answers, nowMs), 10);
+  assert.equal(dataAgeS([answers[1]], nowMs), null);
 });

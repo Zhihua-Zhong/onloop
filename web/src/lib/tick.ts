@@ -101,3 +101,30 @@ export function tickModel<T>(data: T, addS: number, opts: { liveQuiet?: boolean 
   }
   return moved as T;
 }
+
+// onloopd's heartbeat, as every display on the page shows it (the lead's finding on 2d51352: Now's Health card aged
+// the heartbeat it read with the page, while the header read a newer one, so a healthy onloopd climbed to "2 min
+// ago"). Each reading is a heartbeat and when the page received it; the newest heartbeat wins, aged from its own
+// reading. HEARTBEAT_STALE_S is the server's own (report/views.py).
+export const HEARTBEAT_STALE_S = 60;
+export interface BeatReading { at: string | null; age_s: number | null; fetchedAtMs: number }
+
+export function currentBeat(readings: BeatReading[], nowMs: number): { at: string; age_s: number; stale: boolean } | null {
+  let best: { at: string; age_s: number } | null = null;
+  for (const r of readings) {
+    if (!r.at || r.age_s == null) continue;
+    const t = Date.parse(r.at);
+    if (!Number.isFinite(t)) continue;
+    if (best === null || t > Date.parse(best.at)) best = { at: r.at, age_s: liveAge(r.age_s, r.fetchedAtMs, nowMs) ?? r.age_s };
+  }
+  return best && { ...best, stale: best.age_s > HEARTBEAT_STALE_S };
+}
+
+// "data as of N s ago": the oldest of the page's answers that refresh by themselves. An answer read once on purpose
+// (the digest, "since you looked") never refreshes, so counting it would climb forever on a healthy page, and the
+// heartbeat's own reading is the liveness, not the data.
+export interface Answer { key: string; updatedAtMs: number; refreshes: boolean }
+export function dataAgeS(answers: Answer[], nowMs: number): number | null {
+  const times = answers.filter((a) => a.refreshes && a.key !== "heartbeat" && a.updatedAtMs > 0).map((a) => a.updatedAtMs);
+  return times.length ? Math.max(0, (nowMs - Math.min(...times)) / 1000) : null;
+}

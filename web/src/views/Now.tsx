@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import { isUrl } from "@/lib/url";
 import { useQuery } from "@tanstack/react-query";
-import { useTicking } from "@/lib/clock";
+import { useNowMs, useTicking } from "@/lib/clock";
+import { useHeartbeat } from "@/lib/heartbeat";
+import { currentBeat } from "@/lib/tick";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
 import { DigestBand, TaskList, TaskRows } from "@/views/Tasks";
@@ -340,7 +343,24 @@ function TasksFirst({ m }: { m: NowModel }) {
 export function NowView() {
   const q = useQuery({ queryKey: ["now"], queryFn: api.now, refetchInterval: 30_000 });
   // the answer as it stands now: its ages rise every second between answers (lib/tick.ts)
-  const m = useTicking(q.data, q.dataUpdatedAt) as NonNullable<typeof q.data>;
+  const ticked = useTicking(q.data, q.dataUpdatedAt) as NonNullable<typeof q.data>;
+  // onloopd's heartbeat is the page's one reading (the header's), or this answer's when it is newer; never the
+  // heartbeat this answer carried, aged on, while a newer one has arrived
+  const hb = useHeartbeat();
+  const nowMs = useNowMs();
+  const m = useMemo(() => {
+    if (!ticked) return ticked;
+    const own = ticked.health.onloopd;
+    const beat = currentBeat(
+      [
+        { at: own?.at ?? null, age_s: own?.age_s ?? null, fetchedAtMs: nowMs }, // already ticked to now
+        { at: hb.data?.at ?? null, age_s: hb.data?.age_s ?? null, fetchedAtMs: hb.dataUpdatedAt },
+      ],
+      nowMs,
+    );
+    if (!beat || !own) return ticked;
+    return { ...ticked, health: { ...ticked.health, onloopd: { ...own, ...beat } } };
+  }, [ticked, hb.data, hb.dataUpdatedAt, nowMs]);
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6 sm:py-5" data-testid="view-now">
       {q.isPending ? (
