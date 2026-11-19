@@ -220,7 +220,7 @@ function Bar({ b }: { b: MapBlock }) {
   );
 }
 
-// A tally line ("1 jammed · 1 waits on you"), with its jammed part in the jam's red and set apart,
+// A tally line ("2 jammed · 4 idle · 1 waits on you · 3 moving"), with its jammed part in the jam's red and set apart,
 // so "most stuck" never reads as the amber that waits on you beside it (run 1's one difficulty).
 function Tally({ text, testid = "tally" }: { text: string; testid?: string }) {
   const parts = text.split(" · ");

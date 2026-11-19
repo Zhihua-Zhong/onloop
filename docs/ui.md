@@ -61,7 +61,7 @@ land on the same level.
     reported", never 0.
 - **Colour:** a block takes the worst colour of its live children: jammed (!), waits on you (◆), moving (▶), not
   started (□). Every colour has its shape. A red or amber block says in one line which child and why, never an idle
-  one. A tally reads "1 jammed | 1 waits on you", with the jam first, in red, set apart. Idle work
+  one. A tally reads "2 jammed | 4 idle · 1 waits on you · 3 moving", with the jam first, in red, set apart. Idle work
   (open, no move for 7 days) is hatched greyish red and never counted as jammed.
 - **Waits, by who holds them:** oldest first. An age shown as "≥ 9 days" began before anything onloop has seen, and
   the row says "began before the first export".

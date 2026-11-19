@@ -51,7 +51,7 @@ All notable changes to this project are recorded here. The format follows
   hours or 7 days, with a table view. It works without outcome lines. The window starts where the data does ("the 3
   days since the data began"), roles with no turns are one line, and a silence is red only while it is still going.
 - **Idle work is set apart at every level.** An open change with no move for 7 days is idle: parked or abandoned. It
-  is never counted as jammed, in the header, a tally ("3 jammed · 2 idle · 1 moving") or a reason line. It is
+  is never counted as jammed, in the header, a tally ("2 jammed · 4 idle · 1 waits on you") or a reason line. It is
   drawn hatched greyish red, and a tally's jam comes first, set apart from what waits on you.
 - **A clock and live ages on every page.**
   - The header has a clock that ticks every second, and "data as of N s ago".

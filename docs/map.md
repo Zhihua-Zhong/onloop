@@ -28,7 +28,7 @@ Open it at `#/map`, or from the **Map** tab.
 - **For changes**, Opened is split. A change with no move for 7 days or more is **idle**: parked or abandoned, in its
   own column first, apart from the live queue. Your own tasks are never idle, since they wait on you.
 - **Idle is set apart at every level**, not only in the grid. The header's "N jammed" and a block's tally count live
-  work only, and the tally adds "N idle" ("3 jammed · 2 idle · 1 moving"). The reason line names the worst live
+  work only, and the tally adds "N idle" ("2 jammed · 4 idle · 1 waits on you"). The reason line names the worst live
   change, never an idle one, and the grid's first row is the holder that reason line names. A stage, holder or block
   holding only idle work reads "idle" with the idle mark: hatched greyish red (`--state-idle`), also in the legend.
   An idle change in a list or on zoom 0 carries the same mark, never a red "!".
@@ -148,8 +148,8 @@ A path that names nothing is a 404 with a plain sentence.
 - **The grid's flow numbers** ("N reached it in the week") are counted for changes only. A checklist's or a feedback
   batch's columns show what is open now.
 - **Merged by role** needs contract 1.2's `by`. Without it, every merged change is the team's.
-- **Waits on you compete with the jam.** Both glance-trial evaluators read an old wait on the person (amber)
-  as a candidate for "most stuck", next to the one jam. The tally now sets the jam apart. Whether an old wait on you
-  should rank with the jams is a design question for the next round.
+- **Waits on you compete with a jam.** In the glance trial, an old wait on the person (amber, older than the jam)
+  read as a candidate for "most stuck", beside the jam itself. The tally now sets the jam apart. Whether an old wait
+  on you should rank with the jams is a design question for the next round.
 - **Wide screens:** the blocks share the width up to 760 px each. Past that, one or two blocks leave the rest of the
   row empty.

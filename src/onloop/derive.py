@@ -223,7 +223,7 @@ def _label(colour: str, leaves: list[dict[str, Any]]) -> str:
 
 
 def tally_text(leaves: list[dict[str, Any]]) -> str:
-    """A block's children in words, worst first, without zeros: "3 jammed · 2 idle · 1 moving"."""
+    """A block's children in words, worst first, without zeros: "2 jammed · 4 idle · 1 waits on you · 3 moving"."""
     idle = sum(1 for lf in leaves if lf.get("idle"))
     leaves = _live(leaves)
     red = sum(1 for lf in leaves if lf["colour"] == "red")
