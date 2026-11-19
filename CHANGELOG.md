@@ -6,6 +6,28 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-20
+
+0.5.0 shows where a team's work stands at a glance. It adds the map, one picture with levels from the goals down to
+who holds what; the data contract, which replays a team's daily export read-only; feedback from both channels; and a
+page that says whether it is live, quiet or not answering. Nothing acts that 0.4.0 left off.
+
+### Upgrading
+
+- **The ledger moves from schema 7 to schema 9.** The first time 0.5.0 opens a 0.4.0 ledger, it migrates it once, in
+  two steps: schema 8 lets an event come from a team's replayed export (`source: import`) and gives a turn its start
+  time, and schema 9 adds the feedback tables. Every event is kept, unchanged. After that, 0.4.x refuses the file,
+  and the message says to keep the file and run an onloop that reads it. Back the ledger file up first if you may want
+  to go back.
+- **For a team that produces a daily export:** contract 1.2 is the newest, and 0.5.0 reads 1.0, 1.1 and 1.2
+  ([data-contract.md](docs/data-contract.md)). 1.1 adds check runs, verdicts and who a change waits on; 1.2 adds `by`
+  on `pr.opened`, the role that opened the change. An export without them still imports: the map then says "not
+  reported" for a stage it has no evidence for, and holds a change that waits on nobody by the team.
+- **For a 0.4 user:** nothing you have changes its meaning. The page gains the Map and Activity views, and a clock
+  and a Live dot in the header. `GET /api/map`, `GET /api/activity` and `GET /api/heartbeat` are new, and read-only.
+  onloopd.yaml gains an optional `overview: stuck:` block, the map's thresholds. The session carrier, the task list
+  and the page's three narrow writes are as in 0.4.0.
+
 ### Added
 
 - **The data contract** ([data-contract.md](docs/data-contract.md), decision 0017): a team's daily export, replayed
@@ -82,7 +104,6 @@ All notable changes to this project are recorded here. The format follows
   was down, and no longer counts onloopd's own records as the team's activity.
 - **The daily report runs by itself** (finding #15). Without a `jobs:` key in onloopd.yaml, and without the file,
   onloopd writes yesterday's report to `reports/` next to the ledger at 07:30. `jobs: []` turns it off.
-
 - **An ask logged before 0.4.0 is no longer closed by its author's next turn.** After an upgrade, every outcome-line
   ask from 0.3 read "resolved without you", because a task opened by a version-1 event ended when its wait cleared, and
   a version-1 wait clears at the role's next turn. That is the silent drop decision 0013 rejects. Such a task now stays
