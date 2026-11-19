@@ -254,3 +254,51 @@ def test_within_a_holder_the_worst_and_oldest_item_comes_first(tmp_path):
     assert [i["id"] for i in opened] == ["pr#2", "pr#1", "pr#3", "pr#4"]
     reason = next(s for s in z1["stages"] if s["stage"] == "opened")["reason"]
     assert opened[0]["id"] == reason["child"] == "pr#2"
+
+
+def test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck(tmp_path):
+    """Mock-up v2: an open change with no move for a week or more is idle, parked or abandoned, and stands in its own
+    column; the rest of Opened is the live queue. The bottleneck is the live stage with the most jammed changes."""
+    path = tmp_path / "l.db"
+    with Ledger(path, clock=lambda: NOW) as led:
+        for n, day in ((1, 1), (2, 9), (3, 12), (4, 16), (5, 11), (6, 11)):  # opened on 11-<day>
+            for kind, payload in (
+                ("pr.opened", {"number": n}),
+                ("pr.author", {"number": n, "by": "builder"}),
+            ):
+                led.append(
+                    {
+                        "id": f"{kind}{n}",
+                        "source": "import",
+                        "kind": kind,
+                        "subject_ref": f"pr#{n}",
+                        "at": f"2026-11-{day:02d}T03:00:00.000Z",
+                        "payload": payload,
+                    }
+                )
+        for n in (5, 6):  # two changes in checks, both last moved five days ago
+            led.append(
+                {
+                    "id": f"c{n}",
+                    "source": "github",
+                    "kind": "check.completed",
+                    "subject_ref": f"pr#{n}",
+                    "at": "2026-11-12T03:00:00.000Z",
+                    "payload": {"name": "unit tests", "conclusion": "success", "head": "a" * 40},
+                }
+            )
+        g = derive.zoom2(led, NOW, "changes", "opened")["grid"]
+    assert [c["stage"] for c in g["columns"]] == ["idle", "opened", "checks", "review", "merged"]
+    row = next(r for r in g["rows"] if r["holder"] == "builder")
+    # pr#1 (16 days) and pr#2 (8 days) are idle; pr#3 (5 days) and pr#4 (1 day) wait in the queue
+    assert [i["id"] for i in row["cells"]["idle"]["items"]] == ["pr#1", "pr#2"]
+    assert [i["id"] for i in row["cells"]["opened"]["items"]] == ["pr#3", "pr#4"]
+    assert row["cells"]["checks"]["count"] == 2 and row["idle"] == 2 and row["open"] == 6
+    col = {c["stage"]: c for c in g["columns"]}
+    assert (
+        col["opened"]["flow"] == 4 and col["checks"]["flow"] == 2
+    )  # in the week to 11-17: not pr#1 (11-01) or pr#2 (11-09)
+    assert (
+        g["bottleneck"] == "checks"
+    )  # 2 jammed in checks against 1 in the live queue (pr#3); idle is not live
+    assert g["idle_after_s"] == 7 * 86400

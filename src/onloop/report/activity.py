@@ -41,6 +41,11 @@ def activity(reader: Any, now: str, hours: int = 48) -> dict[str, Any]:
     as_of = data_as_of(reader)
     end = min(now, as_of) if as_of else now
     start = _floor_hour(ev.shift_ts(end, -hours * 3600))  # the hour columns line up with the clock
+    # The window starts where the data does (mock-up v2): a window reaching back before the first turn would draw a
+    # stretch with no data in it, which reads as a quiet team.
+    first = reader.select("SELECT min(COALESCE(started_at, ended_at)) AS t FROM turns")[0]["t"]
+    if first and _floor_hour(first) > start and first <= end:
+        start = _floor_hour(first)
     declared = {r["id"]: r for r in reader.select("SELECT id, state FROM roles ORDER BY id")}
     kinds = {}
     for r in reader.select("SELECT payload FROM events WHERE kind = 'role.declared'"):

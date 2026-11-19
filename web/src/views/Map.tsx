@@ -40,6 +40,10 @@ import {
   type MapWait,
   type Zoom1Model,
   type Zoom2Model,
+  barShare,
+  IDLE,
+  stageOfColumn,
+  type StageGrid,
 } from "@/lib/map";
 import { cn } from "@/lib/utils";
 import { Empty, Loading, Problem, tone } from "@/components/kit";
@@ -104,7 +108,7 @@ export default function MapView({ params, path }: { params: URLSearchParams; pat
     </p>
   );
   const level =
-    m.level === 1 ? <Zoom1 m={m as Zoom1Model} table={table} /> : m.level === 2 ? <Zoom2 m={m as Zoom2Model} table={table} /> : <Zoom0 m={m as MapModel} table={table} />;
+    m.level === 1 ? <Zoom1 m={m as Zoom1Model} table={table} /> : m.level === 2 ? <Zoom2 m={m as Zoom2Model} table={table} who={params.get("who")} /> : <Zoom0 m={m as MapModel} table={table} />;
   return (
     <>
       {stale}
@@ -786,7 +790,6 @@ function linkHref(link: { view: "now" | "audit"; ref: string }): string {
   return link.view === "now" ? href("now") : href("audit", { subject: link.ref });
 }
 
-const holderHeight = (h: MapHolder) => 96 + Math.min(8, h.items.length) * 58; // an item's line may wrap
 
 function HolderCard({ h }: { h: MapHolder }) {
   const t = TONE_OF[h.colour];
@@ -827,9 +830,123 @@ function HolderCard({ h }: { h: MapHolder }) {
   );
 }
 
-function Zoom2({ m, table }: { m: Zoom2Model; table: boolean }) {
+function columnHead(c: StageGrid["columns"][number], g: StageGrid): [string, string, string] {
+  const days = g.idle_after_s ? Math.round(g.idle_after_s / 86400) : 7;
+  const name = c.stage === IDLE ? `Idle ≥ ${days} days` : c.stage;
+  if (!c.reported) return [name, "not reported", "by this team's export"];
+  const n = c.count ?? 0;
+  if (c.stage === IDLE) return [name, `${n} open, no move`, "parked or abandoned"];
+  if (c.stage === "merged") return [name, `${c.flow ?? n} in the week`, "by the role that opened each"];
+  if (c.flow == null) return [name, `${n}`, ""];
+  if (c.stage === "opened") return [name, `${n} waiting < ${days} d`, `${c.flow} opened in the week`];
+  return [name, `${n} open now`, `${c.flow} reached it in the week`];
+}
+
+// Who holds what across all of a goal's stages (mock-up v2). A cell opens its stage at that holder; the stage this
+// level opened is outlined, and the live stage with the most jammed work is marked as the bottleneck.
+function Grid({ m, table, who }: { m: Zoom2Model; table: boolean; who: string | null }) {
+  const g = m.grid;
+  const here = m.stage.stage;
   const phone = usePhone();
+  // a phone has room for a few columns: the ones with something in them, and the stage this level opened
+  const cols = phone ? g.columns.filter((c) => (c.count ?? 0) > 0 || stageOfColumn(c.stage) === here) : g.columns;
+  const left = g.columns.filter((c) => !cols.includes(c)).map((c) => columnHead(c, g)[0]);
+  const open = (col: string, holder: string) => () =>
+    opener(() => {
+      window.location.hash = href("map", { table: table ? "1" : undefined, who: holder }, [m.path[0], stageOfColumn(col)]);
+    });
+  return (
+    <div className="overflow-x-auto rounded-ui border border-line bg-surface" data-testid="grid">
+      <table className={cn("w-full table-fixed border-collapse text-[13px]", !phone && "min-w-[720px]")}>
+        <caption className="sr-only">Who holds the open work in {m.block.title}, by stage</caption>
+        <colgroup>
+          <col className={phone ? "w-24" : "w-44"} />
+          {cols.map((c) => <col key={c.stage} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" className="px-3 py-2 text-left align-bottom text-xs font-medium text-muted">Held by</th>
+            {cols.map((c) => {
+              const [t1, t2, t3] = columnHead(c, g);
+              const jam = g.bottleneck === c.stage;
+              const mine = stageOfColumn(c.stage) === here;
+              return (
+                <th
+                  key={c.stage}
+                  scope="col"
+                  data-testid="grid-head"
+                  data-stage={c.stage}
+                  data-bottleneck={jam ? "1" : undefined}
+                  aria-current={mine ? "true" : undefined}
+                  className="p-1.5 align-top font-normal"
+                >
+                  <div className={cn("rounded-ui border px-2.5 py-2 text-left", jam ? "border-2 border-state-blocked" : "border-line", mine ? "bg-accent/10" : c.stage === IDLE ? "bg-raised" : "bg-bg")}>
+                    <div className="truncate font-semibold text-fg">{t1.charAt(0).toUpperCase() + t1.slice(1)}</div>
+                    <div className="truncate font-medium tabular-nums text-fg">{t2}</div>
+                    {t3 && <div className="truncate text-xs text-muted">{t3}</div>}
+                    {jam && <div className={cn("mt-0.5 text-xs font-semibold", tone("blocked").text)}>▲ the bottleneck</div>}
+                  </div>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {g.rows.map((r) => (
+            <tr key={r.holder} className="border-t border-line" data-testid="grid-row" data-holder={r.holder}>
+              <th scope="row" title={r.holder} className={cn("truncate px-3 py-2 text-left font-semibold max-md:px-2", r.kind === "you" && tone("human").text, who === r.holder && "underline")}>
+                {r.holder}
+              </th>
+              {cols.map((c) => {
+                const cell = r.cells[c.stage];
+                if (!cell) return <td key={c.stage} className={cn("px-2 py-2", c.stage === IDLE && "bg-raised/60")} />;
+                const share = barShare(g, c.stage, cell.count);
+                const fill = c.stage === IDLE ? "bg-state-void" : cell.colour === "done" ? "bg-state-done" : tone(TONE_OF[cell.colour]).dot;
+                const detail = cell.items.slice(0, 6).map((i) => `${i.id} ${i.age_text ?? ""}`.trim()).join("; ") + (cell.items.length > 6 ? " …" : "");
+                return (
+                  <td key={c.stage} className={cn("px-2 py-1.5", c.stage === IDLE && "bg-raised/60")}>
+                    <button
+                      type="button"
+                      onClick={open(c.stage, r.holder)}
+                      data-testid="grid-cell"
+                      data-stage={c.stage}
+                      data-colour={cell.colour}
+                      title={`${r.holder}, ${c.stage}: ${cell.count}. ${detail}`}
+                      aria-label={`${r.holder}, ${c.stage}: ${cell.count}${cell.colour === "red" ? ", jammed" : ""}. Open`}
+                      className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left outline-none hover:bg-raised focus-visible:ring-[3px] focus-visible:ring-accent"
+                    >
+                      <span className="h-[18px] min-w-0 flex-1">
+                        <span className={cn("block h-full rounded", fill)} style={{ width: `${share * 100}%` }} aria-hidden />
+                      </span>
+                      <span className="w-7 shrink-0 text-right font-semibold tabular-nums">{cell.count}</span>
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {g.rows.length === 0 && (
+            <tr><td colSpan={cols.length + 1} className="px-3 py-4 text-muted">Nothing is open in {m.block.title}.</td></tr>
+          )}
+        </tbody>
+      </table>
+      {left.length > 0 && (
+        <p className="border-t border-line px-3 py-2 text-[12.5px] text-muted" data-testid="grid-left-out">
+          Empty here, so left out on a small screen: {left.join(", ")}
+        </p>
+      )}
+      {g.roles_with_nothing.length > 0 && (
+        <p className="border-t border-line px-3 py-2 text-[12.5px] text-muted" data-testid="grid-nothing">
+          <span className="font-medium text-fg">{plural(g.roles_with_nothing.length, "role")} with nothing open:</span> {g.roles_with_nothing.join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Zoom2({ m, table, who }: { m: Zoom2Model; table: boolean; who: string | null }) {
   const path = m.path;
+  const picked = m.holders.find((h) => h.holder === who) ?? m.holders[0];
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4 max-[420px]:p-3" data-testid="map-level" data-level={2}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -871,17 +988,22 @@ function Zoom2({ m, table }: { m: Zoom2Model; table: boolean }) {
             </tbody>
           </table>
         </div>
-      ) : phone ? (
-        <div className="flex flex-col gap-3" data-testid="map-column">
-          {m.holders.map((h) => (
-            <HolderCard key={h.holder} h={h} />
-          ))}
-          <Legend m={m} />
-        </div>
       ) : (
-        <div className="flex min-h-0 flex-1 gap-4">
-          <Canvas cards={m.holders.map((h) => ({ id: `holder:${h.holder}`, height: holderHeight(h), render: () => <HolderCard h={h} /> }))} />
-          <aside className="flex w-80 shrink-0 flex-col gap-5 overflow-y-auto" aria-label="Legend">
+        <div className="flex min-h-0 flex-1 gap-4 overflow-y-auto max-lg:flex-col" data-testid="map-grid-level">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <Grid m={m} table={table} who={picked?.holder ?? null} />
+            {picked ? (
+              <section aria-label={`${picked.holder} in ${m.stage.stage}`} className="flex flex-col gap-1.5">
+                <h2 className="text-[13px] text-muted">
+                  In <span className="font-medium capitalize text-fg">{m.stage.stage}</span>, held by <span className="font-medium text-fg">{picked.holder}</span>; open another cell for its items
+                </h2>
+                <div className="max-w-[760px]"><HolderCard h={picked} /></div>
+              </section>
+            ) : (
+              <p className="text-[13px] text-muted">Nothing is held in {m.stage.stage}; open another cell for its items.</p>
+            )}
+          </div>
+          <aside className="flex w-80 shrink-0 flex-col gap-5 max-lg:w-full" aria-label="Legend">
             <Legend m={m} />
           </aside>
         </div>

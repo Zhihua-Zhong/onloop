@@ -11,13 +11,28 @@ Open it at `#/map`, or from the **Map** tab.
 |---|---|---|---|
 | 0 | `#/map` | a goal | each checklist, each feedback batch, and "Changes in flight", grouped by where they came from, never by role |
 | 1 | `#/map/<goal>` | a stage of that goal | the stages in order, each with its count, colour, oldest item and, when it is red or amber, which item and why |
-| 2 | `#/map/<goal>/<stage>` | who holds the items | you, "marked yours by the team", the team or a role, the worst first; each item with what it waits on, since when, and a link to where you act |
+| 2 | `#/map/<goal>/<stage>` | a cell: who holds what in a stage | the goal's grid, a column per stage and a row per holder, with the stage you opened outlined; below it, the items one holder has in that stage |
 | 3, 4 | reserved | a role's turns, a turn's tool calls | these come with the tool events of a later contract |
 
 **The stages at zoom 1:**
 - a checklist: to do → in progress → done;
 - a feedback batch: the team's own stages, as its export declares them, then accepted;
 - changes: opened → checks → review → merged (in the data's last week).
+
+**The grid at zoom 2** (mock-up v2) shows all of a goal's open work in one table:
+- **The columns** are the goal's stages. Each header says how many items are open in it now and, for changes, how
+  many reached it in the data's last week.
+- **The rows** are who holds the work, worst first: the most live jammed work, then the most idle, then the most open.
+- **A cell** is a bar as long as its count, coloured by its worst item. Merged has its own scale, so a busy week of
+  merges never shrinks the open cells. A click, or Enter on a focused cell, opens that stage at that holder.
+- **For changes**, Opened is split. A change with no move for 7 days or more is **idle**: parked or abandoned, in its
+  own column first, apart from the live queue. Your own tasks are never idle, since they wait on you.
+- **The bottleneck** is the live stage with the most jammed changes; its header is outlined in red.
+- **Roles with nothing open** are named in one line under the table.
+- **On a phone,** only the columns with something in them, and the stage you opened, are shown; a line names the
+  rest.
+- **The counts agree:** a stage's cells (with Idle, for Opened) add up to its zoom 1 count, and each holder's cell to
+  the items listed below the table (`tests/test_agreement.py`).
 
 ## Colour and shape
 

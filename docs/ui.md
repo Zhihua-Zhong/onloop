@@ -90,6 +90,16 @@ land on the same level.
 - **Under 768 px,** the page is one column: the signals, "Most waiting work", the batches, the checklists, the changes,
   then the waits.
 
+### Activity
+
+One lane per role, from the data's start to its end (mock-up v2):
+- **The window starts where the data does.** A 7-day window on 3 days of data shows the 3 days, and the summary says
+  "the 3 days since the data began"; it never draws empty days, which would read as a quiet team.
+- **Roles with no turns** are one line under the lanes, never a lane each.
+- **A role's longest quiet stretch** is hatched grey when it is past, and red when it is still going at the data's
+  end, the one to read.
+- **The data's end** is a line across the lanes: "data ends" on a team's export, "now" on a live ledger.
+
 ### Flow
 
 The canvas (React Flow, laid out by ELK) draws:

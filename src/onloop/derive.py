@@ -792,6 +792,130 @@ def _link(block: dict[str, Any], lf: dict[str, Any]) -> dict[str, str]:
 
 ITEM_ORDER = (*COLOURS, "done")  # red, amber, moving, grey, then done
 
+# -- the stage x role grid (mock-up v2): who holds what, across all of a goal's stages at once ------------------------
+
+IDLE_S = 7 * 86400  # an open change with no move this long is idle: parked or abandoned, not in the queue
+IDLE = "idle"
+
+
+def _first_in_window(ledger: Any, kind: str, start: str, end: str) -> int:
+    """How many changes reached a stage inside [start, end]: their first event of `kind` falls in it."""
+    return ledger.select(
+        "SELECT count(*) AS n FROM (SELECT subject_ref, min(COALESCE(at, ts_system)) AS t FROM events "
+        "WHERE kind = ? AND subject_ref LIKE 'pr#%' GROUP BY subject_ref) WHERE t >= ? AND t <= ?",
+        (kind, start, end),
+    )[0]["n"]
+
+
+def _item(lf: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": lf["id"],
+        "title": lf.get("title"),
+        "colour": lf["colour"],
+        "shape": SHAPES.get(lf["colour"], ""),
+        "why": lf.get("why"),
+        "age_s": lf.get("age_s"),
+        "lower_bound": bool(lf.get("lower_bound")),
+        "age_text": plain_age(lf.get("age_s"), bool(lf.get("lower_bound")))
+        if lf.get("age_s") is not None
+        else None,
+    }
+
+
+def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, Any]]) -> dict[str, Any]:
+    """A goal's open work as one table: a column per stage, a row per holder, each cell its count and worst colour.
+    For changes, Opened is split: a change with no move for IDLE_S is idle (its own column, first), the rest wait in
+    the queue; Merged counts the window's merges by the role that opened each. Each column says how many changes
+    reached it in the window. Every count is the same leaves zoom 1 counts, so the two always agree."""
+    from . import events as ev
+    from . import verdicts
+
+    changes = block["kind"] == "changes"
+    end = _data_as_of(ledger) or now
+    start = ev.shift_ts(end, -MERGED_WINDOW_S)
+    names = [s["stage"] for s in stages]
+    cols = ([IDLE] if changes else []) + names
+    rows: dict[str, dict[str, Any]] = {}
+
+    def put(holder: str, kind: str, col: str, lf: dict[str, Any]) -> None:
+        r = rows.setdefault(holder, {"holder": holder, "kind": kind, "cells": {}})
+        r["cells"].setdefault(col, []).append(_item(lf))
+
+    for st in stages:
+        for lf in st["leaves"]:
+            if changes and st["stage"] == "merged":
+                continue  # by the opener, below
+            col = st["stage"]
+            if changes and col == "opened" and (lf.get("age_s") or 0) >= IDLE_S and lf.get("who") != "you":
+                col = IDLE  # the person's own task is never parked: it waits on them
+            put(*_holder(lf), col, lf)
+    if changes:
+        merged = next((s for s in stages if s["stage"] == "merged"), None)
+        refs = [lf["id"] for lf in (merged or {}).get("leaves", [])]
+        owners = (
+            {
+                r["id"]: r["owner_role"]
+                for r in ledger.select(
+                    f"SELECT id, owner_role FROM items WHERE id IN ({','.join('?' * len(refs))})", tuple(refs)
+                )
+            }
+            if refs
+            else {}
+        )
+        for lf in (merged or {}).get("leaves", []):
+            put(*_holder({**lf, "who": opener(owners.get(lf["id"]))}), "merged", lf)
+    out_rows = []
+    for r in rows.values():
+        cells = {}
+        for col, items in r["cells"].items():
+            items.sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))
+            colour = worst([i["colour"] for i in items])
+            cells[col] = {"count": len(items), "colour": colour, "shape": SHAPES[colour], "items": items}
+        live_red = sum(
+            1
+            for c, v in cells.items()
+            if c not in (IDLE, "merged")
+            for i in v["items"]
+            if i["colour"] == "red"
+        )
+        idle = cells.get(IDLE, {}).get("count", 0)
+        open_n = sum(v["count"] for c, v in cells.items() if c != "merged")
+        out_rows.append({**r, "cells": cells, "live_red": live_red, "idle": idle, "open": open_n})
+    # worst first: the most live jammed work, then the most idle, then the most open, then by name
+    out_rows.sort(key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
+    stage_by = {s["stage"]: s for s in stages}
+    columns = []
+    for c in cols:
+        here = [r["cells"][c] for r in out_rows if c in r["cells"]]
+        n = sum(x["count"] for x in here)
+        reported = True if c == IDLE else stage_by[c]["reported"]
+        flow = None
+        if changes and c in ("opened", "checks", "review"):
+            kind = {"opened": "pr.opened", "checks": "check.completed", "review": verdicts.KIND}[c]
+            flow = _first_in_window(ledger, kind, start, end) if reported else None
+        elif changes and c == "merged":
+            flow = n
+        red = sum(1 for x in here for i in x["items"] if i["colour"] == "red")
+        columns.append(
+            {"stage": c, "reported": reported, "count": n if reported else None, "red": red, "flow": flow}
+        )
+    live = [c for c in columns if c["stage"] not in (IDLE, "merged", "done", "accepted")]
+    jam = max(live, key=lambda c: c["red"], default=None)
+    declared = (
+        [r["id"] for r in ledger.select("SELECT id FROM roles ORDER BY id")]
+        if _has_table(ledger, "roles")
+        else []
+    )
+    held = {r["holder"] for r in out_rows}
+    return {
+        "columns": columns,
+        "rows": out_rows,
+        "idle_after_s": IDLE_S if changes else None,
+        "window": {"from": start, "to": end} if changes else None,
+        "bottleneck": jam["stage"] if jam and jam["red"] else None,
+        "roles_with_nothing": [r for r in declared if r not in held],
+    }
+
 
 def zoom2(
     ledger: Any, now: str, block_id: str, stage: str, stuck: dict[str, int] | None = None
@@ -839,6 +963,7 @@ def zoom2(
         "block": z1["block"],
         "stage": {k: v for k, v in st.items() if k != "leaves"},
         "holders": holders,
+        "grid": grid(ledger, now, z1["block"], z1["stages"]),
         "thresholds_s": z1["thresholds_s"],
         "legend": z1["legend"],
     }

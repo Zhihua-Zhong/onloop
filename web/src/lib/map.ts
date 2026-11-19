@@ -191,6 +191,48 @@ export interface Zoom2Model extends MapLevelBase {
   block: Omit<MapBlock, "leaves">;
   stage: Omit<MapStageEntry, "leaves">;
   holders: MapHolder[];
+  grid: StageGrid;
+}
+
+// Zoom 2's picture (mock-up v2): a goal's open work as one table, a column per stage and a row per holder. For
+// changes, Idle (open, no move for idle_after_s) stands apart from the live queue, and Merged counts the week's merges
+// by the role that opened each. derive.grid holds the counts; the page only draws them.
+export interface GridItem {
+  id: string;
+  title: string | null;
+  colour: Colour | "done";
+  shape: string;
+  why: string | null;
+  age_s: number | null;
+  lower_bound: boolean;
+  age_text: string | null;
+}
+export interface GridCell { count: number; colour: Colour | "done"; shape: string; items: GridItem[] }
+export interface GridRow { holder: string; kind: MapHolder["kind"]; cells: Record<string, GridCell>; live_red: number; idle: number; open: number }
+export interface GridColumn { stage: string; reported: boolean; count: number | null; red: number; flow: number | null }
+export interface StageGrid {
+  columns: GridColumn[];
+  rows: GridRow[];
+  idle_after_s: number | null;
+  window: { from: string; to: string } | null;
+  bottleneck: string | null;
+  roles_with_nothing: string[];
+}
+
+export const IDLE = "idle";
+
+// The stage a grid column opens: Idle is part of Opened, so it opens Opened's holders.
+export function stageOfColumn(col: string): string {
+  return col === IDLE ? "opened" : col;
+}
+
+// A bar's share of its cell's width. Merged has its own scale, so a week of merges never shrinks the open cells.
+export function barShare(grid: StageGrid, col: string, count: number): number {
+  const scale = (c: string) =>
+    Math.max(1, ...grid.rows.map((r) => r.cells[c]?.count ?? 0).filter((n) => n > 0), ...(c === "merged" ? [] : [0]));
+  const open = Math.max(1, ...grid.columns.filter((c) => c.stage !== "merged").map((c) => scale(c.stage)));
+  const max = col === "merged" ? scale("merged") : open;
+  return count > 0 ? Math.max(0.08, count / max) : 0;
 }
 
 // The levels that are built (decision 0018): 0, 1 and 2. Zoom 3 (a role's turns) and 4 (a turn's tool calls) are

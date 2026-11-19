@@ -212,3 +212,50 @@ def test_the_holder_a_reason_names_is_the_holder_zoom_2_lists(tmp_path_factory):
                     named,
                     holders,
                 )
+
+
+@pytest.mark.parametrize("which", ["demo", "replay", "replay12"])
+def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
+    which, demo_path, replay_path, tmp_path_factory
+):
+    """Mock-up v2's grid in the product: one table per goal, a column per stage and a row per holder. Every cell is
+    the same leaves zoom 1 counts and zoom 2 groups, so the grid, the stage blocks and the holder list never differ:
+    a stage's cells (with Idle, for Opened) add up to its zoom 1 count, and each holder's cell to zoom 2's count."""
+    if which == "replay12":
+        root = tmp_path_factory.mktemp("grid12")
+        example.write(root, REPLAY_END, days=2, n=200, seed=3, contract="1.2")
+        (root / "onloop").mkdir()
+        reader.import_snapshots(root, root / "onloop" / "ledger.db")
+        path, now = root / "onloop" / "ledger.db", REPLAY_NOW
+    else:
+        path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    checked = 0
+    with Ledger(path, readonly=True) as led:
+        for b in derive.zoom0(led, now)["blocks"]:
+            stages = derive.zoom1(led, now, b["id"])["stages"]
+            g = derive.zoom2(led, now, b["id"], stages[0]["stage"])["grid"]
+            col = {c["stage"]: c for c in g["columns"]}
+            for s in stages:
+                if not s["reported"]:
+                    assert col[s["stage"]]["count"] is None, (
+                        b["id"],
+                        s["stage"],
+                    )  # "not reported", never zero
+                    continue
+                in_grid = sum(r["cells"].get(s["stage"], {}).get("count", 0) for r in g["rows"])
+                if s["stage"] == "opened" and "idle" in col:
+                    in_grid += col["idle"]["count"]
+                assert in_grid == s["count"], (which, b["id"], s["stage"], in_grid, s["count"])
+                if s["stage"] == "merged" or not s["count"]:
+                    continue
+                z2 = {h["holder"]: h["count"] for h in derive.zoom2(led, now, b["id"], s["stage"])["holders"]}
+                cells = {
+                    r["holder"]: r["cells"].get(s["stage"], {}).get("count", 0)
+                    + (r["cells"].get("idle", {}).get("count", 0) if s["stage"] == "opened" else 0)
+                    for r in g["rows"]
+                }
+                assert {h: n for h, n in cells.items() if n} == z2, (which, b["id"], s["stage"])
+                checked += 1
+            rows = g["rows"]
+            assert rows == sorted(rows, key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
+    assert checked > 0

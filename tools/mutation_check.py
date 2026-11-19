@@ -1824,8 +1824,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map, zoom 2: an item is lost from its holder, so the holders do not add up to the stage",
         "src/onloop/derive.py",
-        '    for lf in st["leaves"]:',
-        '    for lf in st["leaves"][1:]:',
+        '    groups: dict[str, dict[str, Any]] = {}\n    for lf in st["leaves"]:',
+        '    groups: dict[str, dict[str, Any]] = {}\n    for lf in st["leaves"][1:]:',
         ["tests/test_map_levels.py::test_every_item_is_in_exactly_one_stage_and_one_holder"],
     ),
     (
@@ -1943,6 +1943,29 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         '  if (quietS > QUIET_PERIODS * periodS) return { state: "quiet", forS: quietS };',
         "",
         ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "the grid keeps idle changes in the live queue, so a parked week-old change looks like work in flight",
+        "src/onloop/derive.py",
+        "                col = IDLE  # the person's own task is never parked: it waits on them",
+        "                pass  # the person's own task is never parked: it waits on them",
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
+    ),
+    (
+        "the grid counts a merged change twice, as its stage's leaf and by its opener, so it disagrees with zoom 1",
+        "src/onloop/derive.py",
+        '            if changes and st["stage"] == "merged":\n                continue  # by the opener, below',
+        '            if changes and st["stage"] == "merged":\n                pass  # by the opener, below',
+        ["tests/test_agreement.py::test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count"],
+    ),
+    (
+        "Activity's window reaches back before the data, drawing empty days that read as a quiet team",
+        "src/onloop/report/activity.py",
+        "        start = _floor_hour(first)",
+        "        pass",
+        ["tests/test_contract.py::test_activity_starts_where_the_data_does_never_before_it"],
     ),
     (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
