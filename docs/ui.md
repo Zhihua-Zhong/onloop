@@ -119,6 +119,20 @@ The page listens to `GET /api/stream?plain=1`, and a burst of new events refetch
 stream is down for more than five seconds, a banner says when updates stopped, and the page keeps what it last read.
 It reconnects by itself.
 
+**The clock and liveness.** A stalled page must never look like a quiet one (the project lead's finding on 8796, where
+"1 s ago" still said so two minutes later):
+- The header has a clock that ticks every second, and "data as of N s ago": how long since this page last read from
+  onloopd.
+- Every relative age on every page rises with that clock between answers: the page adds the seconds since it read the
+  answer to each age the server gave (`web/src/lib/tick.ts`). Ages that Activity counts to an export's end stay put,
+  since the export's end does not move.
+- The page reads `GET /api/heartbeat` every 10 s: onloopd's last heartbeat, the server's clock, and its tick period
+  (10 s by default). News is the newest of a stream event and a heartbeat.
+- The Live dot turns amber with "No news for N s" past two tick periods without news: onloopd answers, but its tick may
+  have stopped. It turns red with "onloopd not answering for N s" once neither the stream nor the heartbeat has
+  answered for five seconds. A phone shows "quiet N s" and "offline N s".
+- While onloopd does not answer, Now keeps what it last read instead of an error.
+
 ### Theme
 
 Light or dark follows the system's `prefers-color-scheme`, live, until the person picks one with the toggle; that

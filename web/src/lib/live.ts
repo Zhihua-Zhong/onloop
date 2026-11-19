@@ -6,6 +6,13 @@ export type Live = { state: "connecting" | "live" | "stale"; since: number | nul
 
 const STALE_AFTER_MS = 5_000;
 
+// What the header's liveness reads on each tick (lib/tick.ts): when the stream last brought news (it opened, or an
+// event came), and since when it has been down. Kept outside React state, so a busy stream re-renders nothing.
+let streamNewsAt: number | null = null;
+let streamLostAt: number | null = null;
+export const streamNews = (): number | null => streamNewsAt;
+export const streamLost = (): number | null => streamLostAt;
+
 // Live updates from onloopd's event stream (`/api/stream?plain=1`, a GET). A burst of new events refetches what the
 // open view reads, once, and a steady stream at least every two seconds (lib/coalesce.ts). When the stream is down for more than five seconds the state is "stale" and the shell says
 // so: the page keeps what it last read, labelled with when (fail closed, never silently old). It reconnects by itself.
@@ -29,6 +36,8 @@ export function useLive(): Live {
       source.onopen = () => {
         window.clearTimeout(staleTimer);
         lostAt = null;
+        streamLostAt = null;
+        streamNewsAt = Date.now();
         if (missed) {
           missed = false;
           void client.invalidateQueries();
@@ -38,6 +47,7 @@ export function useLive(): Live {
       source.onmessage = (e: MessageEvent) => {
         const seq = Number(e.lastEventId);
         if (Number.isFinite(seq) && seq > after.current) after.current = seq;
+        streamNewsAt = Date.now();
         flush.poke();
       };
       source.onerror = () => {
@@ -46,6 +56,7 @@ export function useLive(): Live {
         // The clock starts at the first failure and runs through the retries; only a reconnect stops it.
         if (lostAt === null) {
           lostAt = Date.now();
+          streamLostAt = lostAt;
           const since = lostAt;
           staleTimer = window.setTimeout(() => setLive({ state: "stale", since }), STALE_AFTER_MS);
         }

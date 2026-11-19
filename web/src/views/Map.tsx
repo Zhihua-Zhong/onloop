@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { get, type DigestModel } from "@/lib/api";
 import { downMessage, refetchEvery, viewState } from "@/lib/recovery";
+import { useTicking } from "@/lib/clock";
 import { clock, duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
 import {
@@ -82,6 +83,7 @@ export default function MapView({ params, path }: { params: URLSearchParams; pat
     refetchInterval: refetchEvery(30_000),
     enabled: !reserved,
   });
+  const ticked = useTicking(q.data, q.dataUpdatedAt); // its ages rise every second between answers (lib/tick.ts)
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
@@ -95,7 +97,7 @@ export default function MapView({ params, path }: { params: URLSearchParams; pat
   const state = viewState(q.status, q.data !== undefined);
   if (state === "loading") return <div className="p-4"><Loading what="the map" /></div>;
   if (state === "down") return <div className="p-4"><Problem error={new Error(downMessage(q.error))} /></div>;
-  const m = q.data as MapLevelBase;
+  const m = ticked as MapLevelBase;
   const stale = state === "data-stale" && (
     <p role="status" data-testid="map-stale" className="border-b border-state-human/40 bg-state-human/10 px-4 py-1.5 text-[13px]">
       {downMessage(q.error)} This is the map as last read.

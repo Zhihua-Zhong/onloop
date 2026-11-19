@@ -321,6 +321,7 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
             token=secret,
             heartbeat=state / HEARTBEAT_FILE,
             carrier=cfg.watch.carrier,
+            tick_s=cfg.tick_s,
         )
     except srv.PortInUse as e:
         say(f"onloopd: does not start: {e}")

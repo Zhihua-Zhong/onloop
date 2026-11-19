@@ -2,6 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { api, type Item, type LedgerEvent, type Schedule } from "@/lib/api";
 import { ago, clock } from "@/lib/format";
+import { useNowMs } from "@/lib/clock";
 import { href, setParams } from "@/lib/route";
 import { Command, Empty, Loading, Pill, Problem, type Tone } from "@/components/kit";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,7 @@ export function SchedulesView({ params }: { params: URLSearchParams }) {
   const open = params.get("open");
   const failed = sq.error ?? aq.error;
   const rows = sq.data && aq.data ? sq.data.map((s) => ({ s, st: stateOf(s, aq.data!) })).sort((a, b) => a.st.rank - b.st.rank || a.s.id.localeCompare(b.s.id)) : [];
-  const now = Date.now();
+  const now = useNowMs(); // ticks every second, so "last success … ago" rises with no new data
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6 sm:py-5" data-testid="view-schedules">
       <h1 className="text-lg font-semibold">Schedules</h1>

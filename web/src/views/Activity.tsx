@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTicking } from "@/lib/clock";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
@@ -78,10 +79,12 @@ export function ActivityView({ params }: { params: URLSearchParams }) {
     queryFn: () => get<ActivityModel>(`/api/activity?hours=${hours}`),
     refetchInterval: 60_000,
   });
+  // the data's age ticks; a quiet time ticks only while the lanes run to now, not to an export's end
+  const ticked = useTicking(q.data, q.dataUpdatedAt, { liveQuiet: q.data?.data_as_of == null });
   const table = params.get("table") === "1"; // in the URL, so back, reload and a shared link keep it
   if (q.isPending) return <Loading what="the activity" />;
   if (q.isError) return <Problem error={q.error} />;
-  const a = q.data;
+  const a = ticked as ActivityModel;
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-5 max-sm:px-4" data-testid="activity">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">

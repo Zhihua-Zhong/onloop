@@ -1910,6 +1910,27 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_map_levels.py::test_within_a_holder_the_worst_and_oldest_item_comes_first"],
     ),
     (
+        'an age is frozen at the moment the page read it, so "1 s ago" still says so minutes later (8796)',
+        "web/src/lib/tick.ts",
+        "  return ageS == null ? null : ageS + sinceFetch(fetchedAtMs, nowMs);",
+        "  return ageS == null ? null : ageS;",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "a view's ages stand still between answers: tickModel adds nothing",
+        "web/src/lib/tick.ts",
+        '      if (typeof x === "number" && rising.has(k)) out[k] = x + addS;',
+        '      if (typeof x === "number" && rising.has(k)) out[k] = x;',
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "a quiet onloopd reads as live: no news for minutes is never said",
+        "web/src/lib/tick.ts",
+        '  if (quietS > QUIET_PERIODS * periodS) return { state: "quiet", forS: quietS };',
+        "",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',
