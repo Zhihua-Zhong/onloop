@@ -247,13 +247,14 @@ def test_within_a_holder_the_worst_and_oldest_item_comes_first(tmp_path):
         z2 = {s["stage"]: derive.zoom2(led, NOW, "changes", s["stage"]) for s in z1["stages"] if s["count"]}
     opened = next(h for h in z2["opened"]["holders"] if h["holder"] == "builder")["items"]
     assert len(opened) == 4  # pr#1-4 wait on nobody in "opened"; pr#5 has a check, so it is in "checks"
-    order = [(i["colour"], i["age_s"]) for i in opened]
+    order = [(bool(i.get("idle")), i["colour"], i["age_s"]) for i in opened]
     rank = {c: k for k, c in enumerate(derive.ITEM_ORDER)}
-    assert order == sorted(order, key=lambda x: (rank[x[0]], -x[1])), order
-    # red 16, 7 and 5 days old, then moving 1 day: opened on 11-01, 11-10, 11-12 and 11-16
-    assert [i["id"] for i in opened] == ["pr#2", "pr#1", "pr#3", "pr#4"]
+    assert order == sorted(order, key=lambda x: (x[0], rank[x[1]], -x[2])), order
+    # live first: red 5 days, then moving 1 day (opened 11-12 and 11-16); then the idle ones, 16 and 7 days old
+    # (11-01 and 11-10), set apart at every level by the lead's ruling on e320db4
+    assert [i["id"] for i in opened] == ["pr#3", "pr#4", "pr#2", "pr#1"]
     reason = next(s for s in z1["stages"] if s["stage"] == "opened")["reason"]
-    assert opened[0]["id"] == reason["child"] == "pr#2"
+    assert opened[0]["id"] == reason["child"] == "pr#3"
 
 
 def test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck(tmp_path):
@@ -288,6 +289,20 @@ def test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck(tm
                 }
             )
         g = derive.zoom2(led, NOW, "changes", "opened")["grid"]
+        z0 = derive.zoom0(led, NOW)
+        z1 = derive.zoom1(led, NOW, "changes")
+    # the lead's ruling on e320db4: idle is set apart at every level, not only in the grid
+    block = next(b for b in z0["blocks"] if b["id"] == "changes")
+    assert block["tally_text"].startswith(
+        "3 jammed · 2 idle"
+    )  # pr#3 opened, pr#5 and pr#6 in checks; pr#1, pr#2
+    assert z0["signals"]["stuck"] == 3 and z0["signals"]["idle"] == 2
+    assert block["reason"]["child"] not in (
+        "pr#1",
+        "pr#2",
+    )  # the reason line names live work, never an idle change
+    opened = next(s for s in z1["stages"] if s["stage"] == "opened")
+    assert opened["reason"]["child"] == "pr#3" and opened["colour"] == "red"
     assert [c["stage"] for c in g["columns"]] == ["idle", "opened", "checks", "review", "merged"]
     row = next(r for r in g["rows"] if r["holder"] == "builder")
     # pr#1 (16 days) and pr#2 (8 days) are idle; pr#3 (5 days) and pr#4 (1 day) wait in the queue
@@ -302,3 +317,27 @@ def test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck(tm
         g["bottleneck"] == "checks"
     )  # 2 jammed in checks against 1 in the live queue (pr#3); idle is not live
     assert g["idle_after_s"] == 7 * 86400
+
+
+def test_a_stage_or_holder_with_only_idle_work_is_idle_not_jammed(tmp_path):
+    """A change parked for a week is not stuck work: a stage, a holder or a block holding nothing else reads idle."""
+    path = tmp_path / "l.db"
+    with Ledger(path, clock=lambda: NOW) as led:
+        for kind, payload in (("pr.opened", {"number": 1}), ("pr.author", {"number": 1, "by": "builder"})):
+            led.append(
+                {
+                    "id": f"{kind}1",
+                    "source": "import",
+                    "kind": kind,
+                    "subject_ref": "pr#1",
+                    "at": "2026-11-01T03:00:00.000Z",
+                    "payload": payload,
+                }
+            )
+        z0 = derive.zoom0(led, NOW)
+        z2 = derive.zoom2(led, NOW, "changes", "opened")
+    block = next(b for b in z0["blocks"] if b["id"] == "changes")
+    assert (block["colour"], block["label"], block["tally_text"]) == ("grey", "idle", "1 idle")
+    assert block["reason"] is None and z0["signals"]["stuck"] == 0 and z0["signals"]["idle"] == 1
+    assert z2["stage"]["colour"] == "grey" and z2["holders"][0]["colour"] == "grey"
+    assert z2["grid"]["rows"][0]["cells"]["idle"]["colour"] == "grey" and z2["grid"]["bottleneck"] is None

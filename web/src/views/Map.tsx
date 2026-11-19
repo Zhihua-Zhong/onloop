@@ -170,6 +170,11 @@ function Signals({ m }: { m: MapLevelBase }) {
           <span aria-hidden>! </span>
           {s.stuck} jammed
         </span>
+        {(s.idle ?? 0) > 0 && (
+          <span data-testid="sig-idle" className="text-sm text-muted" title="Open changes with no move for a week or more: parked or abandoned, so never counted as jammed">
+            {s.idle} idle
+          </span>
+        )}
         <span data-testid="sig-quiet" className="text-sm text-fg" title="The longest stretch in the last day when no role had a turn running or ending">
           Team quiet at most: <span className="font-semibold">{lw ? `${lw.text} in the last ${lw.team_activity.hours} h` : "no turns in the last day"}</span>
           {lw?.ongoing && <span className="text-muted"> (still quiet)</span>}
@@ -222,13 +227,17 @@ function Cells({ b }: { b: MapBlock }) {
       {b.leaves.slice(0, 60).map((lf) => (
         <span
           key={lf.id}
-          title={`${lf.title}: ${lf.colour === "done" ? "done" : lf.why ?? b.label}`}
+          title={`${lf.title}: ${lf.colour === "done" ? "done" : lf.idle ? `idle, ${lf.why ?? ""}` : lf.why ?? b.label}`}
           className={cn(
             "grid h-4 w-4 place-items-center rounded-[3px] text-[9px] font-bold leading-none",
-            lf.colour === "grey" ? "border border-state-void/70 text-state-void" : cn(tone(TONE_OF[lf.colour]).dot, "text-white"),
+            lf.idle
+              ? "bg-state-void/45"
+              : lf.colour === "grey"
+                ? "border border-state-void/70 text-state-void"
+                : cn(tone(TONE_OF[lf.colour]).dot, "text-white"),
           )}
         >
-          {lf.colour === "done" || lf.colour === "grey" ? "" : lf.shape}
+          {lf.colour === "done" || lf.colour === "grey" || lf.idle ? "" : lf.shape}
         </span>
       ))}
       {b.leaves.length > 60 && <span className="text-xs text-muted">+{b.leaves.length - 60}</span>}

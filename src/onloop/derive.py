@@ -118,6 +118,23 @@ def worst(colours: list[str]) -> str:
     return min(live, key=COLOURS.index)
 
 
+IDLE_S = 7 * 86400  # an open change with no move this long is idle: parked or abandoned, not in the queue
+
+
+def _live(leaves: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The leaves every count of stuck work reads: idle ones are set apart at every level (the lead's ruling on
+    e320db4, mock-up v2). An idle change keeps its red, but it is not jammed: it is parked or abandoned."""
+    return [lf for lf in leaves if not lf.get("idle")]
+
+
+def colour_of(leaves: list[dict[str, Any]]) -> str:
+    """A block's or a stage's colour: the worst of its live children; grey when all it holds is idle work."""
+    live = _live(leaves)
+    if leaves and not live:
+        return "grey"
+    return worst([lf["colour"] for lf in live])
+
+
 def _has_table(ledger: Any, name: str) -> bool:
     return bool(ledger.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)))
 
@@ -127,11 +144,12 @@ def _leaf(lid: str, title: str, colour: str, **more: Any) -> dict[str, Any]:
 
 
 def _reason(block_colour: str, leaves: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The one line under a red or amber block: which child, and why. The oldest such child is named."""
+    """The one line under a red or amber block: which live child, and why. The oldest such child is named; an idle
+    one never is, however old."""
     if block_colour not in ("red", "amber"):
         return None
     pick = max(
-        (lf for lf in leaves if lf["colour"] == block_colour),
+        (lf for lf in _live(leaves) if lf["colour"] == block_colour),
         key=lambda lf: (lf.get("age_s") or 0, lf["id"]),
     )
     return {
@@ -146,7 +164,11 @@ def _reason(block_colour: str, leaves: list[dict[str, Any]]) -> dict[str, Any] |
 
 
 def _tally(leaves: list[dict[str, Any]]) -> dict[str, int]:
-    return {c: sum(1 for lf in leaves if lf["colour"] == c) for c in (*COLOURS, "done")}
+    live = _live(leaves)
+    return {
+        **{c: sum(1 for lf in live if lf["colour"] == c) for c in (*COLOURS, "done")},
+        "idle": len(leaves) - len(live),
+    }
 
 
 def _tasks_by_ref(open_tasks: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -190,6 +212,9 @@ def _yours(lf: dict[str, Any]) -> bool:
 
 
 def _label(colour: str, leaves: list[dict[str, Any]]) -> str:
+    if colour == "grey" and leaves and not [lf for lf in _live(leaves) if lf["colour"] != "done"]:
+        if any(lf.get("idle") for lf in leaves):
+            return "idle"  # all it holds that is open is parked or abandoned
     if colour == "grey" and any(lf["colour"] == "done" for lf in leaves):
         return "nothing moving"  # a grey block with done items is not "not started": the rest has not begun
     if colour == "amber" and not any(_yours(lf) for lf in leaves):
@@ -198,7 +223,9 @@ def _label(colour: str, leaves: list[dict[str, Any]]) -> str:
 
 
 def tally_text(leaves: list[dict[str, Any]]) -> str:
-    """A block's children in words, worst first, without zeros: "1 jammed · 2 wait on you · 5 moving"."""
+    """A block's children in words, worst first, without zeros: "3 jammed · 2 idle · 1 moving"."""
+    idle = sum(1 for lf in leaves if lf.get("idle"))
+    leaves = _live(leaves)
     red = sum(1 for lf in leaves if lf["colour"] == "red")
     you = sum(1 for lf in leaves if _yours(lf))
     marked = sum(1 for lf in leaves if lf["colour"] == "amber" and not _yours(lf))
@@ -207,6 +234,8 @@ def tally_text(leaves: list[dict[str, Any]]) -> str:
     parts = []
     if red:
         parts.append(f"{red} jammed")
+    if idle:
+        parts.append(f"{idle} idle")
     if you:
         parts.append(f"{you} {'waits' if you == 1 else 'wait'} on you")
     if marked:
@@ -215,11 +244,11 @@ def tally_text(leaves: list[dict[str, Any]]) -> str:
         parts.append(f"{moving} moving")
     if grey:
         parts.append(f"{grey} not started")
-    return " · ".join(parts) or ("all done" if leaves else "nothing in it yet")
+    return " · ".join(parts) or ("all done" if leaves else "nothing in it yet" if not idle else "")
 
 
 def _block(bid: str, kind: str, title: str, leaves: list[dict[str, Any]], bar: dict, **more: Any) -> dict:
-    colour = worst([lf["colour"] for lf in leaves])
+    colour = colour_of(leaves)
     return {
         "id": bid,
         "kind": kind,
@@ -465,6 +494,9 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
             leaves.append(
                 _leaf(ref, title, colour, stage=stage, who=opener(pr.get("owner_role")), why=why, age_s=age)
             )
+    for lf in leaves:  # an opened change with no move for a week is idle; the person's own task never is
+        if lf["stage"] == "opened" and lf.get("who") != "you" and (lf.get("age_s") or 0) >= IDLE_S:
+            lf["idle"] = True
     stages = []
     for s in CHANGE_STAGES:
         here = [lf for lf in leaves if lf["stage"] == s]
@@ -473,7 +505,7 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
                 "stage": s,
                 "reported": reported[s],
                 "count": len(here) if reported[s] else None,  # "not reported", never zero (Q24)
-                "colour": worst([lf["colour"] for lf in here]) if reported[s] and here else None,
+                "colour": colour_of(here) if reported[s] and here else None,
             }
         )
     bar = {"done": None, "of": len(leaves), "label": f"{len(leaves)} open"}
@@ -623,7 +655,8 @@ def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[st
         "data_as_of": _data_as_of(ledger),  # a replay's last export time; None on a live ledger
         "signals": {
             "waiting_on_you": waiting_on_you(ledger, now)["count"],
-            "stuck": sum(1 for lf in leaves if lf["colour"] == "red"),
+            "stuck": sum(1 for lf in _live(leaves) if lf["colour"] == "red"),
+            "idle": sum(1 for lf in leaves if lf.get("idle")),
             "team_quiet": _team_quiet(ledger, now),
         },
         "blocks": blocks,
@@ -698,7 +731,7 @@ def _stage_entry(name: str, leaves: list[dict[str, Any]], reported: bool = True)
             "oldest": None,
             "leaves": [],
         }
-    colour = worst([lf["colour"] for lf in leaves]) if leaves else None
+    colour = colour_of(leaves) if leaves else None
     oldest = max(leaves, key=lambda lf: (lf.get("age_s") or 0, lf["id"])) if leaves else None
     return {
         "stage": name,
@@ -814,7 +847,6 @@ ITEM_ORDER = (*COLOURS, "done")  # red, amber, moving, grey, then done
 
 # -- the stage x role grid (mock-up v2): who holds what, across all of a goal's stages at once ------------------------
 
-IDLE_S = 7 * 86400  # an open change with no move this long is idle: parked or abandoned, not in the queue
 IDLE = "idle"
 
 
@@ -832,6 +864,7 @@ def _item(lf: dict[str, Any]) -> dict[str, Any]:
         "id": lf["id"],
         "title": lf.get("title"),
         "colour": lf["colour"],
+        "idle": bool(lf.get("idle")),
         "shape": SHAPES.get(lf["colour"], ""),
         "why": lf.get("why"),
         "age_s": lf.get("age_s"),
@@ -866,8 +899,8 @@ def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, An
             if changes and st["stage"] == "merged":
                 continue  # by the opener, below
             col = st["stage"]
-            if changes and col == "opened" and (lf.get("age_s") or 0) >= IDLE_S and lf.get("who") != "you":
-                col = IDLE  # the person's own task is never parked: it waits on them
+            if lf.get("idle"):
+                col = IDLE  # _changes marks it: opened, no move for IDLE_S, and never the person's own task
             put(*_holder(lf), col, lf)
     if changes:
         merged = next((s for s in stages if s["stage"] == "merged"), None)
@@ -888,8 +921,15 @@ def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, An
     for r in rows.values():
         cells = {}
         for col, items in r["cells"].items():
-            items.sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))
-            colour = worst([i["colour"] for i in items])
+            items.sort(
+                key=lambda i: (
+                    bool(i.get("idle")),
+                    ITEM_ORDER.index(i["colour"]),
+                    -(i.get("age_s") or 0),
+                    i["id"],
+                )
+            )
+            colour = colour_of(items)
             cells[col] = {"count": len(items), "colour": colour, "shape": SHAPES[colour], "items": items}
         live_red = sum(
             1
@@ -960,9 +1000,16 @@ def zoom2(
         )
     holders = []
     for g in groups.values():
-        # worst first, then the oldest: the item a reason line names leads its holder
-        g["items"].sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))
-        colour = worst([i["colour"] for i in g["items"]])
+        # live work first, worst then oldest, so the item a reason line names leads its holder; idle work after it
+        g["items"].sort(
+            key=lambda i: (
+                bool(i.get("idle")),
+                ITEM_ORDER.index(i["colour"]),
+                -(i.get("age_s") or 0),
+                i["id"],
+            )
+        )
+        colour = colour_of(g["items"])
         holders.append(
             {
                 **g,

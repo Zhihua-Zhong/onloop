@@ -1736,7 +1736,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map: a block's colour typed by hand, not computed from its children",
         "src/onloop/derive.py",
-        '    colour = worst([lf["colour"] for lf in leaves])\n    return {',
+        "    colour = colour_of(leaves)\n    return {",
         '    colour = "moving"\n    return {',
         ["tests/test_map_zoom0.py::test_every_blocks_colour_is_computed_from_its_leaves_never_typed"],
     ),
@@ -1799,7 +1799,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map, zoom 1: a stage's colour is its first item's, not the worst of its items",
         "src/onloop/derive.py",
-        '    colour = worst([lf["colour"] for lf in leaves]) if leaves else None',
+        "    colour = colour_of(leaves) if leaves else None",
         '    colour = leaves[0]["colour"] if leaves else None',
         [
             "tests/test_map_levels.py::test_a_stage_is_the_worst_of_its_items_and_a_block_the_worst_of_its_stages"
@@ -1905,8 +1905,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map, zoom 2: a holder's items come in no order, so the item the reason names is not first",
         "src/onloop/derive.py",
-        '        g["items"].sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))',
-        '        g["items"].sort(key=lambda i: i["id"])',
+        '        g["items"].sort(\n            key=lambda i: (\n                bool(i.get("idle")),\n                ITEM_ORDER.index(i["colour"]),',
+        '        g["items"].sort(\n            key=lambda i: (\n                i["id"],\n                ITEM_ORDER.index(i["colour"]),',
         ["tests/test_map_levels.py::test_within_a_holder_the_worst_and_oldest_item_comes_first"],
     ),
     (
@@ -1947,8 +1947,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the grid keeps idle changes in the live queue, so a parked week-old change looks like work in flight",
         "src/onloop/derive.py",
-        "                col = IDLE  # the person's own task is never parked: it waits on them",
-        "                pass  # the person's own task is never parked: it waits on them",
+        "                col = IDLE  # _changes marks it: opened, no move for IDLE_S, and never the person's own task",
+        "                pass  # _changes marks it: opened, no move for IDLE_S, and never the person's own task",
         [
             "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
         ],
@@ -1973,6 +1973,24 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         '    return TEAM if not ref or ref in ("team", TEAM) else ref',
         "    return TEAM if not ref or ref == TEAM else ref",
         ["tests/test_agreement.py::test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team"],
+    ),
+    (
+        "the reason line names an idle change, so zoom 0 points at parked work while the grid points at live work",
+        "src/onloop/derive.py",
+        '        (lf for lf in _live(leaves) if lf["colour"] == block_colour),',
+        '        (lf for lf in leaves if lf["colour"] == block_colour),',
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
+    ),
+    (
+        "the header counts idle changes as jammed, so its number disagrees with the grid",
+        "src/onloop/derive.py",
+        '            "stuck": sum(1 for lf in _live(leaves) if lf["colour"] == "red"),',
+        '            "stuck": sum(1 for lf in leaves if lf["colour"] == "red"),',
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
     ),
     (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",

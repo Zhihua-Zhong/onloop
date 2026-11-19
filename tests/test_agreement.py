@@ -229,9 +229,10 @@ def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
         path, now = root / "onloop" / "ledger.db", REPLAY_NOW
     else:
         path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
-    checked = 0
+    checked = idle_total = red_total = 0
     with Ledger(path, readonly=True) as led:
-        for b in derive.zoom0(led, now)["blocks"]:
+        z0 = derive.zoom0(led, now)
+        for b in z0["blocks"]:
             stages = derive.zoom1(led, now, b["id"])["stages"]
             g = derive.zoom2(led, now, b["id"], stages[0]["stage"])["grid"]
             col = {c["stage"]: c for c in g["columns"]}
@@ -258,6 +259,16 @@ def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
                 checked += 1
             rows = g["rows"]
             assert rows == sorted(rows, key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
+            # idle is set apart at every level: the block's tally, the grid's Idle column and the header agree
+            idle_col = col["idle"]["count"] if "idle" in col else 0
+            assert b["tally"]["idle"] == idle_col, (which, b["id"])
+            if idle_col:
+                assert f"{idle_col} idle" in b["tally_text"], b["tally_text"]
+            live_red = sum(r["live_red"] for r in rows)
+            assert b["tally"]["red"] == live_red, (which, b["id"], b["tally"], live_red)
+            idle_total += idle_col
+            red_total += b["tally"]["red"]
+        assert z0["signals"]["idle"] == idle_total and z0["signals"]["stuck"] == red_total
     assert checked > 0
 
 

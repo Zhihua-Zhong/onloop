@@ -13,6 +13,7 @@ export interface MapLeaf {
   why?: string;
   age_s?: number | null;
   lower_bound?: boolean;
+  idle?: boolean; // set apart at every level (the lead's ruling on e320db4)
   reported_by_team?: boolean;
   task_backed?: boolean;
 }
@@ -55,6 +56,7 @@ export interface MapModel {
   signals: {
     waiting_on_you: number;
     stuck: number;
+    idle?: number; // open changes with no move for a week: parked or abandoned, never counted as jammed
     team_quiet: {
       seconds: number;
       text: string;

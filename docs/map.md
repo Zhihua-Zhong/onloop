@@ -27,6 +27,10 @@ Open it at `#/map`, or from the **Map** tab.
   merges never shrinks the open cells. A click, or Enter on a focused cell, opens that stage at that holder.
 - **For changes**, Opened is split. A change with no move for 7 days or more is **idle**: parked or abandoned, in its
   own column first, apart from the live queue. Your own tasks are never idle, since they wait on you.
+- **Idle is set apart at every level**, not only in the grid. The header's "N jammed" and a block's tally count live
+  work only, and the tally adds "N idle" ("3 jammed · 2 idle · 1 moving"). The reason line names the worst live
+  change, never an idle one. A stage, holder or block holding only idle work is grey and reads "idle". On zoom 0 an
+  idle change is a muted square.
 - **The bottleneck** is the live stage with the most jammed changes; its header is outlined in red.
 - **Roles with nothing open** are named in one line under the table.
 - **On a phone,** only the columns with something in them, and the stage you opened, are shown; a line names the
