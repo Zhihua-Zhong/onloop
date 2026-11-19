@@ -220,8 +220,9 @@ function Bar({ b }: { b: MapBlock }) {
   );
 }
 
-// A tally line ("2 jammed · 4 idle · 1 waits on you · 3 moving"), with its jammed part in the jam's red and set apart,
-// so "most stuck" never reads as the amber that waits on you beside it (run 1's one difficulty).
+// A tally line ("1 jammed · 1 waits on you": the generic ledger's Changes in flight), with its jammed part in the
+// jam's red and set apart, so "most stuck" never reads as the amber that waits on you beside it (run 1's one
+// difficulty).
 function Tally({ text, testid = "tally" }: { text: string; testid?: string }) {
   const parts = text.split(" · ");
   const jam = /^\d+ jammed$/.test(parts[0] ?? "") ? parts.shift() : null;
