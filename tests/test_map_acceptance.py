@@ -62,7 +62,7 @@ def test_the_most_jammed_block_and_why_are_read_without_a_click(zoom0):
     """The glance check's key (state/design/map_zoom0_glance_key.md), registered before any run."""
     red = [b for b in zoom0["blocks"] if b["colour"] == "red"]
     assert [b["id"] for b in red] == ["changes"]
-    assert red[0]["reason"]["text"] == "team: change pr#5 — holding it for 1 day"
+    assert red[0]["reason"]["text"] == "the team: change pr#5 — holding it for 1 day"
 
 
 def test_the_most_jammed_place_and_who_holds_it_are_three_clicks_away_at_most(zoom0, tmp_path_factory):
@@ -78,5 +78,5 @@ def test_the_most_jammed_place_and_who_holds_it_are_three_clicks_away_at_most(zo
         z2 = derive.zoom2(led, NOW, *path)
     holder = z2["holders"][0]  # the worst first: read without a third click
     assert path == ["changes", "review"] and len(path) <= 3
-    assert (holder["holder"], holder["colour"]) == ("team", "red")
+    assert (holder["holder"], holder["colour"]) == ("the team", "red")
     assert holder["items"][0]["id"] == "pr#5" and "holding it for 1 day" in holder["items"][0]["why"]

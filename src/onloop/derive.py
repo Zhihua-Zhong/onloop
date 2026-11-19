@@ -447,7 +447,16 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
             colour = "red" if age > stuck["wait"] else "moving"
             why = f"holding it for {plain_age(age, lower)}"
             leaves.append(
-                _leaf(ref, title, colour, stage=stage, who=w["on_ref"], why=why, age_s=age, lower_bound=lower)
+                _leaf(
+                    ref,
+                    title,
+                    colour,
+                    stage=stage,
+                    who=holder_name(w["on_ref"]),
+                    why=why,
+                    age_s=age,
+                    lower_bound=lower,
+                )
             )
         else:
             age = _secs(ev_["t"] or pr["updated_at"] or now, now)
@@ -471,11 +480,21 @@ def _changes(ledger: Any, now: str, mine: dict[str, Any], stuck: dict[str, int])
     return _block("changes", "changes", "Changes in flight", leaves, bar, stages=stages)
 
 
+TEAM = "the team"
+
+
+def holder_name(ref: str | None) -> str:
+    """The one name of a holder on every view. A team's export says `team`, or nothing, for work its team holds as a
+    whole; both read "the team" to a person, so both are one holder (the lead's finding on bebf0b9: "team" and "the
+    team" were two rows of the grid)."""
+    return TEAM if not ref or ref in ("team", TEAM) else ref
+
+
 def opener(role: str | None) -> str:
     """Who holds a change that waits on nobody: the role that opened it, as a team's export says (contract 1.2's `by`).
     "The team" only when the export does not say, or says `team`; never a role made up."""
-    if not role or role == "team":
-        return "the team"
+    if holder_name(role) == TEAM:
+        return TEAM
     if role == "human":
         return "you (opened it)"
     return role
@@ -508,9 +527,10 @@ def _waits_by_holder(ledger: Any, now: str, open_tasks: list[dict[str, Any]]) ->
         if w["on_kind"] == "human":
             continue
         age = _secs(w["since"], now)
+        name = holder_name(w["on_ref"])
         row = rows.setdefault(
-            w["on_ref"],
-            {"holder": w["on_ref"], "kind": w["on_kind"], "count": 0, "oldest_s": -1.0, "lower_bound": False},
+            name,
+            {"holder": name, "kind": w["on_kind"], "count": 0, "oldest_s": -1.0, "lower_bound": False},
         )
         row["count"] += 1
         if age > row["oldest_s"]:
@@ -775,8 +795,8 @@ def _holder(lf: dict[str, Any]) -> tuple[str, str]:
         return "you", "you"
     if who == MARKED:
         return MARKED, "marked"  # the same words as zoom 0 and 1: one phrase, one meaning
-    if not who or who == "the team":
-        return "the team", "team"
+    if holder_name(who) == TEAM:
+        return TEAM, "team"
     return who, "role"
 
 

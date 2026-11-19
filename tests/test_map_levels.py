@@ -161,7 +161,7 @@ def test_zoom_2_links_each_item_to_where_a_person_acts(replay):
         "view": "audit",
         "ref": "pr#5",
     }
-    assert [h["holder"] for h in review["holders"]][0] == "team"  # the worst first: the red one
+    assert [h["holder"] for h in review["holders"]][0] == "the team"  # the worst first: the red one
 
 
 def test_a_block_that_changes_colour_turns_once(tmp_path):

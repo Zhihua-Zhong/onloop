@@ -1873,8 +1873,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the map invents a role for a change whose export gives none",
         "src/onloop/derive.py",
-        '    if not role or role == "team":\n        return "the team"',
-        '    if not role or role == "team":\n        return "builder"',
+        "    if holder_name(role) == TEAM:\n        return TEAM",
+        '    if holder_name(role) == TEAM:\n        return "builder"',
         ["tests/test_contract_1_2.py::test_the_map_never_invents_a_role"],
     ),
     (
@@ -1966,6 +1966,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "        start = _floor_hour(first)",
         "        pass",
         ["tests/test_contract.py::test_activity_starts_where_the_data_does_never_before_it"],
+    ),
+    (
+        'a wait on `team` and a change with no opener are two holders, "team" and "the team", two rows of the grid',
+        "src/onloop/derive.py",
+        '    return TEAM if not ref or ref in ("team", TEAM) else ref',
+        "    return TEAM if not ref or ref == TEAM else ref",
+        ["tests/test_agreement.py::test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team"],
     ),
     (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",

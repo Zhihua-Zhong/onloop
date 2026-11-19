@@ -259,3 +259,30 @@ def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
             rows = g["rows"]
             assert rows == sorted(rows, key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
     assert checked > 0
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team(which, demo_path, replay_path):
+    """The lead's finding on bebf0b9: "team" held a jammed change in Review and "the team" ten in Merged, two rows of
+    the grid for what a person reads as one holder. `team` and no name at all are "the team" on every view."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    seen = set()
+    with Ledger(path, readonly=True) as led:
+        z = derive.zoom0(led, now)
+        seen |= {w["holder"] for w in z["waits"]}
+        for b in z["blocks"]:
+            seen |= {lf.get("who") for lf in b["leaves"] if lf.get("who")}
+            for s in derive.zoom1(led, now, b["id"])["stages"]:
+                if s["reason"]:
+                    seen.add(s["reason"]["text"].split(": ", 1)[0])
+                if not s["count"]:
+                    continue
+                z2 = derive.zoom2(led, now, b["id"], s["stage"])
+                seen |= {h["holder"] for h in z2["holders"]}
+                rows = [r["holder"] for r in z2["grid"]["rows"]]
+                assert len(rows) == len(set(rows)), (b["id"], rows)  # one row per holder
+                seen |= set(rows)
+    assert "team" not in seen and "" not in seen, sorted(seen)
+    assert derive.TEAM in seen  # both ledgers have work the team holds as a whole
+    assert derive.holder_name("team") == derive.holder_name(None) == derive.holder_name("") == derive.TEAM
+    assert derive.holder_name("reviewer") == "reviewer"
