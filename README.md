@@ -17,13 +17,12 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.4.0 is the latest release, alpha. `main` is 0.5.0.dev0. See [CHANGELOG.md](CHANGELOG.md) and the
-roadmap below.
+Status: 0.5.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
-onloopd serves this UI at `http://localhost:8790`: Now, Flow, Team, Conversation, Outcome, Schedules and Audit,
-seven views of one ledger ([docs/ui.md](docs/ui.md)). It writes in three narrow places: a message to a role, a
+onloopd serves this UI at `http://localhost:8790`: Now, Map, Activity, Flow, Outcome, Team, Conversation,
+Schedules and Audit, nine views of one ledger ([docs/ui.md](docs/ui.md), [docs/map.md](docs/map.md)). It writes in three narrow places: a message to a role, a
 task's Done or Decline, and the time of your visit.
 
 ## Why human-on-the-loop
@@ -54,7 +53,7 @@ Install the release's wheel, which carries the UI (there is no PyPI release; a `
 without the UI):
 
 ```bash
-pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.4.0/onloop-0.4.0-py3-none-any.whl"      # no clone needed
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.5.0/onloop-0.5.0-py3-none-any.whl"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -136,7 +135,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.4.0/onloop-0.4.0-py3-none-any.whl"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.5.0/onloop-0.5.0-py3-none-any.whl"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md
@@ -274,6 +273,15 @@ Everything described above exists and has a self-test.
   resolution and its evidence ([docs/tasks.md](docs/tasks.md)).
 - **Goals and outcome KPIs** (decision 0014), read through read-only adapters, and the Outcome view.
 
+0.5.0 (2026-11-20) adds, and acts on nothing new:
+
+- **The map** (decision 0018): zoom 0 is a block per goal, zoom 1 a goal's stages, and zoom 2 the stage × role grid,
+  with idle work set apart ([docs/map.md](docs/map.md)).
+- **The data contract** (decision 0017): a team's daily export, replayed read-only, in contracts 1.0 to 1.2
+  ([docs/data-contract.md](docs/data-contract.md)).
+- **Feedback from both channels**, the **Activity view**, and a page that says whether it is live, quiet or not
+  answering.
+
 Where it goes next ([decision 0004](docs/decisions/0004-onloop-hosts-the-conversation.md)): onloop becomes the
 operations layer for a team of AI agents, a loop owner that runs outside any session, hosts the role sessions itself
 (`claude -p --resume`), holds goals and a clock, delivers events into the sessions, tracks who waits on whom, and
@@ -282,8 +290,9 @@ watches results.
 - **0.3.0 observes:** scheduled-job results, the constraint view, handoffs nobody owns, system time, checks that fail
   closed, and a report of what onloop would have done against what happened.
 - **0.4.0 acts, when you switch it on:** delivery into sessions with a kill switch, the person's task list, and goals.
-- Next: one overview of goals and feedback, the batching merge queue, act mode in a real project, and a PyPI
-  release.
+- **0.5.0 shows the work at a glance:** the map, a team's replayed export, feedback, and a page that says when it is
+  live.
+- Next: the batching merge queue, act mode in a real project, and a PyPI release.
 
 ## Licence
 

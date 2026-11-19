@@ -1,3 +1,66 @@
+# onloop 0.5.0
+
+onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop
+rather than **in** it. The agents open, review and merge pull requests themselves, and the person approves a short
+list of reserved changes and can overturn the rest.
+
+**0.5.0 shows where the work stands at a glance.** The map answers one question: where is the work stuck, and is it
+me? Nothing acts that 0.4.0 left off.
+
+## Install
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.5.0/onloop-0.5.0-py3-none-any.whl"
+onloop selftest
+onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790/#/map
+```
+
+You need Python 3.11 or later, git, and the GitHub CLI for the commands that talk to GitHub. The page ships inside the
+wheel. A source checkout builds it first, with `cd web && npm ci && npm run build`.
+
+## Upgrading from 0.4
+
+- **Back up your ledger file first.** The first time 0.5.0 opens a 0.4 ledger, it moves it to a newer format (from
+  schema 7 to schema 9). It keeps every event, and 0.4 cannot open the file afterwards.
+- **A team's daily export** may be any contract from 1.0 to 1.2. 1.1 adds check runs, verdicts and waits; 1.2 adds
+  the role that opened each change. An older export still imports; the map says what it cannot see.
+- Your onloopd.yaml keeps working. The new `overview: stuck:` block, the map's thresholds, is optional.
+
+## What is new
+
+- **The map** (`#/map`): one picture with levels.
+  - **Zoom 0** shows one block per goal (each checklist, each feedback batch, and the changes in flight), with the
+    worst colour of its children and, when red or amber, which child and why.
+  - **Zoom 1** shows a goal's stages.
+  - **Zoom 2** shows the goal's stage × role grid, who holds what in every stage at once, with the bottleneck
+    marked, and the items of one holder below it.
+  - Every level counts what Now and the task list count.
+- **Idle work is set apart.** An open change with no move for a week is idle, parked or abandoned. It is drawn
+  hatched, and never counted as jammed.
+- **The data contract:** `onloop import snapshot` replays a team's daily export into the ledger, read-only, and checks
+  every record against the schemas and the privacy rules.
+- **Feedback from both channels:** `onloop feedback` gives a batch in one sitting, and a team's export reports its
+  own, each item at the stage the team declares.
+- **The Activity view:** one lane per role, from the data's start to its end, with each role's longest quiet and
+  turns per hour.
+- **A page that says when it is live:** a ticking clock, ages that rise with it, and a Live dot that turns amber when
+  onloopd brings no news and red when it does not answer.
+
+## Known limits
+
+- **Who holds a change that waits on nobody** depends on the export. With contract 1.2's `by`, the change is held
+  by its role; without `by`, or with `by: team`, it is held by "the team".
+- **Zoom 3 and 4** (a role's turns, a turn's tool calls) wait for the tool events.
+- **The idle threshold is fixed at 7 days,** and only the changes in flight have an idle split.
+- **The grid's flow numbers** ("N reached it in the week") are counted for changes only.
+- **Merged by role** needs contract 1.2's `by`. Without it, every merged change is the team's.
+- **Waits on you compete with a jam.** An old wait on the person can read as a candidate for "most stuck" beside a
+  jam. The tally sets the jam apart; whether an old wait on you should rank with the jams is open.
+- **Wide screens:** the blocks share the width up to 760 px each.
+- **The browser tests were not run for this release.** The pages were checked by hand in a built-in browser and in
+  Chrome, and by their API tests.
+- **The session carrier** is as in 0.4.0: off by default, and the 0.4.0 notes below still apply.
+
 # onloop 0.4.0
 
 onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop
