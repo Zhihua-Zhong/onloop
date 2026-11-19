@@ -199,3 +199,58 @@ def test_onloopds_tick_runs_block_turned(tmp_path):
     with Ledger(path) as led:
         res = daemon.tick(led, cfg)
     assert res.detected.get("block_turned"), res.errors
+
+
+def test_within_a_holder_the_worst_and_oldest_item_comes_first(tmp_path):
+    """The lead's finding on 8793: a holder's items came in no order, so the oldest, the one zoom 0's reason names,
+    was sixth. Worst colour first, then oldest first."""
+    path = tmp_path / "l.db"
+    with Ledger(path, clock=lambda: NOW) as led:
+        for n, day in (
+            (1, 10),
+            (2, 1),
+            (3, 12),
+            (4, 16),
+            (5, 2),
+        ):  # opened on 11-<day>; pr#5 has a check later
+            led.append(
+                {
+                    "id": f"o{n}",
+                    "source": "import",
+                    "kind": "pr.opened",
+                    "subject_ref": f"pr#{n}",
+                    "at": f"2026-11-{day:02d}T03:00:00.000Z",
+                    "payload": {"number": n},
+                }
+            )
+            led.append(
+                {
+                    "id": f"a{n}",
+                    "source": "import",
+                    "kind": "pr.author",
+                    "subject_ref": f"pr#{n}",
+                    "at": f"2026-11-{day:02d}T03:00:00.000Z",
+                    "payload": {"number": n, "by": "builder"},
+                }
+            )
+        led.append(
+            {
+                "id": "c5",
+                "source": "github",
+                "kind": "check.completed",
+                "subject_ref": "pr#5",
+                "at": "2026-11-16T23:00:00.000Z",
+                "payload": {"name": "unit tests", "conclusion": "success", "head": "a" * 40},
+            }
+        )
+        z1 = derive.zoom1(led, NOW, "changes")
+        z2 = {s["stage"]: derive.zoom2(led, NOW, "changes", s["stage"]) for s in z1["stages"] if s["count"]}
+    opened = next(h for h in z2["opened"]["holders"] if h["holder"] == "builder")["items"]
+    assert len(opened) == 4  # pr#1-4 wait on nobody in "opened"; pr#5 has a check, so it is in "checks"
+    order = [(i["colour"], i["age_s"]) for i in opened]
+    rank = {c: k for k, c in enumerate(derive.ITEM_ORDER)}
+    assert order == sorted(order, key=lambda x: (rank[x[0]], -x[1])), order
+    # red 16, 7 and 5 days old, then moving 1 day: opened on 11-01, 11-10, 11-12 and 11-16
+    assert [i["id"] for i in opened] == ["pr#2", "pr#1", "pr#3", "pr#4"]
+    reason = next(s for s in z1["stages"] if s["stage"] == "opened")["reason"]
+    assert opened[0]["id"] == reason["child"] == "pr#2"

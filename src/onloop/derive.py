@@ -790,6 +790,9 @@ def _link(block: dict[str, Any], lf: dict[str, Any]) -> dict[str, str]:
     return {"kind": "the item's history", "view": "audit", "ref": lf["id"]}
 
 
+ITEM_ORDER = (*COLOURS, "done")  # red, amber, moving, grey, then done
+
+
 def zoom2(
     ledger: Any, now: str, block_id: str, stage: str, stuck: dict[str, int] | None = None
 ) -> dict[str, Any]:
@@ -813,6 +816,8 @@ def zoom2(
         )
     holders = []
     for g in groups.values():
+        # worst first, then the oldest: the item a reason line names leads its holder
+        g["items"].sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))
         colour = worst([i["colour"] for i in g["items"]])
         holders.append(
             {

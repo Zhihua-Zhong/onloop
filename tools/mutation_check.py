@@ -1903,6 +1903,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_contract_1_2.py::test_a_1_1_snapshot_with_by_says_why"],
     ),
     (
+        "the map, zoom 2: a holder's items come in no order, so the item the reason names is not first",
+        "src/onloop/derive.py",
+        '        g["items"].sort(key=lambda i: (ITEM_ORDER.index(i["colour"]), -(i.get("age_s") or 0), i["id"]))',
+        '        g["items"].sort(key=lambda i: i["id"])',
+        ["tests/test_map_levels.py::test_within_a_holder_the_worst_and_oldest_item_comes_first"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',
