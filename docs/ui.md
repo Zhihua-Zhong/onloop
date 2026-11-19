@@ -48,7 +48,7 @@ land on the same level.
 
 - **The signals:**
   - "N wait on you": the same count as Now and the task list;
-  - "N jammed";
+  - "N jammed": live work only, with "N idle" beside it when changes have had no move for a week;
   - "Team quiet at most": the team's longest pause in the data's last day. An item's own "no move" is its reason
     line, never this;
   - the since-you-looked sentence.
@@ -59,11 +59,14 @@ land on the same level.
     only the person's own tasks say that, so the blocks never add up past the header's count;
   - "Changes in flight", with its stages. A stage this team's export does not report is hatched and says "not
     reported", never 0.
-- **Colour:** a block takes the worst colour of its children: jammed (!), waits on you (◆), moving (▶), not started
-  (□). Every colour has its shape. A red or amber block says in one line which child and why.
+- **Colour:** a block takes the worst colour of its live children: jammed (!), waits on you (◆), moving (▶), not
+  started (□). Every colour has its shape. A red or amber block says in one line which child and why, never an idle
+  one. A tally reads "1 jammed | 1 waits on you", with the jam first, in red, set apart. Idle work
+  (open, no move for 7 days) is hatched greyish red and never counted as jammed.
 - **Waits, by who holds them:** oldest first. An age shown as "≥ 9 days" began before anything onloop has seen, and
   the row says "began before the first export".
-- **The first view** opens at scale 1, never fitted smaller, with the blocks sharing the canvas's width.
+- **The first view** opens at scale 1, never fitted smaller, with the blocks sharing the canvas's width (up to 760
+  px each). Widening or narrowing the window re-lays them.
 - **A goal with no title** shows its id in plain words ("Release plan").
 - **Moving around:**
   - the wheel or a pinch zooms the canvas, and a drag pans it;
@@ -79,9 +82,14 @@ land on the same level.
   Each stage has its count, colour, oldest item and, when red or amber, which item and why. A stage with no evidence
   is hatched, "not reported". A change's checks read "checks: 1 failed (e2e) · 4 passed · 1 skipped": skipped runs are
   counted, never named, and a failed or running check is named exactly as recorded.
-- **Zoom 2** (`#/map/<goal>/<stage>`): who holds each item in that stage (you, "marked yours by the team", the team
-  or a role), the worst first. Each item says what it waits on and since when, with a link to your task or the
-  change's history.
+- **Zoom 2** (`#/map/<goal>/<stage>`): the goal's stage × role grid. It has a column per stage (Idle first, for
+  changes) and a row per holder (you, "marked yours by the team", the team or a role). The first row is the holder
+  zoom 0's reason line names, then the rest worst first.
+  - The stage you opened is outlined, and the bottleneck is marked.
+  - A cell opens its stage at that holder.
+  - Below the table, that holder's items in the stage each say what they wait on and since when, with a link to your
+    task or the change's history.
+  - On a phone only the non-empty columns show. The full guide is in [map.md](map.md).
 - **Zoom 3 and 4** (a role's turns, a turn's tool calls) are reserved in the URLs and say they come with the tool
   events.
 - **"Show as a list"** gives the same content as tables, at every level and any width.
@@ -162,6 +170,7 @@ the canvas, and each has its own step in dark mode, validated against the dark s
 | `state-done` (green) | done | done | ■ |
 | `state-external` (violet) | waits on someone else | the bar of a waits row held by a role or the team | — |
 | `state-stall` (magenta) | stalled | — | — |
+| `state-idle` (greyish red, hatched) | — | idle: an open change with no move for 7 days, never counted as jammed | none |
 
 A colour is never the only sign. Every state also has a shape or a word, and the list form gives the same content as
 text.

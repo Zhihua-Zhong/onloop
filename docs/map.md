@@ -53,8 +53,10 @@ alone.
 | Blue, "moving" | ▶ | moving within its threshold |
 | Grey, "not started" | □ | no evidence yet |
 | Green, "done" | ■ | every child is done |
+| Hatched greyish red, "idle" | none | an open change with no move for 7 days or more: parked or abandoned, never counted as jammed |
 
-- **Every red or amber block** carries one line naming the child and why, so a colour never needs a guess.
+- **Every red or amber block** carries one line naming the child and why, so a colour never needs a guess. The
+  child is live work: an idle change is never named, however old.
 - **A stage with no evidence source** is hatched and says "not reported", never 0. An export without check runs, for
   example, reports no checks stage.
 
@@ -91,6 +93,14 @@ alone.
 The page keeps the map as last read, with a line saying onloopd cannot be reached, and tries again every few seconds.
 When onloopd answers, the map comes back without a reload.
 
+The header says how fresh the map is on every page (see [ui.md](ui.md#live-updates)):
+- a clock that ticks every second;
+- "data as of N s ago";
+- the Live dot: amber "No news for N s" past two of onloopd's ticks, and red "onloopd not answering for N s" after
+  five seconds without an answer.
+
+Every age on the map rises with that clock between answers.
+
 ## Thresholds
 
 How long an agents' step may go without a move before it turns red is set in onloopd.yaml (see
@@ -104,7 +114,7 @@ overview:
 ```
 
 The defaults are given 2 days, declared 3 days, checklist 5 days, change 3 days and wait 1 day. The legend always
-shows the thresholds in use.
+shows the thresholds in use. A change turns idle after 7 days with no move; that threshold is fixed in 0.5.0.
 
 ## History of colours
 
@@ -121,9 +131,25 @@ these events.
 
 A path that names nothing is a 404 with a plain sentence.
 
+- **zoom 0** carries `signals`: `waiting_on_you`, `stuck` (live jammed work only), `idle`, and `team_quiet`.
+- **zoom 2** carries `holders`, the stage's items by who holds them. It also carries `grid`, the goal's grid: its
+  `columns` (each with `count`, `red` and `flow`), its `rows` (each holder's `cells`), `bottleneck`,
+  `idle_after_s`, `window` and `roles_with_nothing`.
+- **A leaf** of an idle change carries `idle: true`.
+
 ## Known limits in 0.5.0
 
 - **Who holds a change that waits on nobody** depends on the export. When it sends `by` (contract 1.2, see
   [data-contract.md](data-contract.md)), the change is held by its role, such as "builder". Only without
   `by`, from a 1.0 or 1.1 export, or with `by: team`, is it held by "the team".
 - **Zoom 3 and 4** wait for the tool events.
+- **The idle threshold is fixed at 7 days,** and only Changes in flight has an idle split: the other goals' stages
+  come from a checklist or a team's declared stages, with no "no move" clock of their own.
+- **The grid's flow numbers** ("N reached it in the week") are counted for changes only. A checklist's or a feedback
+  batch's columns show what is open now.
+- **Merged by role** needs contract 1.2's `by`. Without it, every merged change is the team's.
+- **Waits on you compete with the jam.** Both glance-trial evaluators read an old wait on the person (amber)
+  as a candidate for "most stuck", next to the one jam. The tally now sets the jam apart. Whether an old wait on you
+  should rank with the jams is a design question for the next round.
+- **Wide screens:** the blocks share the width up to 760 px each. Past that, one or two blocks leave the rest of the
+  row empty.
