@@ -1,4 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
+import { useNowMs } from "@/lib/clock";
 import { api, type Item, type Role, type Stall, type Turn, type Wait } from "@/lib/api";
 import { clock, duration, plural, reason } from "@/lib/format";
 import { Command, Empty, Loading, Pill, Problem, Ticks, type Tone } from "@/components/kit";
@@ -107,6 +108,7 @@ function lane(r: Role, turns: Turn[], waits: Wait[], items: Item[], alerts: Item
 const ORDER: Tone[] = ["human", "stall", "blocked", "external", "open", "void", "neutral"];
 
 export function TeamView() {
+  useNowMs(); // re-render every second: a stall's "not acknowledged for" is worked out from the clock
   const qs = useQueries({
     queries: [
       { queryKey: ["roles"], queryFn: api.roles },

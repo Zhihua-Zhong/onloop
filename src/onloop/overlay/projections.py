@@ -39,7 +39,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .. import events as ev
-from . import goals_proj, human_tasks, schema
+from . import feedback_proj, goals_proj, human_tasks, schema
 
 Event = Mapping[str, Any]
 
@@ -245,6 +245,8 @@ def _pr(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     ref = e["subject_ref"]
     kind = e["kind"]
     if kind == "pr.opened" or not _exists(conn, "items", ref):
+        # the role that opened it (contract 1.2's pr.author) is kept: an opening read later never wipes it
+        had = conn.execute("SELECT owner_role FROM items WHERE id = ?", (ref,)).fetchone()
         row = {
             "id": ref,
             "kind": "task",
@@ -255,7 +257,11 @@ def _pr(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
             "detail": _dump({k: p[k] for k in ("base", "draft", "head") if k in p}),
             "opened_at": when(e),
         }
-        _insert(conn, "items", {**row, "updated_at": when(e), "last_seq": e["seq"]})
+        _insert(
+            conn,
+            "items",
+            {**row, "owner_role": had[0] if had else None, "updated_at": when(e), "last_seq": e["seq"]},
+        )
         if kind == "pr.opened":
             return
     state = {
@@ -272,6 +278,25 @@ def _pr(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
             human_tasks.on_pr_done(conn, e, ref, merged=kind == "pr.merged")
     if kind == "pr.merged" and p.get("post_merge"):
         _post_merge(conn, e, ref, p["post_merge"])
+
+
+def _pr_author(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """The role that opened a pull request, as a team's export says (contract 1.2's `by`): the item's owner role. The
+    latest one stands; a PR not seen yet is opened here, as any other PR event does."""
+    ref = e["subject_ref"]
+    if not _exists(conn, "items", ref):
+        row = {
+            "id": ref,
+            "kind": "task",
+            "source_ref": ref,
+            "title": None,
+            "state": "open",
+            "ref": ref,
+            "detail": _dump({}),
+            "opened_at": when(e),
+        }
+        _insert(conn, "items", {**row, "updated_at": when(e), "last_seq": e["seq"]})
+    _set(conn, "items", ref, {"owner_role": p["by"]}, e["seq"])
 
 
 def _post_merge(conn: sqlite3.Connection, e: Event, parent: str, steps: list[Mapping[str, Any]]) -> None:
@@ -1003,6 +1028,7 @@ def _carrier_state(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> 
 RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]] = {
     **human_tasks.RULES,
     **goals_proj.RULES,
+    **feedback_proj.RULES,
     "item.opened": _item_opened,
     "item.changed": _item_changed,
     "item.closed": _item_closed,
@@ -1024,6 +1050,7 @@ RULES: dict[str, Callable[[sqlite3.Connection, Event, Mapping[str, Any]], None]]
     "schedule.declared": _schedule_declared,
     "schedule.result": _schedule_result,
     **{k: _pr for k in ("pr.opened", "pr.reopened", "pr.ready", "pr.drafted", "pr.merged", "pr.closed")},
+    "pr.author": _pr_author,
     **{k: _slot for k in ("slot.requested", "slot.granted", "slot.released", "slot.expired", "slot.renewed")},
     "node.created": _node,
     "node.changed": _node,

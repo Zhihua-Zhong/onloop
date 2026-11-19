@@ -178,6 +178,14 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
             res.errors.append(f"{step}: {type(e).__name__}: {e}"[:300])
     rep = detect.run(ledger, cfg.detectors if cfg.detectors is not None else DETECTORS, now)
     res.errors += [f"detector {e}" for e in rep.errors]
+    try:  # the map's colours, after the detectors: a block that changed colour is one block.turned event
+        from ..detect import blocks
+
+        turned = blocks.turn(ledger, now)
+        if turned:
+            res.detected["block_turned"] = turned
+    except Exception as e:  # noqa: BLE001 - the map's colours failing must not stop the tick
+        res.errors.append(f"block.turned: {type(e).__name__}: {e}"[:300])
     res.detected.update({k: v for k, v in rep.as_dict().items() if k != "errors"})
     res.detected = {k: v for k, v in res.detected.items() if v}
     return res
@@ -264,6 +272,9 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     localday.set_zone(localday.parse_zone(cfg.watch.kpi_timezone) if cfg.watch.kpi_timezone else None)
     if sources.declare_setting(ledger, "kpi.timezone", cfg.watch.kpi_timezone):
         say(f"onloopd: kpi.timezone is now {cfg.watch.kpi_timezone or 'the machine offset'}")
+    from .. import derive
+
+    derive.set_stuck(dict(cfg.watch.overview_stuck))  # the map's stuck thresholds, as onloopd.yaml gives them
     spooled = hook_receiver.ingest_spool(ledger, state)
     if spooled:
         say(f"onloopd: logged {spooled} hook event(s) spooled while it was away")
@@ -310,6 +321,7 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
             token=secret,
             heartbeat=state / HEARTBEAT_FILE,
             carrier=cfg.watch.carrier,
+            tick_s=cfg.tick_s,
         )
     except srv.PortInUse as e:
         say(f"onloopd: does not start: {e}")

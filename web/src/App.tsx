@@ -1,6 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Eye, Moon, Sun } from "lucide-react";
-import { useLive, type Live } from "@/lib/live";
+import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
+import { useQueryClient } from "@tanstack/react-query";
+import { useHeartbeat } from "@/lib/heartbeat";
+import { useNowMs } from "@/lib/clock";
+import { beatAtMs, dataAgeS, liveness, type LiveState } from "@/lib/tick";
+import { duration } from "@/lib/format";
+import { retrying } from "@/lib/recovery";
 import { href, useRoute, VIEW_LABEL, VIEWS, type View } from "@/lib/route";
 import { cn } from "@/lib/utils";
 import { Loading } from "@/components/kit";
@@ -13,7 +19,9 @@ import { AuditView } from "@/views/Audit";
 import { ConversationView } from "@/views/Conversation";
 
 // Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
-const FlowView = lazy(() => import("@/views/Flow"));
+const FlowView = lazy(retrying(() => import("@/views/Flow")));
+// The map shares React Flow with Flow, so it loads on first use too.
+const MapView = lazy(retrying(() => import("@/views/Map")));
 
 // The theme: a `?theme=` in the URL, else the person's own choice from the toggle (kept in this browser), else the
 // system's `prefers-color-scheme`, followed live. Only the toggle stores a choice, so a first visit never pins one.
@@ -57,12 +65,59 @@ function useTheme(): [boolean, () => void] {
   return [dark, toggle];
 }
 
+// The header's clock and liveness (the project lead's finding on 8796): a clock that ticks every second, so a page
+// that has stopped is seen to have stopped; what onloopd last said, from its stream and its heartbeat; and how old
+// the data on this page is. The rules and thresholds are in lib/tick.ts.
 function LiveBadge({ live }: { live: Live }) {
-  if (live.state === "stale") return null; // the banner below says it in full
+  const nowMs = useNowMs();
+  const client = useQueryClient();
+  const hb = useHeartbeat(); // the same reading Now's Health card shows
+  const beatNews = hb.data ? beatAtMs(hb.data.age_s, hb.dataUpdatedAt) : null;
+  const news = Math.max(streamNews() ?? 0, beatNews ?? 0) || null;
+  const lost = streamLost();
+  // down: neither the stream nor the heartbeat answers; counted from the last time either did
+  const downSince = lost !== null && hb.isError ? Math.max(lost, hb.dataUpdatedAt || 0, streamNews() ?? 0) : null;
+  const { state, forS } = liveness({ nowMs, newsAtMs: news, downSinceMs: downSince, periodS: hb.data?.period_s ?? 10 });
+  const answers = client
+    .getQueryCache()
+    .findAll({ type: "active" })
+    .map((q) => ({
+      key: String(q.queryKey[0]),
+      updatedAtMs: q.state.dataUpdatedAt,
+      refreshes: q.observers.some((o) => Boolean(o.options.refetchInterval)),
+    }));
+  const dataAge = dataAgeS(answers, nowMs);
+  const words: Record<LiveState, string> = {
+    connecting: "Connecting",
+    live: "Live",
+    quiet: `No news for ${duration(forS)}`,
+    down: `onloopd not answering for ${duration(forS)}`,
+  };
+  // a phone has room for a few words only; the duration must never be the part cut off
+  const short: Record<LiveState, string> = { connecting: "", live: "", quiet: `quiet ${duration(forS)}`, down: `offline ${duration(forS)}` };
+  const dot: Record<LiveState, string> = { connecting: "bg-state-void", live: "bg-state-done", quiet: "bg-state-human", down: "bg-state-blocked" };
+  const title =
+    state === "quiet"
+      ? "onloopd answers, but neither its event stream nor its heartbeat has brought anything new for over two of its ticks: it may have stalled"
+      : state === "down"
+        ? "Neither onloopd's event stream nor its heartbeat answers. This page shows what it last read, and keeps trying."
+        : "Updates arrive from onloopd's event stream; its heartbeat is checked every 10 s";
   return (
-    <span data-testid="live" data-state={live.state} className="hidden items-center gap-1.5 text-xs text-muted md:inline-flex" title="Updates arrive from onloopd's event stream">
-      <span className={cn("h-2 w-2 rounded-full", live.state === "live" ? "bg-state-done" : "bg-state-void")} aria-hidden />
-      {live.state === "live" ? "Live" : "Connecting"}
+    <span className="inline-flex items-center gap-3 text-xs text-muted">
+      <span data-testid="clock" className="font-mono tabular-nums text-fg" title="This page's clock: it ticks every second">
+        {new Date(nowMs).toLocaleTimeString(undefined, { hour12: false })}
+      </span>
+      <span data-testid="live" data-state={state} role="status" className={cn("inline-flex items-center gap-1.5", state === "down" ? "font-medium text-state-blocked" : state === "quiet" ? "font-medium text-state-human" : "")} title={title}>
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", dot[state])} aria-hidden />
+        <span className="max-md:sr-only">{words[state]}</span>
+        {short[state] && <span className="md:hidden" aria-hidden>{short[state]}</span>}
+      </span>
+      {dataAge != null && (
+        <span data-testid="data-age" className="tabular-nums max-lg:sr-only" title="When this page last read its data from onloopd">
+          data as of {duration(dataAge)} ago
+        </span>
+      )}
+      {live.state === "stale" && <span className="sr-only">Live updates stopped.</span>}
     </span>
   );
 }
@@ -136,11 +191,16 @@ export default function App() {
           read then, and reconnects by itself.
         </div>
       )}
-      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" ? "flex flex-col" : "overflow-y-auto")}>
+      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
         {route.view === "now" && <NowView />}
         {route.view === "flow" && (
           <Suspense fallback={<div className="p-4"><Loading what="the flow" /></div>}>
             <FlowView params={route.params} />
+          </Suspense>
+        )}
+        {route.view === "map" && (
+          <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>
+            <MapView params={route.params} path={route.path} />
           </Suspense>
         )}
         {route.view === "outcome" && <OutcomeView params={route.params} />}

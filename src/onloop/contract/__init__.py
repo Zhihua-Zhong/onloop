@@ -17,7 +17,7 @@ from functools import cache
 from importlib import resources
 from typing import Any
 
-CONTRACT = "1.1"  # the newest minor this reader knows; it reads 1.0 too
+CONTRACT = "1.2"  # the newest minor this reader knows; it reads 1.0 and 1.1 too
 TYPES = (  # what this reader takes; other types are refused by name
     "onloop.role.declared",
     "onloop.turn.ended",
@@ -35,6 +35,10 @@ TYPES = (  # what this reader takes; other types are refused by name
 )
 # the types each minor version added: a record of a newer type in an older snapshot is refused
 SINCE = {"onloop.pr.checks": 1, "onloop.pr.reviewed": 1, "onloop.wait.opened": 1, "onloop.wait.cleared": 1}
+# A field added to a type later: (type, field) -> the minor it came with. Contract 1.2 adds `by` to pr.opened.
+FIELD_SINCE = {("onloop.pr.opened", "by"): 2}
+# A type whose data schema changed with a minor: the schema file for that minor (contract 1.2's pr.opened, with `by`).
+SCHEMA_OF = {("onloop.pr.opened", 2): "onloop.pr.opened.1-2"}
 # who may be named as a reviewer or a waiter, besides the declared roles: never a login
 OWNERS = ("human", "team")
 

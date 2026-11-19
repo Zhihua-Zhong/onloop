@@ -47,6 +47,7 @@ LAYERS = {
         "adapters",
         "goals",
         "contract",
+        "derive",
     },
     3: {"supervisor", "daemon", "carrier"},
     4: {"cli", "__main__"},

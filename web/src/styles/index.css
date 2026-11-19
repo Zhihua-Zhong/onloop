@@ -30,3 +30,25 @@
 .react-flow__edge.edge-wait-constraint path { stroke: hsl(var(--state-blocked)); }
 .react-flow__edge.edge-wait path { stroke: hsl(var(--muted) / 0.6); stroke-dasharray: 2 4; }
 .react-flow__edge.edge-wait-human .react-flow__arrowhead polyline { stroke: hsl(var(--state-human)); fill: hsl(var(--state-human)); }
+
+/* The map's "not reported" stage: hatched, so it never reads as an empty stage or a zero (Q24). */
+.map-hatch {
+  background-image: repeating-linear-gradient(135deg, hsl(var(--state-void) / 0.16) 0 6px, transparent 6px 12px);
+}
+
+/* The map's move into a block (§12.5): the new level grows into place over about 250 ms. It is only a look: the level
+   has already opened. None with reduced motion. */
+@keyframes map-enter {
+  from { opacity: 0.4; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.map-enter { animation: map-enter 250ms ease-out; transform-origin: 50% 30%; }
+@media (prefers-reduced-motion: reduce) {
+  .map-enter { animation: none; }
+}
+
+/* Idle work: open, no move for a week, parked or abandoned. Hatched greyish red, so it never reads as jammed. */
+.idle-hatch {
+  background-color: hsl(var(--state-idle) / 0.18);
+  background-image: repeating-linear-gradient(135deg, hsl(var(--state-idle) / 0.9) 0 2px, transparent 2px 5px);
+}

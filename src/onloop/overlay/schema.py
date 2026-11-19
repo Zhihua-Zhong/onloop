@@ -75,6 +75,9 @@ PROJECTIONS = {
     "goal_denominators": "id",  # version 7
     "goal_ticks": "id",  # version 7
     "links": "id",  # version 7
+    "feedback_batches": "id",  # version 9
+    "feedback": "id",  # version 9
+    "feedback_links": "id",  # version 9
 }
 
 # Version 6 value sets (decision 0010).
@@ -737,6 +740,73 @@ CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT
 ALTER TABLE turns ADD COLUMN {_ts("started_at")}
 """
 
+# Version 9: feedback, from both channels (the overview plan's §2 and §12.6). A person gives a batch with
+# `onloop feedback` (`feedback.given`); a team's export reports its own batches, with each item's stage as the team
+# declares it (`feedback.*.reported`, decision 0017). The declared stage is kept apart, with who declared it and since
+# when it has been at that stage; a stage onloop derives from links is computed when read, never stored.
+FEEDBACK_ORIGINS = ("cli", "ui", "adapter", "import")
+FEEDBACK_KINDS = ("correction", "request", "direction")
+FEEDBACK_RESOLUTIONS = ("accepted", "declined", "duplicate", "superseded")
+FEEDBACK_LINK_KINDS = ("turn", "doc", "pr", "pr_merged", "pr_reverted", "task", "adapter", "issue")
+FEEDBACK_WAITS_ON = ("human", "team")
+
+SCHEMA_9 = f"""
+CREATE TABLE feedback_batches (
+  id          TEXT PRIMARY KEY,
+  origin      TEXT NOT NULL CHECK ({_in("origin", FEEDBACK_ORIGINS)}),
+  origin_ref  TEXT NOT NULL,
+  given_by    TEXT,
+  {_ts("given_at", nullable=False)},
+  title       TEXT CHECK (title IS NULL OR length(title) <= 120),
+  items       INTEGER NOT NULL CHECK (items >= 0),
+  stages      TEXT CHECK (stages IS NULL OR json_valid(stages)),
+  last_seq    INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_batch_per_origin ON feedback_batches(origin, origin_ref);
+
+CREATE TABLE feedback (
+  id                    TEXT PRIMARY KEY,
+  batch_id              TEXT NOT NULL,
+  position              INTEGER NOT NULL CHECK (position >= 1),
+  origin_ref            TEXT,
+  kind                  TEXT NOT NULL CHECK ({_in("kind", FEEDBACK_KINDS)}),
+  title                 TEXT CHECK (title IS NULL OR length(title) <= 120),
+  body_sha256           TEXT CHECK (body_sha256 IS NULL OR length(body_sha256) = 64),
+  goal_id               TEXT,
+  goal_item             INTEGER,
+  recurs_of             TEXT,
+  declared_stage        TEXT,
+  declared_stage_index  INTEGER CHECK (declared_stage_index IS NULL OR declared_stage_index >= 0),
+  declared_waits_on     TEXT CHECK ({_in("declared_waits_on", FEEDBACK_WAITS_ON, nullable=True)}),
+  declared_skipped      TEXT CHECK (declared_skipped IS NULL OR json_valid(declared_skipped)),
+  declared_by           TEXT CHECK (declared_by IS NULL OR declared_by = 'team'),
+  {_ts("declared_at")},
+  {_ts("declared_since")},
+  resolution            TEXT CHECK ({_in("resolution", FEEDBACK_RESOLUTIONS, nullable=True)}),
+  {_ts("resolved_at")},
+  resolved_by           TEXT,
+  evidence              TEXT,
+  last_seq              INTEGER NOT NULL,
+  CHECK ((declared_stage IS NULL) = (declared_by IS NULL)),
+  CHECK (resolution IS NULL OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL AND evidence IS NOT NULL))
+);
+CREATE UNIQUE INDEX one_item_per_position ON feedback(batch_id, position);
+
+CREATE TABLE feedback_links (
+  id            TEXT PRIMARY KEY,
+  feedback_id   TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK ({_in("kind", FEEDBACK_LINK_KINDS)}),
+  via           TEXT NOT NULL CHECK (via IN ('direct', 'ref')),
+  ref           TEXT NOT NULL,
+  stage_hint    TEXT,
+  {_ts("seen_at", nullable=False)},
+  {_ts("source_at")},
+  {_ts("withdrawn_at")},
+  last_seq      INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX one_live_feedback_link ON feedback_links(feedback_id, kind, ref) WHERE withdrawn_at IS NULL
+"""
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
@@ -746,6 +816,7 @@ MIGRATIONS: list[str] = [
     SCHEMA_6,
     SCHEMA_7,
     SCHEMA_8,
+    SCHEMA_9,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 

@@ -1521,8 +1521,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the privacy check is skipped",
         "src/onloop/contract/reader.py",
-        "        found = _check_record(rec) or privacy(rec, deny)",
-        "        found = _check_record(rec)",
+        "        found = _field_gate(rec, minor) or _check_record(rec) or privacy(rec, deny)",
+        "        found = _field_gate(rec, minor) or _check_record(rec)",
         ["tests/test_contract.py::test_a_privacy_hit_in_a_free_field_refuses_the_file_by_path_and_rule_only"],
     ),
     (
@@ -1542,7 +1542,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a reviewer who is no declared role is let in (a login)",
         "src/onloop/contract/reader.py",
-        '        if key and r["data"][key] not in roles:',
+        '        if key and key in r["data"] and r["data"][key] not in roles:',
         "        if False:",
         ["tests/test_contract.py::test_a_login_shaped_reviewer_is_refused_and_never_printed"],
     ),
@@ -1732,6 +1732,282 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         'if exists and exists[0]["stage"] != "resolved":',
         "if False:",
         ["tests/test_adapters_goals.py::test_an_adapter_ask_opens_amends_and_closes_a_task_with_evidence"],
+    ),
+    (
+        "the map: a block's colour typed by hand, not computed from its children",
+        "src/onloop/derive.py",
+        "    colour = colour_of(leaves)\n    return {",
+        '    colour = "moving"\n    return {',
+        ["tests/test_map_zoom0.py::test_every_blocks_colour_is_computed_from_its_leaves_never_typed"],
+    ),
+    (
+        "the map: a block's colour is not the worst of its children",
+        "src/onloop/derive.py",
+        "    return min(live, key=COLOURS.index)",
+        "    return max(live, key=COLOURS.index)",
+        ["tests/test_map_zoom0.py::test_a_block_is_the_worst_of_its_children_in_a_fixed_order"],
+    ),
+    (
+        "the map: a stage with no evidence is shown as 0, not as not reported (Q24)",
+        "src/onloop/derive.py",
+        '"count": len(here) if reported[s] else None,',
+        '"count": len(here),',
+        ["tests/test_map_zoom0.py::test_a_stage_with_no_evidence_is_not_reported_never_zero"],
+    ),
+    (
+        "the map: a red or amber block without its reason line",
+        "src/onloop/derive.py",
+        '    if block_colour not in ("red", "amber"):',
+        "    if True:",
+        ["tests/test_map_zoom0.py::test_every_red_or_amber_block_says_which_child_and_why"],
+    ),
+    (
+        "the map counts waiting on you from its own amber leaves, not the one count",
+        "src/onloop/derive.py",
+        '            "waiting_on_you": waiting_on_you(ledger, now)["count"],',
+        '            "waiting_on_you": sum(1 for lf in leaves if lf["colour"] == "amber"),',
+        ["tests/test_agreement.py::test_now_flow_and_the_task_list_agree_on_the_generic_replay"],
+    ),
+    (
+        "the map: a geometric zoom changes the level (Q23)",
+        "web/src/lib/map.ts",
+        "      return path;",
+        '      return move.zoom >= OPEN_HINT_ZOOM ? [...path, "zoomed"] : path;',
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map: zoom 0 opens fitted below scale 1, so its text is too small to read (the lead's fix 1)",
+        "web/src/lib/map.ts",
+        "export const OPENING_ZOOM = 1;",
+        "export const OPENING_ZOOM = 0.52;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map words what the team marks as yours as waiting on you, so its counts add up past the header's",
+        "src/onloop/derive.py",
+        '    return lf["colour"] == "amber" and lf.get("who") == "you"',
+        '    return lf["colour"] == "amber"',
+        ["tests/test_agreement.py::test_the_maps_words_never_add_up_to_more_than_the_one_count"],
+    ),
+    (
+        "a view in error waits its normal pace before trying again, so it stays on the error after onloopd returns",
+        "web/src/lib/recovery.ts",
+        '  return (q) => (q.state.status === "error" ? RETRY_WHILE_DOWN_MS : normalMs);',
+        "  return () => normalMs;",
+        ["tests/test_web_units.py::test_a_view_recovers_when_onloopd_comes_back"],
+    ),
+    (
+        "the map, zoom 1: a stage's colour is its first item's, not the worst of its items",
+        "src/onloop/derive.py",
+        "    colour = colour_of(leaves) if leaves else None",
+        '    colour = leaves[0]["colour"] if leaves else None',
+        [
+            "tests/test_map_levels.py::test_a_stage_is_the_worst_of_its_items_and_a_block_the_worst_of_its_stages"
+        ],
+    ),
+    (
+        "the map, zoom 1: a stage with no evidence is counted, not shown as not reported (Q24)",
+        "src/onloop/derive.py",
+        '            _stage_entry(n, [lf for lf in leaves if lf.get("stage") == n], rep.get(n, True))',
+        '            _stage_entry(n, [lf for lf in leaves if lf.get("stage") == n], True)',
+        ["tests/test_map_levels.py::test_a_stage_with_no_evidence_is_not_reported_at_zoom_1_never_zero"],
+    ),
+    (
+        "the map, zoom 1: a skipped check run is listed by name (the lead's ruling)",
+        "src/onloop/derive.py",
+        "    failed = sorted(n for n, c in latest.items() if c in FAILED)",
+        '    failed = sorted(n for n, c in latest.items() if c in (*FAILED, "skipped"))',
+        [
+            "tests/test_map_levels.py::test_skipped_runs_are_counted_never_named_and_a_failed_check_is_named_as_recorded"
+        ],
+    ),
+    (
+        "the map, zoom 2: an item is lost from its holder, so the holders do not add up to the stage",
+        "src/onloop/derive.py",
+        '    groups: dict[str, dict[str, Any]] = {}\n    for lf in st["leaves"]:',
+        '    groups: dict[str, dict[str, Any]] = {}\n    for lf in st["leaves"][1:]:',
+        ["tests/test_map_levels.py::test_every_item_is_in_exactly_one_stage_and_one_holder"],
+    ),
+    (
+        "block.turned is logged on every tick, not only when a block changes colour",
+        "src/onloop/detect/blocks.py",
+        "        if frm == to:",
+        "        if False:",
+        ["tests/test_map_levels.py::test_a_block_that_changes_colour_turns_once"],
+    ),
+    (
+        "the map: the rest of a double-click (click 2, dblclick) opens a second level",
+        "web/src/lib/map.ts",
+        "    if (t - last < OPEN_GUARD_MS) return false;",
+        "    if (false) return false;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map: a double-click opens nothing (the first click's open is lost)",
+        "web/src/lib/map.ts",
+        "    last = t;\n    open();\n    return true;",
+        "    last = t;\n    return true;",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map: Space does not open a focused block",
+        "web/src/lib/map.ts",
+        '  return key === "Enter" || key === " ";',
+        '  return key === "Enter";',
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map, zoom 1: a chain edge crosses the canvas where a row wraps",
+        "web/src/lib/map.ts",
+        "    if (positions[i].y === positions[i + 1].y) edges.push([i, i + 1]);",
+        "    edges.push([i, i + 1]);",
+        ["tests/test_web_units.py::test_the_maps_rules_hold_in_the_page"],
+    ),
+    (
+        "the map ignores contract 1.2's by: a change that waits on nobody is held by the team",
+        "src/onloop/derive.py",
+        '                _leaf(ref, title, colour, stage=stage, who=opener(pr.get("owner_role")), why=why, age_s=age)',
+        '                _leaf(ref, title, colour, stage=stage, who="the team", why=why, age_s=age)',
+        ["tests/test_contract_1_2.py::test_a_change_that_waits_on_nobody_is_held_by_the_role_that_opened_it"],
+    ),
+    (
+        "the map invents a role for a change whose export gives none",
+        "src/onloop/derive.py",
+        "    if holder_name(role) == TEAM:\n        return TEAM",
+        '    if holder_name(role) == TEAM:\n        return "builder"',
+        ["tests/test_contract_1_2.py::test_the_map_never_invents_a_role"],
+    ),
+    (
+        "contract 1.2: a by that is no declared role is let in (a login)",
+        "src/onloop/contract/reader.py",
+        '            "onloop.pr.opened": "by",  # contract 1.2, optional',
+        '            "onloop.pr.opened": "by_unchecked",',
+        [
+            "tests/test_contract_1_2.py::test_a_by_that_is_not_a_declared_role_refuses_the_file_and_is_never_printed"
+        ],
+    ),
+    (
+        "contract 1.2: a role sent after the first copy of a PR is dropped by the id dedupe",
+        "src/onloop/contract/reader.py",
+        '    if rec.get("type") != "onloop.pr.opened" or not d.get("by"):',
+        "    if True:",
+        [
+            "tests/test_contract_1_2.py::test_a_change_first_seen_without_by_gets_its_role_from_a_later_copy_with_the_same_id"
+        ],
+    ),
+    (
+        "contract 1.2: a by in a 1.1 snapshot is read",
+        "src/onloop/contract/reader.py",
+        '        if t == rec.get("type") and f in rec["data"] and since > minor',
+        '        if t == rec.get("type") and f in rec["data"] and since > minor + 1',
+        ["tests/test_contract_1_2.py::test_a_1_1_snapshot_with_by_says_why"],
+    ),
+    (
+        "the map, zoom 2: a holder's items come in no order, so the item the reason names is not first",
+        "src/onloop/derive.py",
+        '        g["items"].sort(\n            key=lambda i: (\n                bool(i.get("idle")),\n                ITEM_ORDER.index(i["colour"]),',
+        '        g["items"].sort(\n            key=lambda i: (\n                i["id"],\n                ITEM_ORDER.index(i["colour"]),',
+        ["tests/test_map_levels.py::test_within_a_holder_the_worst_and_oldest_item_comes_first"],
+    ),
+    (
+        'an age is frozen at the moment the page read it, so "1 s ago" still says so minutes later (8796)',
+        "web/src/lib/tick.ts",
+        "  return ageS == null ? null : ageS + sinceFetch(fetchedAtMs, nowMs);",
+        "  return ageS == null ? null : ageS;",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "a view's ages stand still between answers: tickModel adds nothing",
+        "web/src/lib/tick.ts",
+        '      if (typeof x === "number" && rising.has(k)) out[k] = x + addS;',
+        '      if (typeof x === "number" && rising.has(k)) out[k] = x;',
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "a view's heartbeat is the page-load value: Now's Health card ages it while the header reads a newer one",
+        "web/src/lib/tick.ts",
+        "    if (best === null || t > Date.parse(best.at)) best =",
+        "    if (best === null) best =",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "the header's data age counts the digest, read once, so a healthy page looks older by the minute",
+        "web/src/lib/tick.ts",
+        "  const times = answers.filter((a) => a.refreshes && a.key",
+        "  const times = answers.filter((a) => a.key",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "a quiet onloopd reads as live: no news for minutes is never said",
+        "web/src/lib/tick.ts",
+        '  if (quietS > QUIET_PERIODS * periodS) return { state: "quiet", forS: quietS };',
+        "",
+        ["tests/test_web_units.py::test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so"],
+    ),
+    (
+        "the grid keeps idle changes in the live queue, so a parked week-old change looks like work in flight",
+        "src/onloop/derive.py",
+        "                col = IDLE  # _changes marks it: opened, no move for IDLE_S, and never the person's own task",
+        "                pass  # _changes marks it: opened, no move for IDLE_S, and never the person's own task",
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
+    ),
+    (
+        "the grid counts a merged change twice, as its stage's leaf and by its opener, so it disagrees with zoom 1",
+        "src/onloop/derive.py",
+        '            if changes and st["stage"] == "merged":\n                continue  # by the opener, below',
+        '            if changes and st["stage"] == "merged":\n                pass  # by the opener, below',
+        ["tests/test_agreement.py::test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count"],
+    ),
+    (
+        "Activity's window reaches back before the data, drawing empty days that read as a quiet team",
+        "src/onloop/report/activity.py",
+        "        start = _floor_hour(first)",
+        "        pass",
+        ["tests/test_contract.py::test_activity_starts_where_the_data_does_never_before_it"],
+    ),
+    (
+        'a wait on `team` and a change with no opener are two holders, "team" and "the team", two rows of the grid',
+        "src/onloop/derive.py",
+        '    return TEAM if not ref or ref in ("team", TEAM) else ref',
+        "    return TEAM if not ref or ref == TEAM else ref",
+        ["tests/test_agreement.py::test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team"],
+    ),
+    (
+        "the reason line names an idle change, so zoom 0 points at parked work while the grid points at live work",
+        "src/onloop/derive.py",
+        '        (lf for lf in _live(leaves) if lf["colour"] == block_colour),',
+        '        (lf for lf in leaves if lf["colour"] == block_colour),',
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
+    ),
+    (
+        "the header counts idle changes as jammed, so its number disagrees with the grid",
+        "src/onloop/derive.py",
+        '            "stuck": sum(1 for lf in _live(leaves) if lf["colour"] == "red"),',
+        '            "stuck": sum(1 for lf in leaves if lf["colour"] == "red"),',
+        [
+            "tests/test_map_levels.py::test_the_grid_splits_idle_changes_from_the_queue_and_names_the_bottleneck"
+        ],
+    ),
+    (
+        "the grid's first row is not the holder zoom 0's reason line names, so the glance and the grid point apart",
+        "src/onloop/derive.py",
+        '    out_rows.sort(key=lambda r: (not leads(r), -r["live_red"], -r["idle"], -r["open"], r["holder"]))',
+        '    out_rows.sort(key=lambda r: (-r["open"], r["holder"]))',
+        [
+            "tests/test_agreement.py::test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count",
+            "tests/test_map_levels.py::test_the_grid_leads_with_the_holder_the_reason_line_names_even_against_more_jams",
+        ],
+    ),
+    (
+        "the map shows a lower-bound age as exact (a wait that began before the first export)",
+        "src/onloop/derive.py",
+        '    return first is None or first >= w["since"]',
+        "    return False",
+        ["tests/test_map_zoom0.py::test_an_age_whose_start_onloop_cannot_see_is_shown_as_a_lower_bound"],
     ),
 ]
 

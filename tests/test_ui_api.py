@@ -391,6 +391,23 @@ def test_the_routes_answer_now_flow_and_filtered_events(served):
     assert code == 400 and "source is one of" in body["error"]
 
 
+def test_the_heartbeat_route_gives_the_clock_the_last_beat_and_the_period(served):
+    s, beat = served
+    code, body = get(s, "/api/heartbeat")
+    assert (
+        code == 200 and body["at"] is None and body["age_s"] is None
+    )  # no heartbeat yet: missing, never fine
+    assert body["period_s"] == 10.0 and body["now"]
+    beat.write_text(json.dumps({"at": "2026-01-01T00:00:00.000Z", "last_seq": 41}), encoding="utf-8")
+    code, body = get(s, "/api/heartbeat")
+    assert body["at"] == "2026-01-01T00:00:00.000Z" and body["last_seq"] == 41
+    assert (
+        body["age_s"] > 2 * body["period_s"]
+    )  # a beat this old is a stopped tick, whatever the server answers
+    beat.write_text(json.dumps({"at": "not a time"}), encoding="utf-8")
+    assert get(s, "/api/heartbeat")[1]["at"] is None
+
+
 # -- onloopd.yaml ------------------------------------------------------------------------------------------------------
 
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Fetched, useTicking } from "@/lib/clock";
 import {
   Background,
   BackgroundVariant,
@@ -100,7 +101,8 @@ function Toolbar({ mode, overlay, hideDone, params, m }: { mode: Mode; overlay: 
   );
 }
 
-function SidePanel({ card, m, onClose }: { card: FlowCard; m: FlowModel; onClose: () => void }) {
+function SidePanel({ card: answered, m, onClose }: { card: FlowCard; m: FlowModel; onClose: () => void }) {
+  const card = useTicking(answered); // its ages rise every second between answers
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", on);
@@ -517,10 +519,12 @@ export default function FlowView({ params }: { params: URLSearchParams }) {
   if (q.isPending) return <div className="p-4"><Loading what="the flow" /></div>;
   if (q.isError || !m) return <div className="p-4"><Problem error={q.error} /></div>;
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="view-flow" data-mode={mode}>
-      <Toolbar mode={mode} overlay={overlay} hideDone={hideDone} params={params} m={m} />
-      {body}
-    </div>
+    <Fetched at={q.dataUpdatedAt}>
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="view-flow" data-mode={mode}>
+        <Toolbar mode={mode} overlay={overlay} hideDone={hideDone} params={params} m={m} />
+        {body}
+      </div>
+    </Fetched>
   );
 }
 

@@ -1,5 +1,9 @@
+import { useMemo } from "react";
 import { isUrl } from "@/lib/url";
 import { useQuery } from "@tanstack/react-query";
+import { useNowMs, useTicking } from "@/lib/clock";
+import { useHeartbeat } from "@/lib/heartbeat";
+import { currentBeat } from "@/lib/tick";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
 import { DigestBand, TaskList, TaskRows } from "@/views/Tasks";
@@ -267,7 +271,9 @@ function Health({ h, now, quiet }: { h: NowModel["health"]; now: string; quiet: 
             {quiet.onloop_down_s ? ` (onloop was down for ${duration(quiet.onloop_down_s)} of it)` : ""}:{" "}
             {quiet.state === "idle"
               ? "every role's last outcome is idle; nothing to do."
-              : `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`}
+              : quiet.waits.length
+                ? `and waiting: ${quiet.waits.slice(0, 3).map((w) => `${w.waiter} on ${w.on === "human" ? "you" : w.on}`).join(", ")}.`
+                : "no role has said what it waits on."}
           </p>
         )}
       </Card>
@@ -336,42 +342,62 @@ function TasksFirst({ m }: { m: NowModel }) {
 
 export function NowView() {
   const q = useQuery({ queryKey: ["now"], queryFn: api.now, refetchInterval: 30_000 });
+  // the answer as it stands now: its ages rise every second between answers (lib/tick.ts)
+  const ticked = useTicking(q.data, q.dataUpdatedAt) as NonNullable<typeof q.data>;
+  // onloopd's heartbeat is the page's one reading (the header's), or this answer's when it is newer; never the
+  // heartbeat this answer carried, aged on, while a newer one has arrived
+  const hb = useHeartbeat();
+  const nowMs = useNowMs();
+  const m = useMemo(() => {
+    if (!ticked) return ticked;
+    const own = ticked.health.onloopd;
+    const beat = currentBeat(
+      [
+        { at: own?.at ?? null, age_s: own?.age_s ?? null, fetchedAtMs: nowMs }, // already ticked to now
+        { at: hb.data?.at ?? null, age_s: hb.data?.age_s ?? null, fetchedAtMs: hb.dataUpdatedAt },
+      ],
+      nowMs,
+    );
+    if (!beat || !own) return ticked;
+    return { ...ticked, health: { ...ticked.health, onloopd: { ...own, ...beat } } };
+  }, [ticked, hb.data, hb.dataUpdatedAt, nowMs]);
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-5 px-4 py-4 sm:px-6 sm:py-5" data-testid="view-now">
       {q.isPending ? (
         <Loading what="the ledger" />
-      ) : q.isError ? (
+      ) : q.isError && q.data === undefined ? (
+        // a refresh that fails keeps the last answer on screen; the header says onloopd is not answering
         <Problem error={q.error} />
       ) : (
-        q.data.waiting_on_you.length > 0 && q.data.waiting_on_you[0].kind === "task" ? (
-          <TasksFirst m={q.data} />
+        m.waiting_on_you.length > 0 && m.waiting_on_you[0].kind === "task" ? (
+          <TasksFirst m={m} />
         ) : (
         <>
           <DigestBand />
-          <Banner m={q.data} />
-          <Glance m={q.data} />
+          <Banner m={m} />
+          <Glance m={m} />
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-5">
-            <Section title="Waiting on you" count={q.data.waiting_on_you.length} t="human" testid="col-waiting">
-              {q.data.waiting_on_you.length ? (
-                q.data.waiting_on_you[0].kind === "task" ? (
-                  <TaskList tasks={q.data.waiting_on_you as TaskCard[]} now={q.data.now} />
+            <Section title="Waiting on you" count={m.waiting_on_you.length} t="human" testid="col-waiting">
+              {m.waiting_on_you.length ? (
+                m.waiting_on_you[0].kind === "task" ? (
+                  <TaskList tasks={m.waiting_on_you as TaskCard[]} now={m.now} />
                 ) : (
-                  (q.data.waiting_on_you as WaitCard[]).map((w) => <Waiting key={w.id} w={w} />)
+                  (m.waiting_on_you as WaitCard[]).map((w) => <Waiting key={w.id} w={w} />)
                 )
               ) : (
                 <Empty>Nothing waits on you.</Empty>
               )}
             </Section>
-            <Section title="Stalled" count={q.data.stalls.length} t="stall" testid="col-stalls" note="acknowledged: a later turn by that role">
-              {q.data.stalls.length ? q.data.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
+            <Section title="Stalled" count={m.stalls.length} t="stall" testid="col-stalls" note="acknowledged: a later turn by that role">
+              {m.stalls.length ? m.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
             </Section>
             <Section
               title="Health"
-              count={q.data.health.schedules.length + (!q.data.health.onloopd || q.data.health.onloopd.stale ? 1 : 0)}
-              t={q.data.health.schedules.length ? "blocked" : "done"}
+              count={m.health.schedules.length + (!m.health.onloopd || m.health.onloopd.stale ? 1 : 0)}
+              t={m.health.schedules.length ? "blocked" : "done"}
               testid="col-health"
             >
-              <Health h={q.data.health} now={q.data.now} quiet={q.data.quiet} />
+              <Health h={m.health} now={m.now} quiet={m.quiet} />
             </Section>
           </div>
         </>

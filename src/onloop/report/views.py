@@ -15,6 +15,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from .. import derive
 from .. import events as ev
 from ..overlay.schema import SOURCES
 
@@ -504,41 +505,23 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
 # -- the task list, the digest, the outcome KPIs (decisions 0013, 0014) --------------------------------------------------
 
 
-def _has_tasks(ledger: Any) -> bool:
-    return bool(ledger.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'human_tasks'"))
-
-
-def waiting_on_you(
-    ledger: Any, now_ts: str, card_ids: set[str] | frozenset[str] = frozenset()
-) -> dict[str, Any]:
-    """The one definition of "waiting on you" that every view counts (finding #20): the person's open tasks, the task
-    list's system of record. Flow adds the cards on its canvas that wait on the person: fewer or more than the tasks,
-    since one task (resume a paused role) can hold several cards, and an ask on a document is no card."""
-    if not _has_tasks(ledger):
-        return {"count": 0, "task_ids": [], "cards": []}
-    from .. import tasks
-
-    open_ = tasks.open_tasks(ledger, now_ts)
-    cards = sorted({t["ref"] for t in open_ if t.get("ref") in card_ids})
-    return {"count": len(open_), "task_ids": [t["id"] for t in open_], "cards": cards}
+_has_tasks = derive.has_tasks
+waiting_on_you = derive.waiting_on_you  # the one count, in `onloop.derive` (decision 0018)
 
 
 def _tasks_or_waits(ledger: Any, waits: list[dict[str, Any]], items: Mapping[str, Any], now_ts: str) -> list:
     """Now's "Waiting on you" is the task list, in its one order (the same function as /api/tasks)."""
-    if not _has_tasks(ledger):
+    mine = derive.your_tasks(ledger, now_ts)
+    if mine is None:
         return _waiting_on_you(waits, items, now_ts)
-    from .. import tasks
-
-    return [{**c, "kind": "task"} for c in tasks.open_tasks(ledger, now_ts)]
+    return [{**c, "kind": "task"} for c in mine]
 
 
 def _first_task_move(ledger: Any, top: Mapping[str, Any] | None, now_ts: str) -> dict[str, Any] | None:
     """When the constraint is the person, the next move is the first task of the one order."""
-    if not top or top.get("on_kind") != "human" or not _has_tasks(ledger):
+    if not top or top.get("on_kind") != "human":
         return None
-    from .. import tasks
-
-    first = next(iter(tasks.open_tasks(ledger, now_ts)), None)
+    first = next(iter(derive.your_tasks(ledger, now_ts) or []), None)
     if first is None:
         return None
     return _move(
@@ -559,7 +542,7 @@ def _quiet(ledger: Any, now_ts: str) -> dict[str, Any] | None:
 def tasks_view(ledger: Any, now_ts: str) -> dict[str, Any]:
     from .. import tasks
 
-    cards = tasks.open_tasks(ledger, now_ts) if _has_tasks(ledger) else []
+    cards = derive.your_tasks(ledger, now_ts) or []
     return {"now": now_ts, "tasks": cards, "bands": list(tasks.BANDS), "count": len(cards)}
 
 

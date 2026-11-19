@@ -389,6 +389,28 @@ github:
   every: 1m
 ```
 
+### overview
+
+Optional. `stuck` sets how long each of the agents' steps may go without a move before the map shows it red. A
+step not given keeps its default, and the map's legend shows the thresholds in use. A step that is the person's is
+never red: it waits on you. A team that moves in hours sets hours. An unknown step or a value that is not a duration
+stops onloopd at start.
+
+| Step | Default | What it measures |
+|---|---|---|
+| `given` | 2d | a feedback item given, with nothing done on it yet |
+| `declared` | 3d | a stage a team's export declares, unmoved |
+| `checklist` | 5d | a checklist item in progress, with no move |
+| `pr` | 3d | an open change, with no push, check or review |
+| `wait` | 1d | a wait on a role or a resource |
+
+```yaml
+overview:
+  stuck:
+    declared: 2h
+    wait: 2h
+```
+
 ### The carrier
 
 Optional. The session carrier ([carrier.md](carrier.md), [decision 0010](decisions/0010-session-lease-and-delivery.md)):

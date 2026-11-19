@@ -2,6 +2,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Clock, GitPullRequest, HelpCircle, Info, ListChecks, Lock, Rows3, User, Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { duration, plural } from "@/lib/format";
+import { useTicking } from "@/lib/clock";
 import { tone } from "@/components/kit";
 import { CARD_H, CARD_H_DONE, CARD_W, RES_H, RES_W, type CardData, type ResData, type ZoneData } from "@/lib/flow";
 
@@ -9,6 +10,12 @@ const hidden = "!h-2 !w-2 !min-h-0 !min-w-0 !border-0 !bg-transparent !opacity-0
 
 // One item. The left bar and the label carry its state; a card waiting on the human has the only strong ring, so the
 // eye finds it first. Under the constraint overlay, what the constraint holds up keeps its colour and the rest dims.
+// A card's age, rising every second between answers; only this span re-renders on the tick.
+function CardAge({ age_s }: { age_s: number | null | undefined }) {
+  const live = useTicking({ age_s });
+  return <>{duration(live.age_s).replace(/ \d+ (min|h)$/, "")}</>;
+}
+
 export function CardNode({ data, selected }: NodeProps<Node<CardData>>) {
   const { card, look, dim, hot, chips } = data;
   const t = tone(look.t);
@@ -68,7 +75,7 @@ export function CardNode({ data, selected }: NodeProps<Node<CardData>>) {
               {/* In its owner's own zone the owner is the zone's title: the room goes to what it waits on. */}
               {card.owner_role && card.zone !== `role:${card.owner_role}` && <span className="max-w-[5.5rem] truncate font-mono">{card.owner_role}</span>}
               <Clock className="h-3 w-3" aria-hidden />
-              {duration(card.age_s).replace(/ \d+ (min|h)$/, "")}
+              <CardAge age_s={card.age_s} />
             </span>
           </div>
         </div>

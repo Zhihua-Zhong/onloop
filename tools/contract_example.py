@@ -79,6 +79,9 @@ def write(
     all_turns = turns(rng, first, end, n)
     folders = []
     for d in range(days):
+        # contract 1.2: a producer that upgrades mid-run sends its earlier exports as 1.1, without `by`, and its last
+        # one as 1.2, so a PR first seen without its role gets it from a later copy
+        this = "1.1" if contract == "1.2" and d < days - 1 else contract
         export = end - dt.timedelta(days=days - 1 - d)
         frm, to = export - dt.timedelta(days=2), export
         lines = []
@@ -92,8 +95,10 @@ def write(
                 data["started_at"] = _ts(t["started_at"])
                 lines.append(_record("onloop.turn.ended", t["prompt_id"], t["time"], export, data))
         lines += _work(first, frm, to, export, d)
-        if contract != "1.0":
+        if this != "1.0":
             lines += _work_1_1(first, frm, to, export)
+        if this == "1.2":
+            _with_by(lines)
         body = ("\n".join(json.dumps(x, sort_keys=True) for x in lines) + "\n").encode("utf-8")
         counts: dict[str, int] = {}
         for x in lines:
@@ -103,7 +108,7 @@ def write(
         folder.mkdir(parents=True, exist_ok=False)
         (folder / "events.jsonl").write_bytes(body)
         manifest = {
-            "contract": contract,
+            "contract": this,
             "exporttime": _ts(export),
             "producer": PRODUCER,
             "window": {"from": _ts(frm), "to": _ts(to)},
@@ -116,6 +121,25 @@ def write(
         )
         folders.append(folder)
     return folders
+
+
+BY = {
+    0: "team",
+    1: "builder",
+    2: "frontend-builder",
+}  # made up: who opened PR n, by n % 3; PR 3 is the person's
+
+
+def _with_by(lines: list[dict]) -> None:
+    """Contract 1.2: each opened PR says which role opened it, as a role name, `team` or `human`."""
+    for x in lines:
+        if x["type"] == "onloop.pr.opened":
+            n = x["data"]["number"]
+            x["data"] = {
+                **x["data"],
+                "by": "human" if n == 3 else BY[n % 3],
+            }  # its own copy: merged and closed share it
+            x["dataschema"] = "onloop-contract/1.2/pr.opened"
 
 
 def _work_1_1(first: dt.datetime, frm: dt.datetime, to: dt.datetime, export: dt.datetime) -> list[dict]:
@@ -264,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--turns", type=int, default=1000)
     ap.add_argument("--end", default="2026-11-17T02:00:00Z")
     ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--contract", default="1.0", choices=("1.0", "1.1"))
+    ap.add_argument("--contract", default="1.0", choices=("1.0", "1.1", "1.2"))
     a = ap.parse_args(argv)
     end = dt.datetime.fromisoformat(a.end.replace("Z", "+00:00"))
     for f in write(pathlib.Path(a.out), end, a.days, a.turns, a.seed, a.contract):

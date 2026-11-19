@@ -14,6 +14,7 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | View | The question it answers | Reads |
 |---|---|---|
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
+| **Map** (`#/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
 | **Flow** (`#/flow`) | Where is the work, what does it wait on, and what does the constraint hold up? | `GET /api/flow` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
@@ -39,6 +40,73 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
   says "dead-man not configured", a neutral note, never OK.
 
 On a phone, an at-a-glance strip under the banner keeps the three counts on the first screen.
+
+### Map
+
+The full guide is [map.md](map.md). Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`, `#/map/<goal>`), so Back, Forward and a link
+land on the same level.
+
+- **The signals:**
+  - "N wait on you": the same count as Now and the task list;
+  - "N jammed": live work only, with "N idle" beside it when changes have had no move for a week;
+  - "Team quiet at most": the team's longest pause in the data's last day. An item's own "no move" is its reason
+    line, never this;
+  - the since-you-looked sentence.
+- **A block per goal, grouped by origin, never by role:**
+  - each checklist, done out of its denominator;
+  - each feedback batch, accepted out of given, marked "Stages reported by the team" when an export declares them.
+    An item the team's export marks as the person's step reads "marked yours by the team", never "waits on you":
+    only the person's own tasks say that, so the blocks never add up past the header's count;
+  - "Changes in flight", with its stages. A stage this team's export does not report is hatched and says "not
+    reported", never 0.
+- **Colour:** a block takes the worst colour of its live children: jammed (!), waits on you (◆), moving (▶), not
+  started (□). Every colour has its shape. A red or amber block says in one line which child and why, never an idle
+  one. A tally reads "1 jammed | 1 waits on you", with the jam first, in red, set apart. Idle work
+  (open, no move for 7 days) is hatched greyish red and never counted as jammed.
+- **Waits, by who holds them:** oldest first. An age shown as "≥ 9 days" began before anything onloop has seen, and
+  the row says "began before the first export".
+- **The first view** opens at scale 1, never fitted smaller, with the blocks sharing the canvas's width (up to 760
+  px each). Widening or narrowing the window re-lays them.
+- **A goal with no title** shows its id in plain words ("Release plan").
+- **Moving around:**
+  - the wheel or a pinch zooms the canvas, and a drag pans it;
+  - zooming never changes the level. From 1.6×, each block shows an "Open" button;
+  - a double-click, Enter on a focused block, or a click on its title opens the block;
+  - Escape goes up, and does nothing at zoom 0;
+  - Tab moves across the blocks in reading order.
+- **Zoom 1** (`#/map/<goal>`): the goal's stages, in order, linked one to the next:
+  - a checklist: to do, in progress, done;
+  - a feedback batch: the team's own stages, then accepted;
+  - changes: opened, checks, review, merged in the last week.
+
+  Each stage has its count, colour, oldest item and, when red or amber, which item and why. A stage with no evidence
+  is hatched, "not reported". A change's checks read "checks: 1 failed (e2e) · 4 passed · 1 skipped": skipped runs are
+  counted, never named, and a failed or running check is named exactly as recorded.
+- **Zoom 2** (`#/map/<goal>/<stage>`): the goal's stage × role grid. It has a column per stage (Idle first, for
+  changes) and a row per holder (you, "marked yours by the team", the team or a role). The first row is the holder
+  zoom 0's reason line names, then the rest worst first.
+  - The stage you opened is outlined, and the bottleneck is marked.
+  - A cell opens its stage at that holder.
+  - Below the table, that holder's items in the stage each say what they wait on and since when, with a link to your
+    task or the change's history.
+  - On a phone only the non-empty columns show. The full guide is in [map.md](map.md).
+- **Zoom 3 and 4** (a role's turns, a turn's tool calls) are reserved in the URLs and say they come with the tool
+  events.
+- **"Show as a list"** gives the same content as tables, at every level and any width.
+- **When onloopd is down,** the page keeps the map as last read, with a line saying so, and tries again every few
+  seconds. It shows the map again as soon as onloopd answers.
+- **Under 768 px,** the page is one column: the signals, "Most waiting work", the batches, the checklists, the changes,
+  then the waits.
+
+### Activity
+
+One lane per role, from the data's start to its end (mock-up v2):
+- **The window starts where the data does.** A 7-day window on 3 days of data shows the 3 days, and the summary says
+  "the 3 days since the data began"; it never draws empty days, which would read as a quiet team.
+- **Roles with no turns** are one line under the lanes, never a lane each.
+- **A role's longest quiet stretch** is hatched grey when it is past, and red when it is still going at the data's
+  end, the one to read.
+- **The data's end** is a line across the lanes: "data ends" on a team's export, "now" on a live ledger.
 
 ### Flow
 
@@ -69,10 +137,43 @@ The page listens to `GET /api/stream?plain=1`, and a burst of new events refetch
 stream is down for more than five seconds, a banner says when updates stopped, and the page keeps what it last read.
 It reconnects by itself.
 
+**The clock and liveness.** A stalled page must never look like a quiet one (the project lead's finding on 8796, where
+"1 s ago" still said so two minutes later):
+- The header has a clock that ticks every second, and "data as of N s ago": how long since this page last read from
+  onloopd.
+- Every relative age on every page rises with that clock between answers: the page adds the seconds since it read the
+  answer to each age the server gave (`web/src/lib/tick.ts`). Ages that Activity counts to an export's end stay put,
+  since the export's end does not move.
+- The page reads `GET /api/heartbeat` every 10 s: onloopd's last heartbeat, the server's clock, and its tick period
+  (10 s by default). News is the newest of a stream event and a heartbeat.
+- The Live dot turns amber with "No news for N s" past two tick periods without news: onloopd answers, but its tick may
+  have stopped. It turns red with "onloopd not answering for N s" once neither the stream nor the heartbeat has
+  answered for five seconds. A phone shows "quiet N s" and "offline N s".
+- While onloopd does not answer, Now keeps what it last read instead of an error.
+
 ### Theme
 
 Light or dark follows the system's `prefers-color-scheme`, live, until the person picks one with the toggle; that
 choice is kept in this browser. `?theme=dark` or `?theme=light` in the URL overrides both (the screenshots use it).
+
+### The state palette
+
+`web/src/styles/tokens.css` is the only place a colour is chosen. The state colours are the only saturated colours on
+the canvas, and each has its own step in dark mode, validated against the dark surface.
+
+| Token | Means on Now, Flow and the task list | On the map | Shape on the map |
+|---|---|---|---|
+| `state-blocked` (red) | blocked | jammed | ! |
+| `state-human` (amber) | waits on you | waits on you, or marked yours by the team | ◆ |
+| `state-open` (blue) | open, in progress | moving | ▶ |
+| `state-void` (grey) | cancelled or missing | not started, or not reported (hatched) | □ |
+| `state-done` (green) | done | done | ■ |
+| `state-external` (violet) | waits on someone else | the bar of a waits row held by a role or the team | — |
+| `state-stall` (magenta) | stalled | — | — |
+| `state-idle` (greyish red, hatched) | — | idle: an open change with no move for 7 days, never counted as jammed | none |
+
+A colour is never the only sign. Every state also has a shape or a word, and the list form gives the same content as
+text.
 
 ### Conversation
 

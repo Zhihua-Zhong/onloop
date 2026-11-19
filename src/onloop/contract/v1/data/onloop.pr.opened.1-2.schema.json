@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "onloop-contract/1.2/pr.opened",
+  "title": "A pull request was opened: its number, its title, its current head commit and, from 1.2, the role that opened it. Never its body, a login or a branch name",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["number"],
+  "properties": {
+    "number": {"type": "integer", "minimum": 1},
+    "title": {"type": "string", "maxLength": 120},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+    "by": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,39}$"}
+  }
+}

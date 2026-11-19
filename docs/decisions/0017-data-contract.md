@@ -59,6 +59,18 @@ only interface is a file export that the customer writes and onloop reads.
      - `team` is held as a pseudo-role named "team" until the overview's owner classes (schema 9).
 
    A 1.1 type in a snapshot whose manifest says 1.0 is refused.
+
+   **Contract 1.2 (amended 2026-11-19)** adds one optional field, `by` on `onloop.pr.opened`: the role that opened
+   the change. Nothing else from 1.1 changes, and the reader reads 1.0, 1.1 and 1.2.
+   - `by` is a declared role, `team` when the role cannot be told, or `human` for a change the person opened. It is
+     never a login, an account name or a branch name. Any other value refuses the file, by the same rule and code
+     path as `reviewer`.
+   - A record carrying `by` names `onloop-contract/1.2/pr.opened`, a schema kept beside the 1.0 one.
+   - A 1.1 snapshot with `by` is refused, as is any 1.2 schema in a 1.1 snapshot.
+   - `by` is also logged as its own `pr.author` event, keyed by the PR and the role. A PR first sent without `by`
+     repeats the same envelope id, so its opening is a duplicate, but it still gets its role from a later copy.
+   - The role becomes the PR's owner role. The map holds a change that waits on nobody by that role, and says "the
+     team" only when the export gives no role, or `team`.
 5. **The reader is `onloop import snapshot <folder> --ledger <ledger>`.**
    - It imports each file whole or not at all, and it is idempotent: a cursor per snapshot file and its hash.
    - A file is refused for any of these, and the report names the line, field path and rule, never the value:

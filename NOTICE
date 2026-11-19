@@ -1,2 +1,6 @@
 onloop
 Copyright 2026 the onloop authors
+
+The web UI bundles third-party software, used unmodified:
+- React Flow (@xyflow/react, @xyflow/system), MIT License, https://github.com/xyflow/xyflow
+- ELK.js (elkjs), Eclipse Public License 2.0, https://github.com/kieler/elkjs (source: https://github.com/eclipse/elk)

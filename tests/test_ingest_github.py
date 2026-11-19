@@ -164,8 +164,11 @@ def test_onloopd_runs_the_ingest_on_its_tick_when_it_is_due(tmp_path):
         {"source": "github:o/r", "appended": 1, "not_modified": False}
     ]
     assert daemon.tick(led, cfg, (src,)).imported == []  # not due again for a minute
-    assert [e["kind"] for e in led.events_after(0, 10)] == ["pr.opened"]
-    opened = led.events_after(0, 10)[0]["payload"]
+    ingested = [
+        e for e in led.events_after(0, 10) if e["kind"] != "block.turned"
+    ]  # the map's colours are the tick's too
+    assert [e["kind"] for e in ingested] == ["pr.opened"]
+    opened = ingested[0]["payload"]
     assert opened["head"] == H1
     led.close()
 

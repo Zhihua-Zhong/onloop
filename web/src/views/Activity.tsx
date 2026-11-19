@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTicking } from "@/lib/clock";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { windowText } from "@/lib/windowText";
+import { windowSpanText } from "@/lib/windowText";
 import { Loading, Problem } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -78,10 +79,12 @@ export function ActivityView({ params }: { params: URLSearchParams }) {
     queryFn: () => get<ActivityModel>(`/api/activity?hours=${hours}`),
     refetchInterval: 60_000,
   });
+  // the data's age ticks; a quiet time ticks only while the lanes run to now, not to an export's end
+  const ticked = useTicking(q.data, q.dataUpdatedAt, { liveQuiet: q.data?.data_as_of == null });
   const table = params.get("table") === "1"; // in the URL, so back, reload and a shared link keep it
   if (q.isPending) return <Loading what="the activity" />;
   if (q.isError) return <Problem error={q.error} />;
-  const a = q.data;
+  const a = ticked as ActivityModel;
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-5 max-sm:px-4" data-testid="activity">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
@@ -136,7 +139,7 @@ function Summary({ a }: { a: ActivityModel }) {
         <span className="font-semibold">
           {a.roles_active} of {plural(a.roles_declared, "role")}
         </span>{" "}
-        worked in {windowText(a.hours)}, {plural(a.turns, "turn")}.
+        worked in {windowSpanText(a.hours, a.from, a.to)}, {plural(a.turns, "turn")}.
         {a.peak && (
           <>
             {" "}
@@ -196,6 +199,10 @@ function Lanes({ a }: { a: ActivityModel }) {
     y += h;
     return { ...r, y: at, h };
   });
+  // the roles with no turns in the window: one line under the lanes, never a lane each (mock-up v2)
+  const idle = a.lanes.filter((l) => l.turns === 0).map((l) => l.role);
+  const idleY = y;
+  if (idle.length) y += narrow ? 40 : 26;
   const height = y + 8;
   const tickEvery = a.hours <= 24 ? 3 : a.hours <= 48 ? (narrow ? 12 : 6) : 24;
   const ticks = a.per_hour.filter((h) => new Date(h.at).getHours() % tickEvery === 0); // local time, the reader's day
@@ -216,6 +223,10 @@ function Lanes({ a }: { a: ActivityModel }) {
           <defs>
             <pattern id="quiet" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <line x1="0" y1="0" x2="0" y2="6" className="stroke-muted" strokeWidth="1.5" strokeOpacity="0.45" />
+            </pattern>
+            {/* a silence still going at the data's end is the one to read; a past one is grey (mock-up v2) */}
+            <pattern id="quiet-now" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" style={{ stroke: "hsl(var(--state-blocked))" }} strokeWidth="2" strokeOpacity="0.8" />
             </pattern>
           </defs>
           {/* turns per hour */}
@@ -338,7 +349,7 @@ function Lanes({ a }: { a: ActivityModel }) {
                 <line x1={gutter} x2={gutter + plot} y1={mid} y2={mid} className="stroke-line" strokeWidth={1} />
                 {sil && ex - sx > 2 && (
                   <g onMouseMove={(e) => show(e, `${r.lane.role}: quiet ${duration(sil.seconds)}, ${when(sil.from)} to ${sil.ongoing ? "the data's end" : when(sil.to)}`)}>
-                    <rect x={sx} y={mid - 7} width={ex - sx} height={14} fill="url(#quiet)" data-testid="longest-quiet" />
+                    <rect x={sx} y={mid - 7} width={ex - sx} height={14} fill={sil.ongoing ? "url(#quiet-now)" : "url(#quiet)"} data-testid="longest-quiet" data-ongoing={sil.ongoing ? "1" : undefined} />
                   </g>
                 )}
                 {(r.session?.marks ?? []).map((m, j) => {
@@ -362,6 +373,20 @@ function Lanes({ a }: { a: ActivityModel }) {
               </g>
             );
           })}
+          {idle.length > 0 && (
+            <g data-testid="idle-roles">
+              <line x1={0} x2={width} y1={idleY} y2={idleY} className="stroke-line" strokeWidth={1} />
+              <text x={12} y={idleY + 17} className="fill-muted text-[12.5px]">
+                <tspan className="font-medium fill-fg">{plural(idle.length, "role")} with no turns</tspan>
+                {narrow ? null : <tspan x={gutter}>{idle.join(", ")}</tspan>}
+              </text>
+              {narrow && (
+                <text x={12} y={idleY + 33} className="fill-muted text-[12px]">
+                  {idle.join(", ")}
+                </text>
+              )}
+            </g>
+          )}
         </svg>
       )}
       {tip && (
@@ -374,7 +399,7 @@ function Lanes({ a }: { a: ActivityModel }) {
         </div>
       )}
       <p className="border-t border-line px-3 py-2 text-[12px] text-muted">
-        Each mark is a turn, from its start to its end. <span className="inline-block h-2 w-5 translate-y-[1px] rounded-sm bg-[repeating-linear-gradient(45deg,hsl(var(--muted))_0_1.5px,transparent_1.5px_5px)] opacity-70" aria-hidden /> a role's longest quiet stretch in this window. Side sessions (such as a lead's forks) are listed under their role.
+        Each mark is a turn, from its start to its end. <span className="inline-block h-2 w-5 translate-y-[1px] rounded-sm bg-[repeating-linear-gradient(45deg,hsl(var(--muted))_0_1.5px,transparent_1.5px_5px)] opacity-70" aria-hidden /> a role's longest quiet stretch in this window, <span className="inline-block h-2 w-5 translate-y-[1px] rounded-sm bg-[repeating-linear-gradient(45deg,hsl(var(--state-blocked))_0_1.5px,transparent_1.5px_5px)]" aria-hidden /> still going at the data's end. Side sessions (such as a lead's forks) are listed under their role.
       </p>
     </div>
   );

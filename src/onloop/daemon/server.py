@@ -23,10 +23,13 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/events?after=N     up to 500 events after sequence number N, oldest first; filters `kind`, `subject`,
                                 `source`, `actor`, `since`, `until` (the ledger's own time); `latest=1&before=N` for
                                 the newest first, paged by `next_before`; a filter that is not valid is a 400
+    GET /api/heartbeat          onloopd's last heartbeat, the server's clock and the tick period: what a page polls to
+                                tell a quiet onloopd from a stalled one
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
     GET /api/activity           the Activity view: one lane per role with its turns on a time axis, side sessions under
                                 their role, the longest silence per role, turns per hour (?hours=48; 1 to 336)
+    GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
     GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
@@ -158,8 +161,10 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         heartbeat: pathlib.Path | None = None,
         ui_dir: pathlib.Path | None = None,
         carrier: Any = None,
+        tick_s: float = 10.0,
     ):
         super().__init__(address, _Handler)
+        self.tick_s = tick_s  # onloopd's tick, which writes the heartbeat
         self._carrier = carrier  # the carrier's configuration, None when onloopd.yaml has no carrier: block
         self.reader = reader
         self.writer = writer
@@ -214,6 +219,7 @@ def make_server(
     heartbeat: pathlib.Path | None = None,
     ui_dir: pathlib.Path | None = None,
     carrier: Any = None,
+    tick_s: float = 10.0,
 ) -> DaemonServer:
     """A server on the loopback address; `port=0` picks a free one. Any other host is refused before binding.
     Without both a writer and a token, every POST is 405."""
@@ -221,7 +227,7 @@ def make_server(
         raise ValueError("a writer needs a token, and a token a writer")
     host = check_host(host)
     try:
-        return DaemonServer((host, port), reader, writer, token, heartbeat, ui_dir, carrier)
+        return DaemonServer((host, port), reader, writer, token, heartbeat, ui_dir, carrier, tick_s)
     except OSError as e:
         if e.errno in _IN_USE or getattr(e, "winerror", None) in _IN_USE:
             raise PortInUse(host, port, e) from e
@@ -470,6 +476,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 except views.QueryError as e:
                     self._send_json(400, {"error": str(e)}, head_only)
                     return
+            elif url.path == "/api/heartbeat":
+                body = self._liveness()
             elif url.path == "/api/now":
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
             elif url.path == "/api/activity":
@@ -478,6 +486,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
+            elif url.path == "/api/map":
+                from .. import derive
+
+                raw = (query.get("path", [""])[0] or "").strip("/")
+                try:
+                    body = derive.map_level(reader, ev.now_ts(), [p for p in raw.split("/") if p])
+                except derive.MapPathError as e:
+                    self._send_json(404, {"error": str(e)}, head_only)
+                    return
             elif url.path == "/api/tasks":
                 body = views.tasks_view(reader, ev.now_ts())
             elif url.path == "/api/digest":
@@ -546,6 +563,31 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if not head_only:
             self.wfile.write(data)
+
+    def _liveness(self) -> dict[str, Any]:
+        """The page's liveness check: the server's clock now, onloopd's last heartbeat and how often one is written.
+        A heartbeat older than two periods means the tick has stopped although the server still answers."""
+        now = ev.now_ts()
+        beat = self._heartbeat()
+        at = beat.get("at") if beat else None
+        try:
+            age = (
+                max(0.0, ev.parse_ts(now).timestamp() - ev.parse_ts(at).timestamp())
+                if isinstance(at, str)
+                else None
+            )
+        except ValueError:
+            at, age = (
+                None,
+                None,
+            )  # a heartbeat with a time onloop cannot read is shown as missing, never as fine
+        return {
+            "now": now,
+            "at": at,
+            "age_s": age,
+            "period_s": self.server.tick_s,
+            "last_seq": beat.get("last_seq") if beat else None,
+        }
 
     def _heartbeat(self) -> dict[str, Any] | None:
         path = self.server.heartbeat

@@ -15,9 +15,50 @@ All notable changes to this project are recorded here. The format follows
   feedback batches, items and links (an item's stage as the team reports it). Contract 1.1 adds check runs, verdicts
   (by role, never a login; a short code, never a body) and who a pull request waits on. A wait on the person is a
   task on their list, and a wait ends only when the export clears it. Ledger schema 8 adds the `import` source and a turn's start time.
+- **Feedback, from both channels** (ledger schema 9). `onloop feedback "item" "item" … [--file F] [--by lead]` gives
+  a batch in one sitting. Each item's title is its first line, scrubbed of secret-shaped strings; the body is kept
+  only as a hash. A team's export reports its own batches, and each item's stage is kept as the team declares it,
+  marked "reported by the team", with the time it reached that stage.
+- **The map's zoom 0** (`GET /api/map`, decision 0018): one block per goal, grouped by origin: each checklist, each
+  feedback batch, and "Changes in flight".
+  - A block's colour is the worst of its children (jammed, waits on you, moving, not started), each with a shape.
+    A red or amber block names its child and why in one line.
+  - A stage with no evidence is "not reported", never 0.
+  - An age whose start onloop cannot see shows as a lower bound ("≥ 9 days", "began before the first export").
+  - Signals: waiting on you (the same count as Now), stuck (live work only), idle, and the team's longest pause in
+    the last day.
+  - The waits, oldest first.
+  - The stuck thresholds are set with `overview: stuck:` in onloopd.yaml.
+- **The map's zoom 1 and zoom 2** (`#/map/<goal>[/<stage>]`, `GET /api/map?path=`):
+  - zoom 1 is a goal's stages, each with its count, colour, oldest item and reason, and a change's checks (skipped runs
+    counted, never named);
+  - zoom 2 is the goal's **stage × role grid** (mock-up v2): a column per stage, a row per holder, worst first, each
+    cell a bar as long as its count in its worst colour. For changes, each column says how many reached it in the
+    week, Merged counts by the role that opened each, and the live stage with the most jams is the bottleneck. A
+    cell opens its stage at that holder, whose items, with where to act, follow the table. The first row is always
+    the holder zoom 0's reason line names;
+  - `block.turned` events record each block's and stage's change of colour, on onloopd's tick.
+- **Moving around the map:** a camera move into the block on opening (none with reduced motion); a second click during
+  the move is ignored; the chain of stages never crosses the canvas. See [map.md](docs/map.md).
+- **Contract 1.2:** `pr.opened` may carry `by`, the role that opened the change (a declared role, `team` or `human`,
+  never a login). A PR first sent without it gets its role from a later copy. The map holds a change that waits on
+  nobody by that role, and names it in the reason line ("builder: no move on pr#9 for 5 days"). Only without `by`
+  (a 1.0 or 1.1 export) or with `by: team` is the holder "the team".
+- **The page recovers when onloopd comes back:** a view in error tries again every few seconds, and the last good data
+  stays on screen meanwhile.
 - **The Activity view** (`#/activity`, `GET /api/activity`): one lane per role with its turns on a time axis, side
   sessions under their role, each role's longest silence, turns per hour and roles working at once, for 24 hours, 48
-  hours or 7 days, with a table view. It works without outcome lines.
+  hours or 7 days, with a table view. It works without outcome lines. The window starts where the data does ("the 3
+  days since the data began"), roles with no turns are one line, and a silence is red only while it is still going.
+- **Idle work is set apart at every level.** An open change with no move for 7 days is idle: parked or abandoned. It
+  is never counted as jammed, in the header, a tally ("3 jammed · 2 idle · 1 moving") or a reason line. It is
+  drawn hatched greyish red, and a tally's jam comes first, set apart from what waits on you.
+- **A clock and live ages on every page.**
+  - The header has a clock that ticks every second, and "data as of N s ago".
+  - Every relative age rises between answers.
+  - `GET /api/heartbeat` gives onloopd's last heartbeat and its tick period. The Live dot turns amber with "No news
+    for N s" past two ticks, and red with "onloopd not answering for N s".
+  - Now keeps its last answer on screen while onloopd is down.
 
 ### Changed
 
@@ -26,6 +67,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- **A widened window re-lays the map,** even in a page that draws no frames, and past 1920 px the blocks use the
+  width (up to 760 px each).
+- **"team" and "the team" are one holder** on every view. A wait on `team` and a change with no opener are both
+  "the team".
 - **Now and Flow count "waiting on you" the same way** (finding #20). Both read the open task list. Flow's "You"
   node says how many tasks wait on you, and its tab says how many cards on the canvas wait on you. An agreement test
   checks Now, Flow and the task list on the demo ledger and on asks that are not cards.

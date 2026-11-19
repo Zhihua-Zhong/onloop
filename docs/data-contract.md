@@ -40,6 +40,21 @@ Send these only once your manifest says `"contract": "1.1"`.
 - **Repeat an open wait** in every export, with the same id. Only `wait.cleared` ends it: a wait you stop listing
   stays open.
 
+## Contract 1.2: who opened a change
+
+Send this only once your manifest says `"contract": "1.2"`, and only after onloop's lead says the 1.2 reader is out.
+
+```json
+{"type": "onloop.pr.opened", "dataschema": "onloop-contract/1.2/pr.opened", "data": {"number": 12, "title": "Example change", "head_sha": "<40 hex>", "by": "builder"}, …}
+```
+
+- **`by`** is one of your role names, `team` when you can't tell which role opened it, or `human` for a change the
+  person opened. It is never a login, an account name or a branch name: derive the role in your exporter, and send
+  only the role.
+- **A PR you sent before without `by`** gets its role when you send it again with `by`, under the same id. Send the
+  same `by` every time.
+- **Only on `pr.opened`.** `by` on a merged or closed record is refused.
+
 ## Where to put it
 
 Put one folder per export, named by its time in UTC, inside a `snapshots` folder:

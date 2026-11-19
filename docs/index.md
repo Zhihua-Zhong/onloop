@@ -9,6 +9,8 @@
   `automation:` policy blocks
 - [Security model](security-model.md): what is trusted, what is bound to the head, and what is not protected
 - [FAQ](faq.md)
+- [The map](map.md): where the work is stuck and whether it is you, at zoom 0, 1 and 2, with its colours, words and
+  limits.
 - [The UI](ui.md): the six views onloopd serves (Now, Flow, Team, Conversation, Schedules and Audit), how it is built,
   served and tested
 - [The session carrier](carrier.md): how onloop delivers messages into the role sessions, off by default

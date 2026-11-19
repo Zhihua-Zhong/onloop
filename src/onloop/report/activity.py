@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .. import derive
 from .. import events as ev
 
 MAX_HOURS = 24 * 14
@@ -40,6 +41,11 @@ def activity(reader: Any, now: str, hours: int = 48) -> dict[str, Any]:
     as_of = data_as_of(reader)
     end = min(now, as_of) if as_of else now
     start = _floor_hour(ev.shift_ts(end, -hours * 3600))  # the hour columns line up with the clock
+    # The window starts where the data does (mock-up v2): a window reaching back before the first turn would draw a
+    # stretch with no data in it, which reads as a quiet team.
+    first = reader.select("SELECT min(COALESCE(started_at, ended_at)) AS t FROM turns")[0]["t"]
+    if first and _floor_hour(first) > start and first <= end:
+        start = _floor_hour(first)
     declared = {r["id"]: r for r in reader.select("SELECT id, state FROM roles ORDER BY id")}
     kinds = {}
     for r in reader.select("SELECT payload FROM events WHERE kind = 'role.declared'"):
@@ -54,10 +60,13 @@ def activity(reader: Any, now: str, hours: int = 48) -> dict[str, Any]:
     by_role: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         by_role.setdefault(r["role"], []).append(r)
+    counts = derive.turns_per_role(reader, start, end)  # the one count the map shows too (decision 0018)
     lanes = []
     for role in sorted(set(declared) | set(by_role)):
         turns = by_role.get(role, [])
-        lanes.append(_lane(role, kinds.get(role), turns, start, end, now, reader))
+        lanes.append(
+            {**_lane(role, kinds.get(role), turns, start, end, now, reader), "turns": counts.get(role, 0)}
+        )
     # the busiest first, then the quiet ones, then the never-active: a person reads down to where it went quiet
     lanes.sort(key=lambda lane: (-lane["turns"], lane["role"]))
     per_hour = _per_hour(rows, start, int(-(-_sec(start, end) // 3600)))

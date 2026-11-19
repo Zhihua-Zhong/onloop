@@ -214,6 +214,19 @@ def test_activity_shows_lanes_side_sessions_silences_and_hours(exchange):
     )
 
 
+def test_activity_starts_where_the_data_does_never_before_it(exchange):
+    """Mock-up v2: a 7-day window on 2 days of data draws no empty days, which would read as a quiet team."""
+    reader.import_snapshots(exchange, _ledger(exchange))
+    with Ledger(_ledger(exchange), readonly=True) as led:
+        week = activity.activity(led, NOW, 168)
+        two = activity.activity(led, NOW, 48)
+        one = activity.activity(led, NOW, 24)
+        start = led.select("SELECT min(COALESCE(started_at, ended_at)) AS t FROM turns")[0]["t"]
+    assert week["from"] == start[:14] + "00:00.000Z"  # the hour the first turn began in, not 7 days back
+    assert week["from"] <= two["from"] < one["from"]  # a window inside the data starts where it says
+    assert sum(h["turns"] for h in week["per_hour"]) == week["turns"]
+
+
 def test_pull_requests_goal_revisions_and_feedback_import_once_each(tmp_path):
     root = tmp_path / "exchange"
     example.write(root, END, days=2, n=120, seed=5)

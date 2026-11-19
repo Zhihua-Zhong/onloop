@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
 import pytest
 
-from onloop import tasks
+from onloop import derive, tasks
+from onloop.contract import reader
 from onloop.overlay.ledger import Ledger
 from onloop.report import views
 
@@ -25,7 +28,11 @@ def _counts(led, now):
     f = views.flow(led, now)
     t = views.tasks_view(led, now)
     human = next((r for r in f["resources"] if r["id"] == "human"), None)
+    z = derive.zoom0(led, now)
+    you = next((w for w in z["waits"] if w["holder"] == "you"), None)
     return {
+        "map_signal": z["signals"]["waiting_on_you"],
+        "map_you_row": you["count"] if you else 0,
         "now": len(n["waiting_on_you"]),
         "flow": f["waiting_on_you"]["count"],
         "flow_you_node": human["waiting"] if human else f["waiting_on_you"]["count"],
@@ -78,6 +85,44 @@ def test_they_agree_when_some_asks_are_not_cards_on_the_canvas(demo_path, tmp_pa
     assert f["count"] == len(f["task_ids"]) and f["count"] > len([c for c in f["cards"] if c == "pr#99"])
 
 
+EXAMPLE = Path(__file__).resolve().parent.parent / "tools" / "contract_example.py"
+_espec = importlib.util.spec_from_file_location("contract_example", EXAMPLE)
+example = importlib.util.module_from_spec(_espec)
+sys.modules.setdefault("contract_example", example)
+_espec.loader.exec_module(example)
+REPLAY_END = dt.datetime(2026, 11, 17, 2, 0, 0, tzinfo=dt.UTC)
+REPLAY_NOW = "2026-11-17T03:00:00.000Z"
+
+
+@pytest.fixture(scope="module")
+def replay_path(tmp_path_factory):
+    """The generic replay: two daily snapshots in contract 1.1, made up, imported as a team's export is. It has the
+    shapes the demo lacks: imported turns, a wait on the person that opens a task, waits on a role and on the team."""
+    root = tmp_path_factory.mktemp("replay")
+    example.write(root, REPLAY_END, days=2, n=400, seed=3, contract="1.1")
+    (root / "onloop").mkdir()
+    results = reader.import_snapshots(root, root / "onloop" / "ledger.db")
+    assert [r.status for r in results] == ["imported", "imported"], [r.as_dict() for r in results]
+    return root / "onloop" / "ledger.db"
+
+
+def test_now_flow_and_the_task_list_agree_on_the_generic_replay(replay_path):
+    with Ledger(replay_path, readonly=True) as led:
+        c = _counts(led, REPLAY_NOW)
+        n = views.now(led, REPLAY_NOW)
+        f = views.flow(led, REPLAY_NOW)
+    assert len(set(c.values())) == 1 and c["now"] > 0, c
+    assert (n["constraint"] is None) == (f["constraint"] is None)
+    with Ledger(replay_path, readonly=True) as led:
+        z = derive.zoom0(led, REPLAY_NOW)
+        refs = {t["ref"] for t in tasks.open_tasks(led, REPLAY_NOW)}
+    leaves = {lf["id"]: lf for b in z["blocks"] for lf in b["leaves"]}
+    assert refs & set(leaves) and all(leaves[r]["colour"] == "amber" for r in refs & set(leaves))
+    if n["constraint"] is not None:
+        assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]
+        assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])
+
+
 def test_an_empty_ledger_has_nothing_waiting_anywhere(tmp_path):
     with Ledger(tmp_path / "l.db", clock=lambda: NOW) as led:
         assert set(_counts(led, NOW).values()) == {0}
@@ -110,3 +155,163 @@ def test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same(t
     assert n["constraint"] is not None and f["constraint"] is not None
     assert f["constraint"]["waiters"] == len(n["constraint"]["waiters"])
     assert f["constraint"]["on_ref"] == n["constraint"]["on_ref"]
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_activity_counts_each_roles_turns_from_the_one_derivation(which, demo_path, replay_path):
+    """Activity's lanes and the map count a role's turns the same way: `onloop.derive`, never their own loop."""
+    from onloop import derive
+    from onloop.report import activity
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        a = activity.activity(led, now, hours=72)
+        per_role = derive.turns_per_role(led, a["from"], a["to"])
+    lanes = {lane["role"]: lane["turns"] for lane in a["lanes"]}
+    assert a["turns"] > 0 and sum(lanes.values()) == a["turns"], (a["turns"], lanes)
+    assert {r: n for r, n in lanes.items() if n} == per_role
+
+
+_ON_YOU = re.compile(r"(\d+) waits? on you")
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_the_maps_words_never_add_up_to_more_than_the_one_count(which, demo_path, replay_path):
+    """The lead's check: a reader sums every "N wait on you" on the page against the header. Only the person's own
+    tasks and waits say it; what a team's export marks as theirs is worded as the team's mark."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        z = derive.zoom0(led, now)
+    said = sum(int(n) for b in z["blocks"] for n in _ON_YOU.findall(b["tally_text"]))
+    assert said <= z["signals"]["waiting_on_you"], (said, [b["tally_text"] for b in z["blocks"]])
+    for b in z["blocks"]:
+        if b["label"] == "waits on you":
+            assert _ON_YOU.search(b["tally_text"]), b["id"]
+        marked = [lf for lf in b["leaves"] if lf["colour"] == "amber" and lf.get("who") != "you"]
+        said_marked = sum(int(n) for n in re.findall(r"(\d+) marked yours by the team", b["tally_text"]))
+        assert said_marked == len(marked) and all(lf.get("reported_by_team") for lf in marked), b["id"]
+
+
+def test_the_holder_a_reason_names_is_the_holder_zoom_2_lists(tmp_path_factory):
+    """Contract 1.2: zoom 0 and 1 name who holds a stuck change, and zoom 2 lists the same holder, on a replay where
+    the export says which role opened each change."""
+    root = tmp_path_factory.mktemp("replay12")
+    example.write(root, REPLAY_END, days=2, n=200, seed=3, contract="1.2")
+    (root / "onloop").mkdir()
+    reader.import_snapshots(root, root / "onloop" / "ledger.db")
+    with Ledger(root / "onloop" / "ledger.db", readonly=True) as led:
+        for b in derive.zoom0(led, REPLAY_NOW)["blocks"]:
+            for s in derive.zoom1(led, REPLAY_NOW, b["id"])["stages"]:
+                if not s["reason"]:
+                    continue
+                holders = {h["holder"] for h in derive.zoom2(led, REPLAY_NOW, b["id"], s["stage"])["holders"]}
+                named = s["reason"]["text"].split(": ", 1)[0]
+                assert named in holders or (named == "you" and "you" in holders), (
+                    b["id"],
+                    s["stage"],
+                    named,
+                    holders,
+                )
+
+
+@pytest.mark.parametrize("which", ["demo", "replay", "replay12"])
+def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
+    which, demo_path, replay_path, tmp_path_factory
+):
+    """Mock-up v2's grid in the product: one table per goal, a column per stage and a row per holder. Every cell is
+    the same leaves zoom 1 counts and zoom 2 groups, so the grid, the stage blocks and the holder list never differ:
+    a stage's cells (with Idle, for Opened) add up to its zoom 1 count, and each holder's cell to zoom 2's count."""
+    if which == "replay12":
+        root = tmp_path_factory.mktemp("grid12")
+        example.write(root, REPLAY_END, days=2, n=200, seed=3, contract="1.2")
+        (root / "onloop").mkdir()
+        reader.import_snapshots(root, root / "onloop" / "ledger.db")
+        path, now = root / "onloop" / "ledger.db", REPLAY_NOW
+    else:
+        path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    checked = idle_total = red_total = 0
+    with Ledger(path, readonly=True) as led:
+        z0 = derive.zoom0(led, now)
+        for b in z0["blocks"]:
+            stages = derive.zoom1(led, now, b["id"])["stages"]
+            g = derive.zoom2(led, now, b["id"], stages[0]["stage"])["grid"]
+            col = {c["stage"]: c for c in g["columns"]}
+            for s in stages:
+                if not s["reported"]:
+                    assert col[s["stage"]]["count"] is None, (
+                        b["id"],
+                        s["stage"],
+                    )  # "not reported", never zero
+                    continue
+                in_grid = sum(r["cells"].get(s["stage"], {}).get("count", 0) for r in g["rows"])
+                if s["stage"] == "opened" and "idle" in col:
+                    in_grid += col["idle"]["count"]
+                assert in_grid == s["count"], (which, b["id"], s["stage"], in_grid, s["count"])
+                if s["stage"] == "merged" or not s["count"]:
+                    continue
+                z2 = {h["holder"]: h["count"] for h in derive.zoom2(led, now, b["id"], s["stage"])["holders"]}
+                cells = {
+                    r["holder"]: r["cells"].get(s["stage"], {}).get("count", 0)
+                    + (r["cells"].get("idle", {}).get("count", 0) if s["stage"] == "opened" else 0)
+                    for r in g["rows"]
+                }
+                assert {h: n for h, n in cells.items() if n} == z2, (which, b["id"], s["stage"])
+                checked += 1
+            rows = g["rows"]
+            assert rows[1:] == sorted(
+                rows[1:], key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"])
+            )
+            # the glance and the grid name the same holder: zoom 0's reason line holder is the grid's first row
+            if b["reason"]:
+                child = b["reason"]["child"]
+                first = rows[0]
+                assert any(i["id"] == child for c, v in first["cells"].items() for i in v["items"]), (
+                    which,
+                    b["id"],
+                )
+                assert b["reason"]["text"].split(": ", 1)[0] == first["holder"], (
+                    which,
+                    b["id"],
+                    first["holder"],
+                )
+                assert not any(
+                    i["id"] == child and i["idle"] for v in first["cells"].values() for i in v["items"]
+                )
+            # idle is set apart at every level: the block's tally, the grid's Idle column and the header agree
+            idle_col = col["idle"]["count"] if "idle" in col else 0
+            assert b["tally"]["idle"] == idle_col, (which, b["id"])
+            if idle_col:
+                assert f"{idle_col} idle" in b["tally_text"], b["tally_text"]
+            live_red = sum(r["live_red"] for r in rows)
+            assert b["tally"]["red"] == live_red, (which, b["id"], b["tally"], live_red)
+            idle_total += idle_col
+            red_total += b["tally"]["red"]
+        assert z0["signals"]["idle"] == idle_total and z0["signals"]["stuck"] == red_total
+    assert checked > 0
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team(which, demo_path, replay_path):
+    """The lead's finding on bebf0b9: "team" held a jammed change in Review and "the team" ten in Merged, two rows of
+    the grid for what a person reads as one holder. `team` and no name at all are "the team" on every view."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    seen = set()
+    with Ledger(path, readonly=True) as led:
+        z = derive.zoom0(led, now)
+        seen |= {w["holder"] for w in z["waits"]}
+        for b in z["blocks"]:
+            seen |= {lf.get("who") for lf in b["leaves"] if lf.get("who")}
+            for s in derive.zoom1(led, now, b["id"])["stages"]:
+                if s["reason"]:
+                    seen.add(s["reason"]["text"].split(": ", 1)[0])
+                if not s["count"]:
+                    continue
+                z2 = derive.zoom2(led, now, b["id"], s["stage"])
+                seen |= {h["holder"] for h in z2["holders"]}
+                rows = [r["holder"] for r in z2["grid"]["rows"]]
+                assert len(rows) == len(set(rows)), (b["id"], rows)  # one row per holder
+                seen |= set(rows)
+    assert "team" not in seen and "" not in seen, sorted(seen)
+    assert derive.TEAM in seen  # both ledgers have work the team holds as a whole
+    assert derive.holder_name("team") == derive.holder_name(None) == derive.holder_name("") == derive.TEAM
+    assert derive.holder_name("reviewer") == "reviewer"
