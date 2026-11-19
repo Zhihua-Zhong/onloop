@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  BLOCK_MAX_W,
   BLOCK_MIN_W,
   cardLayout,
   chainLinks,
@@ -10,9 +11,11 @@ import {
   isReserved,
   nextPath,
   openMoveMs,
+  PAD,
   phoneOrder,
   showsOpenHint,
   type MapBlock,
+  WIDTH_CHECK_MS,
 } from "../src/lib/map.ts";
 
 test("a geometric zoom never changes the level; only an explicit open or up does (Q23)", () => {
@@ -67,6 +70,17 @@ test("the blocks share the width: three a row at 1440's canvas, one on a narrow 
   const narrow = gridLayout(3, 600);
   assert.equal(narrow.perRow, 1);
   assert.ok(narrow.positions[1].y > narrow.positions[0].y);
+});
+
+test("past 1920 the blocks use the width: three fill 2560's canvas, and a window widened re-lays them", () => {
+  const at1536 = gridLayout(3, 1166);
+  const at2560 = gridLayout(3, 2190);
+  assert.equal(at2560.perRow, 3);
+  assert.ok(at2560.blockW > at1536.blockW, `${at2560.blockW} px at 2560 against ${at1536.blockW} at 1536`);
+  const right = at2560.positions[2].x + at2560.blockW;
+  assert.ok(right <= 2190 && 2190 - right <= PAD + 3, `the row ends ${2190 - right} px short of the canvas`);
+  assert.ok(gridLayout(1, 2190).blockW <= BLOCK_MAX_W); // one block alone does not stretch across the screen
+  assert.ok(WIDTH_CHECK_MS > 0 && WIDTH_CHECK_MS <= 1000);
 });
 
 test("cards of different heights: each row as tall as its tallest, still at scale 1", () => {

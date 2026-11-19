@@ -117,10 +117,14 @@ export function thresholdsText(t: Record<string, number>, fmt: (s: number) => st
 // (the lead's fix 1). The blocks share the canvas's width instead, as many a row as fit at their least width.
 export const OPENING_ZOOM = 1;
 export const BLOCK_MIN_W = 320;
-export const BLOCK_MAX_W = 520;
+// The most a block widens to: past 1920 three blocks still fill the row (2560's canvas gives each about 700 px).
+export const BLOCK_MAX_W = 760;
 export const BLOCK_H = 236;
 export const GAP = 24;
 export const PAD = 16;
+// How often the canvas checks its own width, besides the ResizeObserver: a page that draws no frames (a background
+// tab, a hidden pane) gets neither observer callbacks nor resize events, yet its timers still run.
+export const WIDTH_CHECK_MS = 1000;
 
 export interface GridLayout {
   zoom: number;

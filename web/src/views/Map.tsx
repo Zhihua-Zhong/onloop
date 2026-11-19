@@ -30,6 +30,7 @@ import {
   showsOpenHint,
   thresholdsText,
   TONE_OF,
+  WIDTH_CHECK_MS,
   type MapBlock,
   type MapHolder,
   type MapLevelBase,
@@ -410,10 +411,16 @@ function useWidthOf<T extends HTMLElement>(): [React.RefObject<T>, number] {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    const measure = () => setW(el.clientWidth); // the same width twice is no re-render
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setW(el.clientWidth);
-    return () => ro.disconnect();
+    measure();
+    // a widened window must re-lay the blocks even when no frame is drawn: then only a timer sees the new width
+    const timer = window.setInterval(measure, WIDTH_CHECK_MS);
+    return () => {
+      ro.disconnect();
+      window.clearInterval(timer);
+    };
   }, []);
   return [ref, w];
 }
