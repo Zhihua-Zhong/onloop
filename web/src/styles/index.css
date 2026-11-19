@@ -46,3 +46,9 @@
 @media (prefers-reduced-motion: reduce) {
   .map-enter { animation: none; }
 }
+
+/* Idle work: open, no move for a week, parked or abandoned. Hatched greyish red, so it never reads as jammed. */
+.idle-hatch {
+  background-color: hsl(var(--state-idle) / 0.18);
+  background-image: repeating-linear-gradient(135deg, hsl(var(--state-idle) / 0.9) 0 2px, transparent 2px 5px);
+}

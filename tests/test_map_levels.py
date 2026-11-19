@@ -341,3 +341,34 @@ def test_a_stage_or_holder_with_only_idle_work_is_idle_not_jammed(tmp_path):
     assert block["reason"] is None and z0["signals"]["stuck"] == 0 and z0["signals"]["idle"] == 1
     assert z2["stage"]["colour"] == "grey" and z2["holders"][0]["colour"] == "grey"
     assert z2["grid"]["rows"][0]["cells"]["idle"]["colour"] == "grey" and z2["grid"]["bottleneck"] is None
+
+
+def test_the_grid_leads_with_the_holder_the_reason_line_names_even_against_more_jams(tmp_path):
+    """The reason line names the oldest jam; the grid ranks by how many. One old jam with one role and three younger
+    ones with another would put them apart, so the grid leads with the row the reason line names (the lead's ruling
+    on e320db4: the glance and the grid point at the same place)."""
+    path = tmp_path / "l.db"
+    with Ledger(path, clock=lambda: NOW) as led:
+        for n, day, by in ((1, 11, "builder"), (2, 13, "reviewer"), (3, 13, "reviewer"), (4, 13, "reviewer")):
+            for kind, payload in (("pr.opened", {"number": n}), ("pr.author", {"number": n, "by": by})):
+                led.append(
+                    {
+                        "id": f"{kind}{n}",
+                        "source": "import",
+                        "kind": kind,
+                        "subject_ref": f"pr#{n}",
+                        "at": f"2026-11-{day:02d}T03:00:00.000Z",
+                        "payload": payload,
+                    }
+                )
+        z0 = derive.zoom0(led, NOW)
+        g = derive.zoom2(led, NOW, "changes", "opened")["grid"]
+    block = next(b for b in z0["blocks"] if b["id"] == "changes")
+    assert (
+        block["tally_text"].startswith("4 jammed") and block["reason"]["child"] == "pr#1"
+    )  # 6 days, the oldest
+    assert [r["holder"] for r in g["rows"]] == [
+        "builder",
+        "reviewer",
+    ]  # not reviewer first, for its three jams
+    assert [r["live_red"] for r in g["rows"]] == [1, 3]

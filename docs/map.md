@@ -29,8 +29,11 @@ Open it at `#/map`, or from the **Map** tab.
   own column first, apart from the live queue. Your own tasks are never idle, since they wait on you.
 - **Idle is set apart at every level**, not only in the grid. The header's "N jammed" and a block's tally count live
   work only, and the tally adds "N idle" ("3 jammed · 2 idle · 1 moving"). The reason line names the worst live
-  change, never an idle one. A stage, holder or block holding only idle work is grey and reads "idle". On zoom 0 an
-  idle change is a muted square.
+  change, never an idle one, and the grid's first row is the holder that reason line names. A stage, holder or block
+  holding only idle work reads "idle" with the idle mark: hatched greyish red (`--state-idle`), also in the legend.
+  An idle change in a list or on zoom 0 carries the same mark, never a red "!".
+- **A tally's jammed part comes first, in red, set apart** from what waits on you, so the most stuck work never
+  reads as the amber beside it (the glance trial's run 1).
 - **The bottleneck** is the live stage with the most jammed changes; its header is outlined in red.
 - **Roles with nothing open** are named in one line under the table.
 - **On a phone,** only the columns with something in them, and the stage you opened, are shown; a line names the

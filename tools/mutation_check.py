@@ -1993,6 +1993,16 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the grid's first row is not the holder zoom 0's reason line names, so the glance and the grid point apart",
+        "src/onloop/derive.py",
+        '    out_rows.sort(key=lambda r: (not leads(r), -r["live_red"], -r["idle"], -r["open"], r["holder"]))',
+        '    out_rows.sort(key=lambda r: (-r["open"], r["holder"]))',
+        [
+            "tests/test_agreement.py::test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count",
+            "tests/test_map_levels.py::test_the_grid_leads_with_the_holder_the_reason_line_names_even_against_more_jams",
+        ],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

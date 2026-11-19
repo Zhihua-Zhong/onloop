@@ -12,7 +12,7 @@ export default {
         bg: v("bg"), surface: v("surface"), raised: v("raised"), line: v("line"), fg: v("fg"), muted: v("muted"), accent: v("accent"),
         state: {
           open: v("state-open"), blocked: v("state-blocked"), human: v("state-human"), external: v("state-external"), stall: v("state-stall"),
-          done: v("state-done"), void: v("state-void"),
+          done: v("state-done"), void: v("state-void"), idle: v("state-idle"),
         },
         zone: v("zone"),
       },

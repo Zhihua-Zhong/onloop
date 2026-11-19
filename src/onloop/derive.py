@@ -941,8 +941,16 @@ def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, An
         idle = cells.get(IDLE, {}).get("count", 0)
         open_n = sum(v["count"] for c, v in cells.items() if c != "merged")
         out_rows.append({**r, "cells": cells, "live_red": live_red, "idle": idle, "open": open_n})
-    # worst first: the most live jammed work, then the most idle, then the most open, then by name
-    out_rows.sort(key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
+    # The row holding the item the block's reason line names comes first, so the glance (zoom 0) and the grid point
+    # at the same holder; then worst first: the most live jammed work, then the most idle, the most open, the name.
+    named = (block.get("reason") or {}).get("child")
+
+    def leads(r: dict[str, Any]) -> bool:
+        return any(
+            i["id"] == named for c, v in r["cells"].items() if c not in (IDLE, "merged") for i in v["items"]
+        )
+
+    out_rows.sort(key=lambda r: (not leads(r), -r["live_red"], -r["idle"], -r["open"], r["holder"]))
     stage_by = {s["stage"]: s for s in stages}
     columns = []
     for c in cols:

@@ -220,6 +220,20 @@ function Bar({ b }: { b: MapBlock }) {
   );
 }
 
+// A tally line ("1 jammed · 1 waits on you"), with its jammed part in the jam's red and set apart,
+// so "most stuck" never reads as the amber that waits on you beside it (run 1's one difficulty).
+function Tally({ text, testid = "tally" }: { text: string; testid?: string }) {
+  const parts = text.split(" · ");
+  const jam = /^\d+ jammed$/.test(parts[0] ?? "") ? parts.shift() : null;
+  return (
+    <p className="mt-1 text-[13px] text-muted" data-testid={testid}>
+      {jam && <span className={cn("font-semibold", tone("blocked").text)} data-testid="tally-jam">{jam}</span>}
+      {jam && parts.length > 0 && <span className="mx-1.5 text-line" aria-hidden>|</span>}
+      {parts.join(" · ")}
+    </p>
+  );
+}
+
 function Cells({ b }: { b: MapBlock }) {
   if (!b.leaves.length) return null;
   return (
@@ -231,7 +245,7 @@ function Cells({ b }: { b: MapBlock }) {
           className={cn(
             "grid h-4 w-4 place-items-center rounded-[3px] text-[9px] font-bold leading-none",
             lf.idle
-              ? "bg-state-void/45"
+              ? "idle-hatch"
               : lf.colour === "grey"
                 ? "border border-state-void/70 text-state-void"
                 : cn(tone(TONE_OF[lf.colour]).dot, "text-white"),
@@ -293,7 +307,7 @@ function BlockCard({ b, onOpen, hint = false, className }: { b: MapBlock; onOpen
       onDoubleClick={onOpen}
       className={cn(
         "relative flex h-full min-w-0 cursor-pointer flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-        tone(t).edge,
+        b.label === "idle" ? "border-l-state-idle" : tone(t).edge,
         className,
       )}
     >
@@ -301,15 +315,15 @@ function BlockCard({ b, onOpen, hint = false, className }: { b: MapBlock; onOpen
         <button type="button" tabIndex={-1} onClick={onOpen} className="min-w-0 flex-1 text-left text-[15px] font-semibold leading-snug hover:underline" data-testid="block-title">
           <span className="line-clamp-2">{b.title}</span>
         </button>
-        <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold", tone(t).soft, tone(t).text)} data-testid="block-state">
-          <span aria-hidden>{b.shape}</span>
+        <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold", b.label === "idle" ? "idle-hatch text-fg" : cn(tone(t).soft, tone(t).text))} data-testid="block-state">
+          {b.label !== "idle" && <span aria-hidden>{b.shape}</span>}
           {b.label}
         </span>
       </header>
       {b.reported_by_team && <p className="mt-0.5 text-xs text-muted" data-testid="reported">Stages reported by the team</p>}
       <Bar b={b} />
       {b.kind === "changes" && <p className="mt-1 text-[13px] font-medium tabular-nums">{b.bar.label}</p>}
-      <p className="mt-1 text-[13px] text-muted" data-testid="tally">{b.tally_text}</p>
+      <Tally text={b.tally_text} />
       {b.reason && (
         <p className={cn("mt-1.5 text-[13px] font-medium leading-snug", tone(t).text)} data-testid="reason">
           <span className="line-clamp-2">{b.reason.text}</span>
@@ -411,8 +425,12 @@ function Legend({ m }: { m: MapLevelBase }) {
             {l.label}
           </li>
         ))}
+        <li className="inline-flex items-center gap-1.5" data-testid="legend-idle">
+          <span className="idle-hatch h-4 w-4 rounded-[3px]" aria-hidden />
+          idle: open, no move for a week
+        </li>
       </ul>
-      <p className="text-muted">A block takes its worst child's colour. Jammed after: {thresholdsText(m.thresholds_s, duration)}.</p>
+      <p className="text-muted">A block takes its worst live child's colour; idle work is never counted as jammed. Jammed after: {thresholdsText(m.thresholds_s, duration)}.</p>
       <p className="text-muted">"≥" means the start is older than anything onloop has seen.</p>
     </section>
   );
@@ -646,9 +664,26 @@ function TableToggle({ path, table }: { path: string[]; table: boolean }) {
   );
 }
 
+// An item's mark in a list: its shape in its colour, or the idle hatch for work parked for a week, never a red "!".
+function ItemMark({ colour, shape, idle }: { colour: string; shape: string; idle?: boolean }) {
+  if (idle) return <span aria-hidden className="idle-hatch inline-block h-2.5 w-2.5 shrink-0 translate-y-[1px] rounded-[2px]" title="idle" />;
+  return (
+    <span aria-hidden className={cn("shrink-0 text-xs", colour === "done" || colour === "grey" ? "text-muted" : tone(TONE_OF[colour as keyof typeof TONE_OF]).text)}>
+      {shape}
+    </span>
+  );
+}
+
 function StatePill({ colour, shape, label }: { colour: MapBlock["colour"] | null; shape: string | null; label: string | null }) {
   if (!colour) return null;
   const t = TONE_OF[colour];
+  if (label === "idle") {
+    return (
+      <span className="idle-hatch inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-semibold text-fg" data-testid="state">
+        idle
+      </span>
+    );
+  }
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold", tone(t).soft, tone(t).text)} data-testid="state">
       <span aria-hidden>{shape}</span>
@@ -682,7 +717,7 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
         "relative flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
         onOpen && "cursor-pointer",
         s.reported ? "bg-surface" : "map-hatch border-dashed",
-        tone(t).edge,
+        s.label === "idle" ? "border-l-state-idle" : tone(t).edge,
       )}
     >
       <header className="flex min-w-0 items-start gap-2">
@@ -696,7 +731,7 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
         <StatePill colour={s.colour} shape={s.shape} label={s.label} />
       </header>
       <p className="mt-1 text-[22px] font-semibold tabular-nums leading-none" data-testid="stage-count">{s.reported ? s.count : "—"}</p>
-      <p className="mt-1 text-[13px] text-muted" data-testid="tally">{s.tally_text}</p>
+      <Tally text={s.tally_text} />
       {s.oldest && s.count && s.colour !== "done" ? <p className="text-[13px] text-muted">Oldest: <span className="font-medium text-fg">{s.oldest.age_text}</span></p> : null}
       {s.reason && (
         <p className={cn("mt-1.5 text-[13px] font-medium leading-snug", tone(t).text)} data-testid="reason">
@@ -707,7 +742,7 @@ function StageCard({ s, onOpen, hint = false }: { s: MapStageEntry; onOpen?: () 
         <ul className="mt-2 flex flex-col gap-0.5 text-[13px]">
           {s.leaves.slice(0, STAGE_ROWS).map((lf) => (
             <li key={lf.id} className="flex min-w-0 items-baseline gap-1.5">
-              <span aria-hidden className={cn("shrink-0 text-xs", lf.colour === "done" || lf.colour === "grey" ? "text-muted" : tone(TONE_OF[lf.colour]).text)}>{lf.shape}</span>
+              <ItemMark colour={lf.colour} shape={lf.shape} idle={lf.idle} />
               <span className="truncate">{lf.title}</span>
               {lf.checks && <span className="ml-auto shrink-0 text-xs text-muted" data-testid="checks">{lf.checks.text.replace(/^checks: /, "")}</span>}
             </li>
@@ -810,18 +845,18 @@ function HolderCard({ h }: { h: MapHolder }) {
       tabIndex={0}
       aria-label={`${h.holder}: ${h.count}, ${h.tally_text}`}
       role="group"
-      className={cn("flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg", tone(t).edge)}
+      className={cn("flex h-full min-w-0 flex-col rounded-ui border border-l-[4px] border-line bg-surface px-3.5 py-3 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg", h.items.length && h.items.every((i) => i.idle) ? "border-l-state-idle" : tone(t).edge)}
     >
       <header className="flex min-w-0 items-start gap-2">
         <h2 className={cn("min-w-0 flex-1 text-[15px] font-semibold leading-snug", h.kind === "you" && tone("human").text)}>{h.holder}</h2>
-        <StatePill colour={h.colour} shape={h.shape} label={h.colour === "done" ? "done" : null} />
+        <StatePill colour={h.colour} shape={h.shape} label={h.colour === "done" ? "done" : h.items.length && h.items.every((i) => i.idle) ? "idle" : null} />
       </header>
       <p className="mt-0.5 text-[13px] text-muted" data-testid="tally">{plural(h.count, "item")} · {h.tally_text}</p>
       <ul className="mt-2 flex flex-col gap-2">
         {h.items.slice(0, 8).map((i) => (
           <li key={i.id} className="min-w-0 text-[13px]" data-testid="holder-item">
             <div className="flex min-w-0 items-baseline gap-1.5">
-              <span aria-hidden className={cn("shrink-0 text-xs", i.colour === "done" || i.colour === "grey" ? "text-muted" : tone(TONE_OF[i.colour]).text)}>{i.shape}</span>
+              <ItemMark colour={i.colour} shape={i.shape} idle={i.idle} />
               <span className="truncate font-medium">{i.title}</span>
               {i.age_text && <span className="ml-auto shrink-0 tabular-nums text-muted">{i.age_text}</span>}
             </div>
@@ -910,7 +945,7 @@ function Grid({ m, table, who }: { m: Zoom2Model; table: boolean; who: string | 
                 const cell = r.cells[c.stage];
                 if (!cell) return <td key={c.stage} className={cn("px-2 py-2", c.stage === IDLE && "bg-raised/60")} />;
                 const share = barShare(g, c.stage, cell.count);
-                const fill = c.stage === IDLE ? "bg-state-void" : cell.colour === "done" ? "bg-state-done" : tone(TONE_OF[cell.colour]).dot;
+                const fill = c.stage === IDLE ? "idle-hatch" : cell.colour === "done" ? "bg-state-done" : tone(TONE_OF[cell.colour]).dot;
                 const detail = cell.items.slice(0, 6).map((i) => `${i.id} ${i.age_text ?? ""}`.trim()).join("; ") + (cell.items.length > 6 ? " …" : "");
                 return (
                   <td key={c.stage} className={cn("px-2 py-1.5", c.stage === IDLE && "bg-raised/60")}>
@@ -985,7 +1020,7 @@ function Zoom2({ m, table, who }: { m: Zoom2Model; table: boolean; who: string |
                   <tr key={`${h.holder}:${i.id}`} className="border-b border-line align-top last:border-0">
                     <th scope="row" className="px-3 py-2 font-medium">{h.holder}</th>
                     <td className="px-3 py-2">
-                      <span aria-hidden>{i.shape} </span>
+                      <span aria-hidden>{i.idle ? "idle · " : `${i.shape} `}</span>
                       {i.title}
                       {i.checks && <span className="block text-xs text-muted">{i.checks.text}</span>}
                     </td>

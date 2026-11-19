@@ -24,6 +24,7 @@
   --state-stall: 326 72% 46%;
   --state-done: 150 45% 38%;
   --state-void: 218 10% 62%;
+  --state-idle: 358 35% 62%; /* parked or abandoned: open, no move for a week; drawn hatched, never as jammed */
 
   --radius-node: 10px;
   --radius-zone: 16px;
@@ -37,6 +38,7 @@
     --bg: 224 24% 9%;
     --surface: 224 22% 13%;
     --fg: 210 25% 94%;
+    --state-idle: 358 30% 48%;
   }
 }
 

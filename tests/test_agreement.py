@@ -258,7 +258,25 @@ def test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count(
                 assert {h: n for h, n in cells.items() if n} == z2, (which, b["id"], s["stage"])
                 checked += 1
             rows = g["rows"]
-            assert rows == sorted(rows, key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"]))
+            assert rows[1:] == sorted(
+                rows[1:], key=lambda r: (-r["live_red"], -r["idle"], -r["open"], r["holder"])
+            )
+            # the glance and the grid name the same holder: zoom 0's reason line holder is the grid's first row
+            if b["reason"]:
+                child = b["reason"]["child"]
+                first = rows[0]
+                assert any(i["id"] == child for c, v in first["cells"].items() for i in v["items"]), (
+                    which,
+                    b["id"],
+                )
+                assert b["reason"]["text"].split(": ", 1)[0] == first["holder"], (
+                    which,
+                    b["id"],
+                    first["holder"],
+                )
+                assert not any(
+                    i["id"] == child and i["idle"] for v in first["cells"].values() for i in v["items"]
+                )
             # idle is set apart at every level: the block's tally, the grid's Idle column and the header agree
             idle_col = col["idle"]["count"] if "idle" in col else 0
             assert b["tally"]["idle"] == idle_col, (which, b["id"])
