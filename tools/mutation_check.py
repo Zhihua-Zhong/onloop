@@ -2003,6 +2003,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a supervisor step may load the user settings file, whose env wins over its own",
+        "src/onloop/supervisor/config.py",
+        '        if "user" in sources_:\n            raise ConfigError(\n                f"{where}: setting_sources may not name user: the user settings file\'s env wins over the step\'s own, "\n                "so the step could send its telemetry to a collector outside onloop (decision 0019). Use project, "\n                "local, or both; the role table already gives the step its tools and model"\n            )\n        if not sources_ or set(sources_) - set(SETTING_SOURCES):',
+        '        if not sources_ or set(sources_) - set(SETTING_SOURCES + ("user",)):',
+        ["tests/test_supervisor_telemetry.py::test_a_step_that_asks_for_the_user_settings_file_is_refused"],
+    ),
+    (
+        "a supervisor step keeps the OTel variables it inherited",
+        "src/onloop/supervisor/step.py",
+        "    env = telemetry.for_session(env, onloopd, role.name)  # onloop's own OTel environment, or none at all\n",
+        "",
+        ["tests/test_supervisor_telemetry.py::test_a_live_step_without_onloopd_has_no_otel_variable_at_all"],
+    ),
+    (
         "a session onloop starts keeps the OTel variables it inherited, so it could export to another collector",
         "src/onloop/telemetry.py",
         "    out = without(base)\n",
@@ -2020,9 +2034,9 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     ),
     (
         "a carried turn keeps onloopd's own OTel variables when onloopd's address is unknown",
-        "src/onloop/carrier/loop.py",
-        "        base = telemetry.without(guards.child_env(self.environ))\n",
-        "        base = guards.child_env(self.environ)\n",
+        "src/onloop/telemetry.py",
+        "        return without(base)\n",
+        "        return dict(base)\n",
         ["tests/test_onloop_open.py::test_a_carried_turn_gets_onloops_otel_environment_and_none_inherited"],
     ),
     (

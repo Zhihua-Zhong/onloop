@@ -17,14 +17,15 @@ The command, for one role (flags as `claude --help` lists them; `--max-turns` is
 
     claude -p --output-format stream-json --verbose --max-turns N --permission-mode MODE
            --tools Read,Grep,Bash --allowedTools Read,Grep,Bash(gh pr view *)
-           --strict-mcp-config --setting-sources user --session-id UUID [--json-schema SCHEMA] [--model M]
+           --strict-mcp-config --setting-sources project --session-id UUID [--json-schema SCHEMA] [--model M]
 
 The prompt goes on stdin, never on the command line, so no shell or `.cmd` shim ever parses it. `--tools` limits the
 built-in tools the step can see to the base names of `allowed_tools`; `--allowedTools` pre-approves exactly those
 patterns; `dontAsk` (the default mode) denies anything else instead of prompting, so a step that needs more fails and
 is logged, and never waits on a person. `--strict-mcp-config` with no `--mcp-config` gives the step no MCP servers.
-`--setting-sources` loads only the role's setting sources (`user` by default), so a settings file inside the working
-directory cannot add allow rules that widen the role's tools. `--json-schema` asks for a structured result.
+`--setting-sources` loads only the role's setting sources (`project` by default; `user` is refused, decision 0019).
+The step's environment is onloop's own OTel environment toward a running onloopd, or none at all.
+`--json-schema` asks for a structured result.
 
 `result_text(path)` reads a step's final result object back from its output file, uncut, for a role's `result_file`.
 """
@@ -45,7 +46,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .. import events as ev
-from .. import procs
+from .. import procs, telemetry
 from .config import RoleSpec
 from .items import WorkItem
 
@@ -356,9 +357,13 @@ def run_step(
     progress_every: float = PROGRESS_EVERY,
     silence: float | None = None,
     session_id: str | None = None,
+    onloopd: pathlib.Path | None = None,
 ) -> StepResult:
     """Run one step of `role` on `item`, or in dry run only build it. Never raises for a failure of the step itself:
-    a failure is an outcome. Raises `MeteredKeyRefused` before anything starts when a live run finds a metered key."""
+    a failure is an outcome. Raises `MeteredKeyRefused` before anything starts when a live run finds a metered key.
+
+    `onloopd` is the folder of a running onloopd's ledger: the step's telemetry goes there, with every inherited OTel
+    variable removed. Without one the step gets no OTel variable at all, and exports nothing (decision 0019)."""
     env = dict(os.environ if environ is None else environ)
     session = session_id or new_session_id()
     argv = build_command(claude, role, session)
@@ -379,6 +384,7 @@ def run_step(
     if not live:
         return StepResult(**base, mode="dry_run", outcome="dry_run", ended_at=_ts(t0), duration_s=0.0)
     refuse_metered_key(env)
+    env = telemetry.for_session(env, onloopd, role.name)  # onloop's own OTel environment, or none at all
     env["ONLOOP_STEP_ID"], env["ONLOOP_ROLE"] = sid, role.name
     hard_end = t0 + role.wall if deadline is None else min(t0 + role.wall, deadline)
     out_path = err_path = None

@@ -12,6 +12,11 @@ All notable changes to this project are recorded here. The format follows
   Code's own telemetry received by onloopd, and gains an index on each event's own time, for the replay's windows.
   Every event is kept, unchanged. Back the ledger file up first if you may want to go back; 0.5.x refuses a
   schema-10 file.
+- **A supervisor step no longer loads the user settings file** (decision 0019). Its `setting_sources` default is now
+  `project`, and a role that names `user` is refused at load: the user file's `env` wins over the step's own, so the
+  step could send its telemetry to a collector outside onloop. The role table already gives a step its tools and
+  model. A step's environment has no inherited OTel variable; with an onloopd next to the default ledger it gets
+  onloop's OTel environment toward it, and otherwise exports nothing.
 
 ### Added
 

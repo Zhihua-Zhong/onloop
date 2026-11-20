@@ -18,11 +18,17 @@ OCEL object id). onloop records it when it dispatches the work, so no rule has t
 from __future__ import annotations
 
 import hashlib
+import json
+import pathlib
 import re
 from collections.abc import Mapping
 from typing import Any
 
 HOST = "127.0.0.1"  # scan:allow - onloopd's loopback address
+HEARTBEAT_FILE = (
+    "onloopd.heartbeat.json"  # the daemon's own names (daemon/main.py, daemon/token.py), tested equal
+)
+TOKEN_FILE = "onloopd.token"
 SETTING_SOURCES = "project,local"
 STEP_KINDS = ("task", "pr", "branch", "node", "item", "run")
 _STEP_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._#/:-]{0,119}$")
@@ -32,6 +38,25 @@ _SESSION = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 # Removed before onloop's own are set, with every OTEL_* name: an endpoint, a header or a content switch from the
 # parent never reaches the child.
 _CLEARED = ("CLAUDE_CODE_ENABLE_TELEMETRY",)
+
+
+def target(state: pathlib.Path) -> tuple[int, str] | None:
+    """The running onloopd's port and token, from the files it keeps next to its ledger; None when either is missing."""
+    try:
+        port = int(json.loads((state / HEARTBEAT_FILE).read_text(encoding="utf-8"))["port"])
+        token = (state / TOKEN_FILE).read_text(encoding="utf-8").strip()
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (port, token) if token else None
+
+
+def for_session(base: Mapping[str, str], state: pathlib.Path | None, role: str) -> dict[str, str]:
+    """A started session's environment: onloop's OTel environment toward the onloopd at `state`, or, when none runs
+    there (or `state` is None), `base` with no OTel variable at all, so the session exports nothing."""
+    to = target(state) if state is not None else None
+    if to is None or not _ROLE.match(role):
+        return without(base)
+    return env(base, port=to[0], token=to[1], role=role)
 
 
 def without(base: Mapping[str, str]) -> dict[str, str]:

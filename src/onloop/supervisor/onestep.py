@@ -35,6 +35,15 @@ from .config import SupervisorConfig
 from .items import WorkItem
 
 
+def onloopd_state(environ: Mapping[str, str] | None) -> pathlib.Path:
+    """The folder of the onloopd a step reports its telemetry to: the default ledger's ($ONLOOP_LEDGER, else
+    .onloop/ledger.db). Nothing is sent unless an onloopd runs there."""
+    from ..overlay import ledger
+
+    env = os.environ if environ is None else environ
+    return pathlib.Path(env.get(ledger.ENV_PATH) or ledger.DEFAULT_PATH).resolve().parent
+
+
 def why_not(item: WorkItem) -> str:
     """Why an open pull request is not in the role's queue, in the terms of its fields."""
     out = []
@@ -107,6 +116,7 @@ def run_one(
         repo=cfg.source.repo,
         environ=env,
         silence=role.silence,
+        onloopd=onloopd_state(env),
         **kw,
     ).as_dict()
     summary: dict[str, Any] = {

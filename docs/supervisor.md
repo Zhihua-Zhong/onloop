@@ -116,7 +116,7 @@ For the example reviewer the runner produces exactly:
 ```
 claude -p --output-format stream-json --verbose --max-turns 30 --permission-mode dontAsk --tools Read,Grep,Glob,Bash
   --allowedTools 'Read,Grep,Glob,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh pr review *)'
-  --strict-mcp-config --setting-sources user --session-id <a new uuid per run>
+  --strict-mcp-config --setting-sources project --session-id <a new uuid per run>
 ```
 
 - The prompt goes on stdin, never on the command line.
@@ -124,8 +124,13 @@ claude -p --output-format stream-json --verbose --max-turns 30 --permission-mode
   those patterns. Under `dontAsk`, anything else is denied instead of prompted for. So a step that needs more fails and
   says so; it never waits on a person.
 - `--strict-mcp-config` with no `--mcp-config` gives the step no MCP servers.
-- `--setting-sources` loads only the role's `setting_sources` (default `user`), so a settings file in the
-  working directory cannot add allow rules that widen the role's tools.
+- `--setting-sources` loads only the role's `setting_sources`: `project` by default, or `local` too. `user` is
+  refused (decision 0019): the user settings file's `env` wins over the step's own, so a step that loads it could
+  send its telemetry to a collector outside onloop. The role table gives the step its tools (`--tools`,
+  `--allowedTools`) and its model (`--model`), so nothing it needs comes from the user file.
+- The step's environment has no OTel variable it inherited. When an onloopd runs next to the default ledger
+  (`$ONLOOP_LEDGER`, else `.onloop/ledger.db`), the step gets onloop's OTel environment toward it; otherwise none,
+  and it exports nothing.
 - A role's `result_schema` (a JSON Schema file) is passed as `--json-schema`. With `result_file` (a path from the
   configuration's folder, naming only `$item_number`, `$item_head_short`, `$item_head`, `$step_id`, `$role`,
   `$item_kind`), onloop writes each live step's outcome, turns, duration, permission denials, structured result and

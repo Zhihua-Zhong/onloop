@@ -207,21 +207,7 @@ class Carrier:
         variables, plus onloop's OTel environment, so the turn's telemetry goes to this onloopd only. Without onloopd's
         port and token it has no OTel variable at all, and with `--setting-sources project` no OTel key loads: the turn
         exports nothing."""
-        base = telemetry.without(guards.child_env(self.environ))
-        try:
-            beat = json.loads((self.state / "onloopd.heartbeat.json").read_text(encoding="utf-8"))
-            port = int(beat["port"])
-        except (OSError, ValueError, KeyError, TypeError):
-            return base
-        from ..daemon import token as token_mod
-
-        secret = token_mod.read(self.state)
-        if not secret:
-            return base
-        try:
-            return telemetry.env(base, port=port, token=secret, role=role.name)
-        except ValueError:
-            return base
+        return telemetry.for_session(guards.child_env(self.environ), self.state, role.name)
 
     def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str]:
         """What a carried turn works on: the one item its deliveries are about, else the run itself."""

@@ -61,7 +61,9 @@ PROMPT_VARS = frozenset(
 RESULT_FILE_VARS = frozenset({"role", "step_id", "item_kind", "item_number", "item_head", "item_head_short"})
 # What a role's after_result command may name: those, and the result just written (the .md and its .md.json).
 AFTER_RESULT_VARS = RESULT_FILE_VARS | {"result_file", "result_json"}
-SETTING_SOURCES = ("user", "project", "local")
+# `user` is refused: the user settings file's `env` wins over the step's own environment (decision 0019, spike S4), so
+# a step that loads it could send its telemetry to a collector outside onloop.
+SETTING_SOURCES = ("project", "local")
 CHECK_NAMES = ("ruleset", "all")
 VERSIONS = ("updated", "head")
 REVIEW_STATES = ("APPROVED", "CHANGES_REQUESTED", "COMMENTED")
@@ -219,7 +221,9 @@ class RoleSpec:
     charter: pathlib.Path | None = None  # a file whose text the template may include as $charter
     priority_paths: tuple[str, ...] = ()  # pull requests whose changed paths match these go first
     priority_when: str = "all"  # all: every changed path matches one; any: at least one does
-    setting_sources: tuple[str, ...] = ("user",)  # Claude Code settings the step loads (`--setting-sources`)
+    setting_sources: tuple[str, ...] = (
+        "project",
+    )  # Claude Code settings the step loads (`--setting-sources`)
     result_schema: str | None = None  # a JSON Schema (as JSON text) for the step's structured result
     result_file: str | None = None  # where the supervisor writes the step's result, from beside the config
     result_base: pathlib.Path | None = None
@@ -313,8 +317,14 @@ class RoleSpec:
         sources_ = (
             _strs(raw.get("setting_sources"), f"{where}.setting_sources")
             if "setting_sources" in raw
-            else ("user",)
+            else ("project",)
         )
+        if "user" in sources_:
+            raise ConfigError(
+                f"{where}: setting_sources may not name user: the user settings file's env wins over the step's own, "
+                "so the step could send its telemetry to a collector outside onloop (decision 0019). Use project, "
+                "local, or both; the role table already gives the step its tools and model"
+            )
         if not sources_ or set(sources_) - set(SETTING_SOURCES):
             raise ConfigError(
                 f"{where}: setting_sources is a non-empty list from {', '.join(SETTING_SOURCES)}"

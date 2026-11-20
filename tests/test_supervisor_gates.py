@@ -348,10 +348,10 @@ def test_the_command_loads_only_the_role_settings_and_asks_for_the_schema(tmp_pa
         '{"type": "object", "properties": {"verdict": {"type": "string"}}}', encoding="utf-8"
     )
     cfg = config.from_dict(
-        gated_raw(result_schema="schema.json", setting_sources=["user", "local"]), tmp_path / "s.yaml"
+        gated_raw(result_schema="schema.json", setting_sources=["project", "local"]), tmp_path / "s.yaml"
     )
     argv = step.build_command(("claude",), cfg.roles[0], "u")
-    assert argv[argv.index("--setting-sources") + 1] == "user,local"
+    assert argv[argv.index("--setting-sources") + 1] == "project,local"
     assert json.loads(argv[argv.index("--json-schema") + 1])["properties"] == {"verdict": {"type": "string"}}
 
 
