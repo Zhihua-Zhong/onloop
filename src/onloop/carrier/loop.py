@@ -656,8 +656,14 @@ class Carrier:
                 return
             text = dlv.compose(led, claim.deliveries)
             argv = self.command(role)
+            # the step is logged with the lease, in the same hold of the writer: no extra wait before the spawn, while
+            # the lease has no holder pid yet
+            step_ = self._step(led, claim)
+            started = self._step_event("started", role, step_, run_id=claim.run_id)
+            if started:
+                led.append(started)
         rep.acted.append(claim.run_id)
-        self._run(role, claim, text, argv, rep)
+        self._run(role, claim, text, argv, rep, step_)
 
     def _held(self, role: CarriedRole, ids: list[str], rep: TickReport) -> None:
         first = self.held_since.setdefault(role.session_id, self.clock())
@@ -681,7 +687,13 @@ class Carrier:
                 )
 
     def _run(
-        self, role: CarriedRole, claim: lease.Claim, text: str, argv: list[str], rep: TickReport
+        self,
+        role: CarriedRole,
+        claim: lease.Claim,
+        text: str,
+        argv: list[str],
+        rep: TickReport,
+        step_: tuple[str, str],
     ) -> None:
         ttl = 2 * role.silence_s + 60
         last_log = [self.clock()]
@@ -720,11 +732,6 @@ class Carrier:
                 with self.w() as led:
                     lease.renew(led, claim.lease_id, role.session_id, ttl)
 
-        with self.w() as led:
-            step_ = self._step(led, claim)
-            started = self._step_event("started", role, step_, run_id=claim.run_id)
-            if started:
-                led.append(started)
         spec = runner.RunSpec(
             argv=argv,
             cwd=role.cwd,
