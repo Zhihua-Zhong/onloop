@@ -1,6 +1,6 @@
 # Decision 0019: replay, cost and live monitoring (R7a)
 
-- **Status:** Proposed, for the onloop lead's review
+- **Status:** Accepted on 2026-11-20, by the onloop lead, with the OCEL 2.0 mapping added to §5
 - **Date:** 2026-11-20
 - **Decided by:** the project lead's rulings of 2026-11-20 (R7 has two parts, and replay and monitoring come first;
   telemetry stays per process), with the onloop lead's acceptance of spikes S1, S2 and S3
@@ -120,6 +120,28 @@ Three spikes measured the ground (in the project's notes, not the repository):
     and the step (a task, a PR, a branch or a node).
   - `session.opened`, from `onloop open`: the role and `session.id`.
 - **Nothing identifying** is stored: the receiver's drop list applies before the event is written.
+
+**Each kind as OCEL 2.0** (Object-Centric Event Log 2.0, the process-mining exchange standard: <https://www.ocel-standard.org/>,
+specification at <https://arxiv.org/abs/2403.01975>). The project lead asked for this mapping as the first step toward
+a universal work interface for human and AI teams. It follows the project's mapping of the data contract to OCEL. So
+schema 10 needs no reshaping when human sources (a chat, a tracker, meeting minutes) arrive later: a person's work
+becomes the same events on the same object types.
+- **Object ids** are typed: `session:<id>`, `prompt:<id>`, `role:<id>`, `step:<kind>:<ref>`, `tool:<name>`.
+- **Events are atomic in OCEL.** So a duration is an attribute (`duration_ms`), and a step's span is its two events,
+  `step started` and `step ended`.
+- **The source `otel` is provenance,** not process data. It is an event attribute at most.
+
+| Kind | OCEL event type | Event attributes | E2O, object (qualifier) | O2O, object to object (qualifier) |
+|---|---|---|---|---|
+| `cost.request` | `model request` | `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `duration_ms`, `query_source`, `cost_usd` (an estimate) | session (`in session`), prompt (`for prompt`), role (`actor`) | session to role (`run by`) |
+| `turn.prompted` | `prompt received` | `length` | session (`in session`), prompt (`opens`) | prompt to session (`part of`) |
+| `tool.ended` | `tool call ended` | `success`, `duration_ms` | session (`in session`), prompt (`during`), tool (`called`) | |
+| `step.started`, `step.ended` | `step started`, `step ended` | | step (`started` / `ended`), session (`in session`), role (`actor`) | step to its task, PR, branch or node (`is`); step to session (`worked in`) |
+| `session.opened` | `session opened` | | session (`opened`), role (`for role`) | session to role (`run by`) |
+
+- **A person's step later** is the same `step` object, with the person's role (`kind=human`) as its `actor`.
+- **A tracker's issue or a chat thread** becomes an object that a step links to (`is`). So nothing in schema 10
+  changes shape.
 
 ### 6. Acceptance: a glance trial with three questions
 
