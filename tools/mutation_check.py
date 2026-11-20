@@ -2031,6 +2031,27 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
     ),
     (
+        "a product's HTML is served without its own sandbox, so it would run with onloopd's origin",
+        "src/onloop/daemon/server.py",
+        '        self.send_header("Content-Security-Policy", products.SANDBOX)\n',
+        "",
+        ["tests/test_products.py::test_onloopd_serves_a_products_html_in_its_own_sandbox"],
+    ),
+    (
+        "a step's products include commits after the cursor",
+        "src/onloop/report/products.py",
+        "            for c in _commits(repo, branch, None, at):\n",
+        "            for c in _commits(repo, branch, None, ev.now_ts()):\n",
+        ["tests/test_products.py::test_a_node_steps_products_are_what_its_commits_changed_as_of_the_cursor"],
+    ),
+    (
+        "a markdown product's javascript link stays a link",
+        "web/src/lib/markdown.ts",
+        "      if (SAFE_HREF.test(m[2])) out.push",
+        "      if (true) out.push",
+        ["tests/test_web_units.py::test_a_markdown_product_is_read_as_a_tree_never_as_html"],
+    ),
+    (
         "the person's wait counts the window after now, where nothing is known",
         "src/onloop/derive.py",
         "    hi = min(end, now)\n",

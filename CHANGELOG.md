@@ -23,6 +23,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Products at the cursor** (decision 0019, a4): a node or branch step on the Replay view opens what it produced as
+  of the cursor: the files its commits changed, each at its latest commit then, read from git in a repository onloop
+  recorded. Markdown is rendered from a tree (its raw HTML stays text), images show, and HTML shows in a sandboxed
+  frame; onloopd serves a product with `Content-Security-Policy: sandbox`, so it never has onloopd's origin and no
+  script runs. `GET /api/products` and `GET /api/products/file`.
 - **Your wait made visible** (decision 0019, a7): Now says how many items wait on you (the same count as its list),
   how long the oldest has waited, and how much of the last day anything waited on you, with a link to Replay.
   Replay's "Where the time went" starts with the same for its window. `derive.your_wait` is the one derivation; the

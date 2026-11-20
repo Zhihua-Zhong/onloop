@@ -55,3 +55,11 @@ def test_the_replays_index_gives_the_ledgers_own_frames_in_the_page():
     under a millisecond at 100 000 requests."""
     r = _node_test("replay.test.ts")
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_markdown_product_is_read_as_a_tree_never_as_html():
+    """Decision 0019, a4: a step's Markdown is rendered from a tree; its raw HTML stays text and only http links are
+    links."""
+    r = _node_test("markdown.test.ts")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]

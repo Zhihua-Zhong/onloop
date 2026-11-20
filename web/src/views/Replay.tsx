@@ -6,6 +6,7 @@ import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
 import { breakdown, buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
+import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -147,6 +148,7 @@ function Player(p: {
   });
   const [playing, setPlaying] = useState(false);
   const table = params.get("table") === "1";
+  const [picked, setPicked] = useState<string | null>(null); // a step whose products are shown (a4)
   const frameMs = useRef(0);
   const box = useRef<HTMLDivElement>(null);
 
@@ -267,9 +269,10 @@ function Player(p: {
       />
       {live && <Working working={p.working} />}
       <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
-      {table ? <AtCursor frame={frame} ix={ix} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
-      {!table && <AtCursor frame={frame} ix={ix} compact />}
-      <WhereItWent bd={bd} hours={hours} wait={p.wait} />
+      {picked && <Products step={picked} at={t} onClose={() => setPicked(null)} />}
+      {table ? <AtCursor frame={frame} ix={ix} onPick={setPicked} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
+      {!table && <AtCursor frame={frame} ix={ix} compact onPick={setPicked} />}
+      <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={setPicked} />
     </div>
   );
 }
@@ -493,7 +496,7 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
   );
 }
 
-function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: ReplayIndex; compact?: boolean }) {
+function AtCursor({ frame, ix, compact = false, onPick }: { frame: LaneFrame[]; ix: ReplayIndex; compact?: boolean; onPick: (s: string) => void }) {
   const rows = frame.map((f, i) => ({ f, i })).filter(({ i }) => !compact || isActive(ix, i));
   return (
     <div className="mt-4 overflow-x-auto rounded-ui border border-line bg-surface" data-testid={compact ? "at-cursor" : "replay-table"}>
@@ -538,7 +541,17 @@ function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: Repl
               ))}
               <td className="px-3 py-1.5 text-right tabular-nums">{f.tokens ? tokens(f.tokens) : <span className="text-muted">—</span>}</td>
               <td className="px-3 py-1.5 text-right tabular-nums text-muted">{f.cache_read ? tokens(f.cache_read) : "—"}</td>
-              <td className="px-3 py-1.5 font-mono text-[12px]">{f.step >= 0 ? ix.steps[f.step].replace(/^step:/, "") : f.requests ? <span className="font-sans text-muted">between steps</span> : ""}</td>
+              <td className="px-3 py-1.5 font-mono text-[12px]">
+                {f.step >= 0 ? (
+                  <button type="button" className="text-accent hover:underline" onClick={() => onPick(ix.steps[f.step])} title="What this step produced, as of the cursor">
+                    {ix.steps[f.step].replace(/^step:/, "")}
+                  </button>
+                ) : f.requests ? (
+                  <span className="font-sans text-muted">between steps</span>
+                ) : (
+                  ""
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -547,7 +560,7 @@ function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: Repl
   );
 }
 
-function WhereItWent({ bd, hours, wait }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null }) {
+function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null; onPick: (s: string) => void }) {
   const lanes = bd.filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1));
   const busiest = Math.max(1, ...lanes.map((L) => KINDS.reduce((s, k) => s + L.time_s[k], 0)));
   const span = hours >= 24 ? `${hours / 24} day${hours > 24 ? "s" : ""}` : `${hours} h`;
@@ -612,7 +625,9 @@ function WhereItWent({ bd, hours, wait }: { bd: LaneBreakdown[]; hours: number; 
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[7.75rem] max-sm:pl-0">
                     {L.steps.map((c) => (
                       <span key={`${c.step}|${c.by}`} className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px]" data-testid="step-cost" data-by={c.by}>
-                        <span className="font-mono">{c.step.replace(/^step:/, "")}</span>
+                        <button type="button" className="font-mono text-accent hover:underline" onClick={() => onPick(c.step)} title="What this step produced, as of the cursor">
+                          {c.step.replace(/^step:/, "")}
+                        </button>
                         <span className="tabular-nums">{tokens(c.tokens)}</span>
                         <span className={cn("rounded px-1 text-[11px]", c.by === "rule" ? "bg-state-human/15 text-fg" : "bg-raised text-muted")} title={c.by === "rule" ? "No step was recorded on the session; the next commit on its branch carries this node" : "onloop recorded this step when it started the work"}>
                           {c.by === "rule" ? "attributed by rule" : "recorded"}
@@ -661,5 +676,178 @@ function Working({ working }: { working: WorkingNow[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+interface ProductFile {
+  repo: number;
+  path: string;
+  sha: string;
+  t_ms: number;
+  type: string;
+  deleted: boolean;
+}
+interface ProductsModel {
+  step: string;
+  at: string;
+  repos: string[];
+  commits: { sha: string; t_ms: number; repo: number }[];
+  files: ProductFile[];
+}
+
+const fileUrl = (f: ProductFile) => `/api/products/file?repo=${f.repo}&sha=${f.sha}&path=${encodeURIComponent(f.path)}`;
+
+// What a step produced, as of the cursor (decision 0019, a4): the files its commits changed, each at its latest commit
+// then. HTML shows in a sandboxed frame (and onloopd serves it with its own sandbox), Markdown as text formatting
+// only, images as images, anything else as text.
+function Products({ step, at, onClose }: { step: string; at: number; onClose: () => void }) {
+  const minute = Math.floor(at / 60_000) * 60_000;
+  const kindOk = /^step:(node|branch):/.test(step);
+  const q = useQuery({
+    queryKey: ["products", step, minute],
+    queryFn: () => get<ProductsModel>(`/api/products?step=${encodeURIComponent(step)}&at=${encodeURIComponent(new Date(minute + 59_999).toISOString())}`),
+    enabled: kindOk,
+  });
+  const [open, setOpen] = useState<string | null>(null);
+  const files = q.data?.files.filter((f) => !f.deleted) ?? [];
+  const shown = files.find((f) => `${f.repo}|${f.path}` === open) ?? null;
+  return (
+    <section className="mt-4 rounded-ui border border-l-[3px] border-line border-l-accent bg-surface" data-testid="products" aria-label={`Products of ${step}`}>
+      <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line px-3 py-2">
+        <h2 className="text-[15px] font-semibold">
+          What <span className="font-mono text-[14px]">{step.replace(/^step:/, "")}</span> produced
+        </h2>
+        <p className="text-[12px] text-muted">as of the cursor ({stamp(at, true)}): each file at its latest commit then</p>
+        <button type="button" onClick={onClose} className="ml-auto rounded-md px-2 py-0.5 text-[12.5px] text-muted hover:bg-raised hover:text-fg" data-testid="products-close">
+          Close
+        </button>
+      </header>
+      {!kindOk ? (
+        <p className="px-3 py-3 text-[13px] text-muted">Products are read for a node or a branch step, from the commits that carry it. A task or a PR step has none here yet.</p>
+      ) : q.isPending ? (
+        <div className="px-3 py-3">
+          <Loading what="the products" />
+        </div>
+      ) : q.isError ? (
+        <div className="px-3 py-3">
+          <Problem error={q.error} />
+        </div>
+      ) : files.length === 0 ? (
+        <p className="px-3 py-3 text-[13px] text-muted" data-testid="products-none">
+          No commit of this step at or before the cursor{q.data.commits.length ? "" : ", in the repositories onloop recorded"}.
+        </p>
+      ) : (
+        <div className="grid gap-0 md:grid-cols-[minmax(220px,1fr)_3fr]">
+          <ul className="border-b border-line py-1 md:border-b-0 md:border-r" data-testid="product-files">
+            {files.map((f) => {
+              const key = `${f.repo}|${f.path}`;
+              return (
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(key)}
+                    aria-pressed={open === key}
+                    className={cn("block w-full truncate px-3 py-1 text-left font-mono text-[12.5px]", open === key ? "bg-accent/10 text-accent" : "hover:bg-raised")}
+                    title={`${q.data.repos[f.repo]}: ${f.path} at ${f.sha.slice(0, 8)}, ${stamp(f.t_ms, true)}`}
+                    data-testid="product-file"
+                  >
+                    {f.path}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="min-h-[160px] p-3" data-testid="product-view">
+            {shown ? <Preview f={shown} /> : <p className="text-[13px] text-muted">Choose a file to see it as it was at the cursor.</p>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Preview({ f }: { f: ProductFile }) {
+  const url = fileUrl(f);
+  const textual = !f.type.startsWith("image/") && !f.type.startsWith("text/html");
+  const q = useQuery({ queryKey: ["product-file", url], queryFn: () => fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`onloopd answered ${r.status}`)))), enabled: textual });
+  if (f.type.startsWith("text/html")) {
+    // an empty sandbox: no scripts, no forms, an opaque origin; onloopd's answer carries its own sandbox too
+    return (
+      <div className="space-y-1.5">
+        <iframe sandbox="" src={url} title={f.path} className="h-[460px] w-full rounded border border-line bg-white" data-testid="product-html" />
+        <p className="text-[12px] text-muted">
+          Shown in a sandbox: no script runs, and it never has onloop's origin.{" "}
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline" data-testid="product-open">
+            Open it on its own
+          </a>{" "}
+          (still sandboxed).
+        </p>
+      </div>
+    );
+  }
+  if (f.type.startsWith("image/")) return <img src={url} alt={f.path} className="max-h-[460px] max-w-full" data-testid="product-image" />;
+  if (q.isPending) return <Loading what={f.path} />;
+  if (q.isError) return <Problem error={q.error} />;
+  if (f.type.startsWith("text/markdown")) return <Md text={q.data} />;
+  return (
+    <pre className="max-h-[460px] overflow-auto whitespace-pre-wrap rounded bg-raised p-2 font-mono text-[12px]" data-testid="product-text">
+      {q.data}
+    </pre>
+  );
+}
+
+function Md({ text }: { text: string }) {
+  return (
+    <div className="max-h-[460px] space-y-2 overflow-auto text-[13.5px] leading-relaxed" data-testid="product-markdown">
+      {parseMd(text).map((b, i) => (
+        <MdBlock key={i} b={b} />
+      ))}
+    </div>
+  );
+}
+
+function MdBlock({ b }: { b: Block }) {
+  if (b.t === "h") {
+    const size = ["text-[18px]", "text-[16px]", "text-[15px]", "text-[14px]", "text-[13.5px]", "text-[13.5px]"][b.level - 1];
+    return (
+      <p role="heading" aria-level={b.level} className={cn("font-semibold", size)}>
+        <MdInline c={b.c} />
+      </p>
+    );
+  }
+  if (b.t === "p") return <p><MdInline c={b.c} /></p>;
+  if (b.t === "quote") return <blockquote className="border-l-2 border-line pl-3 text-muted"><MdInline c={b.c} /></blockquote>;
+  if (b.t === "pre") return <pre className="overflow-auto rounded bg-raised p-2 font-mono text-[12px]">{b.v}</pre>;
+  const L = b.t === "ul" ? "ul" : "ol";
+  return (
+    <L className={cn("pl-5", L === "ul" ? "list-disc" : "list-decimal")}>
+      {b.items.map((it, i) => (
+        <li key={i}>
+          <MdInline c={it} />
+        </li>
+      ))}
+    </L>
+  );
+}
+
+function MdInline({ c }: { c: Inline[] }) {
+  return (
+    <>
+      {c.map((n, i) =>
+        n.t === "text" ? (
+          <span key={i}>{n.v}</span>
+        ) : n.t === "code" ? (
+          <code key={i} className="rounded bg-raised px-1 font-mono text-[12px]">{n.v}</code>
+        ) : n.t === "strong" ? (
+          <strong key={i}><MdInline c={n.c} /></strong>
+        ) : n.t === "em" ? (
+          <em key={i}><MdInline c={n.c} /></em>
+        ) : (
+          <a key={i} href={n.href} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+            <MdInline c={n.c} />
+          </a>
+        ),
+      )}
+    </>
   );
 }

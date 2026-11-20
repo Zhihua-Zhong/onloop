@@ -762,9 +762,38 @@ def _tail(run: int) -> str:
 DEMO_REPO = "demo-repo"  # a made-up repository next to the demo ledger, for rule E's clause 2
 
 
+# The demo repository's two commits: made-up product files, one of each kind the Replay view shows (decision 0019, a4).
+_DEMO_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000100000001008020000009091683600000019494441"
+    "5478da63fccf801f30e1940f48b5404554a90100e1b21fe1e2c66b680000000049454e44ae426082"
+)
+_DEMO_FILES = (
+    (
+        35 * MIN,
+        "the date check, a first cut",
+        {
+            "docs/date-check.md": b"# The date check\n\nA first cut. It reads **one** date per row.\n\n- the format\n"
+            b"- the range\n\n```\ncheck(row.date)\n```\n",
+        },
+    ),
+    (
+        23 * MIN + 30,
+        "the date check\n\nNode: n-date",
+        {
+            "docs/date-check.md": b"# The date check\n\nIt reads every date in a row, and says which one is wrong.\n\n"
+            b"- the format\n- the range\n- the order\n\n> Made up for the demo.\n",
+            "preview/date-check.html": b"<!doctype html><title>Date check</title><h1>Date check</h1>"
+            b"<p>Two rows, one wrong date.</p><script>document.body.innerHTML = 'a script ran'</script>",
+            "preview/badge.png": _DEMO_PNG,
+        },
+    ),
+)
+
+
 def _demo_repo(path: pathlib.Path, now: str) -> pathlib.Path | None:
-    """A tiny git repository with branch `feat/date-check`: a first commit, then one with `Node: n-date` 23.5 minutes
-    before now, so the lead's requests after its recorded step are attributed by rule, and its last one is not."""
+    """A tiny git repository with branch `feat/date-check`: a first commit inside the lead's recorded step, then one
+    with `Node: n-date` 23.5 minutes before now, so the lead's requests after its step are attributed by rule and its
+    last one is not. Its files are the products the Replay view shows."""
     import os
     import subprocess
 
@@ -781,13 +810,12 @@ def _demo_repo(path: pathlib.Path, now: str) -> pathlib.Path | None:
         subprocess.run(
             ["git", "-C", str(repo), "init", "-q", "-b", "feat/date-check"], check=True, capture_output=True
         )
-        for ago, msg in (
-            (2 * HOUR, "the date check, a first cut"),
-            (23 * MIN + 30, "the date check\n\nNode: n-date"),
-        ):
+        for ago, msg, files in _DEMO_FILES:
             when = ev.shift_ts(now, -ago).replace(".000Z", "+00:00").replace("Z", "+00:00")
-            (repo / "notes.txt").write_text(msg, encoding="utf-8")
-            subprocess.run(["git", "-C", str(repo), "add", "notes.txt"], check=True, capture_output=True)
+            for name, data in files.items():
+                (repo / name).parent.mkdir(parents=True, exist_ok=True)
+                (repo / name).write_bytes(data)
+                subprocess.run(["git", "-C", str(repo), "add", name], check=True, capture_output=True)
             subprocess.run(
                 ["git", "-C", str(repo), "commit", "-q", "-m", msg],
                 check=True,
@@ -795,7 +823,7 @@ def _demo_repo(path: pathlib.Path, now: str) -> pathlib.Path | None:
                 env={**env, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when},
             )
     except (OSError, subprocess.CalledProcessError):
-        return None  # no git: the requests stay between steps
+        return None  # no git: the requests stay between steps, and no step has products
     return repo
 
 
@@ -804,13 +832,20 @@ def _telemetry(s: _Story) -> None:
     person opened with `onloop open`, each request as `cost.request`, and the steps onloop recorded. Made up."""
 
     def step(
-        ago: float, which: str, role: str, sid: str, kind: str, ref: str, source: str = "carrier"
+        ago: float,
+        which: str,
+        role: str,
+        sid: str,
+        kind: str,
+        ref: str,
+        source: str = "carrier",
+        **more: object,
     ) -> None:
         s.event(
             ago,
             f"step.{which}",
             f"step:{kind}:{ref}",
-            {"role": role, "session_id": sid, "step": {"kind": kind, "ref": ref}},
+            {"role": role, "session_id": sid, "step": {"kind": kind, "ref": ref}, **more},
             source=source,
             actor=role,
         )
@@ -864,7 +899,17 @@ def _telemetry(s: _Story) -> None:
         source="cli",
         actor="lead",
     )
-    step(40 * MIN, "started", "lead", "s-lead-open", "branch", "feat/date-check", source="cli")
+    step(
+        40 * MIN,
+        "started",
+        "lead",
+        "s-lead-open",
+        "branch",
+        "feat/date-check",
+        source="cli",
+        repo=s.repo,
+        branch="feat/date-check",
+    )
     requests("lead", "s-lead-open", 39 * MIN, 31 * MIN, 45, 900)
     step(30 * MIN, "ended", "lead", "s-lead-open", "branch", "feat/date-check", source="cli")
     requests("lead", "s-lead-open", 25 * MIN, 23 * MIN, 60, 300)  # after the step: between steps

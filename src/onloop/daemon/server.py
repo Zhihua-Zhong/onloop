@@ -33,6 +33,9 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
     GET /api/replay             the replay's window (decision 0019): ?from=&to= (at most 31 days), ?lanes=a,b; each
                                 lane at `from` and at `to`, the state changes and model requests inside, in columns
+    GET /api/products           what a step produced as of a moment (decision 0019, a4): ?step=step:node:<id> or
+                                step:branch:<name>, ?at=; its commits and changed files, from recorded repositories
+    GET /api/products/file      one of those files (?repo=&sha=&path=), in its own sandbox (Content-Security-Policy)
     GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
@@ -501,6 +504,32 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 from ..report import activity
 
                 body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
+            elif url.path == "/api/products":
+                from ..report import products
+
+                try:
+                    body = products.products(reader, query.get("step", [None])[0], query.get("at", [None])[0])
+                except views.QueryError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
+            elif url.path == "/api/products/file":
+                from ..report import products
+
+                try:
+                    data, ctype = products.file(
+                        reader,
+                        query.get("repo", [None])[0],
+                        query.get("sha", [None])[0],
+                        query.get("path", [None])[0],
+                    )
+                except views.QueryError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
+                except LookupError as e:
+                    self._send_json(404, {"error": str(e)}, head_only)
+                    return
+                self._send_product(data, ctype, head_only)
+                return
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
             elif url.path == "/api/replay":
@@ -569,6 +598,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(500, {"error": f"{type(e).__name__}: {e}"[:300]}, head_only)
             return
         self._send_json(200, body, head_only)
+
+    def _send_product(self, data: bytes, ctype: str, head_only: bool) -> None:
+        """A step's product file (decision 0019, a4): its own sandbox, so HTML never runs with onloopd's origin and
+        never runs a script; only this page may frame it."""
+        from ..report import products
+
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", products.SANDBOX)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
 
     def _static(self, path: str, head_only: bool) -> None:
         found = ui.resolve(self.server.ui_dir, path)
