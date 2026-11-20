@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .. import events as ev
+from .. import telemetry
 from ..overlay.ledger import Ledger
 from ..supervisor import step
 from . import deliveries as dlv
@@ -200,6 +201,51 @@ class Carrier:
         if not path.exists() or path.read_text(encoding="utf-8") != text:
             path.write_text(text, encoding="utf-8", newline="\n")
         return path
+
+    def child_env(self, role: CarriedRole) -> dict[str, str]:
+        """A carried turn's environment (decision 0019): onloopd's own, less the CLAUDE*, ANTHROPIC* and OTEL_*
+        variables, plus onloop's OTel environment, so the turn's telemetry goes to this onloopd only. Without onloopd's
+        port and token it has no OTel variable at all, and with `--setting-sources project` no OTel key loads: the turn
+        exports nothing."""
+        base = telemetry.without(guards.child_env(self.environ))
+        try:
+            beat = json.loads((self.state / "onloopd.heartbeat.json").read_text(encoding="utf-8"))
+            port = int(beat["port"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return base
+        from ..daemon import token as token_mod
+
+        secret = token_mod.read(self.state)
+        if not secret:
+            return base
+        try:
+            return telemetry.env(base, port=port, token=secret, role=role.name)
+        except ValueError:
+            return base
+
+    def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str]:
+        """What a carried turn works on: the one item its deliveries are about, else the run itself."""
+        marks = ",".join("?" * len(claim.deliveries))
+        rows = led.select(
+            f"SELECT DISTINCT item_id FROM deliveries WHERE id IN ({marks}) AND item_id IS NOT NULL",
+            tuple(claim.deliveries),
+        )
+        if len(rows) == 1:
+            try:
+                return telemetry.parse_step(f"item:{rows[0]['item_id']}")
+            except ValueError:
+                pass
+        return ("run", claim.run_id)
+
+    def _step_event(self, which: str, role: CarriedRole, step: tuple[str, str], **more: Any) -> dict | None:
+        try:
+            return telemetry.step_event(
+                which, source="carrier", role=role.name, session_id=role.session_id, step=step, **more
+            )
+        except ValueError:
+            return (
+                None  # a session id or step that is not an OCEL object id: the run is still logged as run.*
+            )
 
     def command(self, role: CarriedRole) -> list[str]:
         refuse_shell(role.name, role.tools, role.allowed_tools)  # again, before every spawn
@@ -688,10 +734,15 @@ class Carrier:
                 with self.w() as led:
                     lease.renew(led, claim.lease_id, role.session_id, ttl)
 
+        with self.w() as led:
+            step_ = self._step(led, claim)
+            started = self._step_event("started", role, step_, run_id=claim.run_id)
+            if started:
+                led.append(started)
         spec = runner.RunSpec(
             argv=argv,
             cwd=role.cwd,
-            env=guards.child_env(self.environ),
+            env=self.child_env(role),
             message=text,
             wall_s=role.wall_s,
             silence_s=role.silence_s,
@@ -783,6 +834,9 @@ class Carrier:
                     },
                 )
             )
+            ended = self._step_event("ended", role, step_, run_id=claim.run_id, status=status)
+            if ended:
+                led.append(ended)
             lease.release(led, claim.lease_id, role.session_id, status)
             self._after(led, role, claim.run_id, status, use, res)
 

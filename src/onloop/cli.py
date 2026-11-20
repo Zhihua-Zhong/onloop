@@ -955,6 +955,95 @@ def cmd_say(args) -> int:
     return 0
 
 
+def open_plan(args, environ: dict | None = None) -> tuple[list[str], dict[str, str], str, str, tuple | None]:
+    """What `onloop open` would run: (argv, env, cwd, session id, step). Raises SystemExit(2) with a reason for anything
+    it refuses: a metered key, a bad role or step, or no onloopd next to the ledger."""
+    import shutil
+    import uuid
+
+    from . import telemetry
+    from .carrier import guards
+    from .carrier.config import CarrierConfig
+    from .daemon import main as daemon
+    from .daemon import token as token_mod
+
+    environ = dict(os.environ if environ is None else environ)
+    try:
+        guards.refuse_metered(environ)
+    except guards.MeteredKeyRefused as e:
+        _err(f"onloop: {str(e).replace('the carrier does not start', 'onloop open does not start')}")
+        raise SystemExit(2) from e
+    try:
+        step = telemetry.parse_step(args.step) if args.step else None
+    except ValueError as e:
+        _err(f"onloop: {e}")
+        raise SystemExit(2) from e
+    state = _ledger_path(args).resolve().parent
+    try:
+        port = int(json.loads((state / daemon.HEARTBEAT_FILE).read_text(encoding="utf-8"))["port"])
+    except (OSError, ValueError, KeyError) as e:
+        port = None
+        why = f"{type(e).__name__}"
+    secret = token_mod.read(state)
+    if port is None or not secret:
+        _err(
+            f"onloop: onloopd is not running next to {state} (no heartbeat or token{f': {why}' if port is None else ''}). "
+            "Start it with `onloop daemon run`: a session onloop opens sends its telemetry there"
+        )
+        raise SystemExit(2)
+    try:
+        env = telemetry.env(guards.child_env(environ), port=port, token=secret, role=args.role)
+    except ValueError as e:
+        _err(f"onloop: {e}")
+        raise SystemExit(2) from e
+    claude = args.claude or CarrierConfig().claude[0]
+    sid = str(uuid.uuid4())
+    argv = [
+        shutil.which(claude) or claude,
+        "--setting-sources",
+        telemetry.SETTING_SOURCES,
+        "--session-id",
+        sid,
+    ]
+    return argv, env, str(pathlib.Path(args.cwd or os.getcwd()).resolve()), sid, step
+
+
+def cmd_open(args) -> int:
+    """`onloop open <role>` (decision 0019, a8): the person's own interactive Claude Code session for an onloop role,
+    measured like the sessions onloop starts. It runs with `--setting-sources project,local`, so the user file and its
+    OTel keys never load, and with onloop's own OTel environment, so the session's telemetry goes to onloopd only. It
+    reports the session (and its step, with --step) to onloopd before it starts, and the step's end when it exits."""
+    import subprocess
+
+    argv, env, cwd, sid, step = open_plan(args)
+    state = _ledger_path(args).resolve().parent
+    if args.dry_run:
+        _say(" ".join(argv))
+        _say(f"cwd {cwd}")
+        for k in sorted(k for k in env if k.startswith("OTEL_") or k == "CLAUDE_CODE_ENABLE_TELEMETRY"):
+            v = "Authorization=Bearer <onloopd's token>" if k == "OTEL_EXPORTER_OTLP_HEADERS" else env[k]
+            _say(f"{k}={v}")
+        return 0
+    body = {"role": args.role, "session_id": sid, "cwd": cwd}
+    if step:
+        body["step"] = f"{step[0]}:{step[1]}"
+    code, out = _post_onloopd(state, "/sessions/opened", body)
+    if code != 200:
+        _err(f"onloop: onloopd did not take the session's start, so nothing is opened: {out.get('error')}")
+        return 2
+    _say(f"onloop: opening {args.role}'s session {sid}" + (f" on {body['step']}" if step else ""))
+    try:
+        rc = subprocess.call(argv, env=env, cwd=cwd)  # noqa: S603 - a fixed argv, no shell
+    except OSError as e:
+        rc = 127
+        _err(f"onloop: Claude Code did not start ({argv[0]}): {e}")
+    end = {k: body[k] for k in ("role", "session_id", "step") if k in body}
+    code, out = _post_onloopd(state, "/sessions/ended", {**end, "exit_code": rc})
+    if code != 200:
+        _err(f"onloop: warning: onloopd did not take the session's end: {out.get('error')}")
+    return rc
+
+
 def _task_write(args, action: str, body: dict) -> tuple[int, dict]:
     """A task write (decision 0013): through the running onloopd with its token, or, when none runs, straight into the
     ledger. Either way it is the same checks and the same event. (0, answer) or (2, error)."""
@@ -1718,6 +1807,27 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(fn=cmd_say)
     sp.add_argument("role", help="the role name")
     sp.add_argument("text", help="the message, or - to read it from stdin")
+    sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    sp = sub.add_parser(
+        "open",
+        help="open your own Claude Code session for a role, measured by onloopd (decision 0019)",
+        description="open your own interactive Claude Code session for an onloop role. It runs with "
+        "--setting-sources project,local and onloop's own OTel environment, so its telemetry goes to onloopd only, "
+        "with the identity attributes dropped there. The user settings file is not loaded for it.",
+    )
+    sp.set_defaults(fn=cmd_open)
+    sp.add_argument("role", help="the role name")
+    sp.add_argument(
+        "--step", help="what the session works on, KIND:REF: task:t-12, pr:7, branch:feat/x, node:a1"
+    )
+    sp.add_argument("--cwd", help="the folder to open it in (default: the current one)")
+    sp.add_argument(
+        "--claude", help="the command that runs Claude Code (default: claude.cmd on Windows, else claude)"
+    )
+    sp.add_argument(
+        "--dry-run", action="store_true", help="print the command and the OTel environment; start nothing"
+    )
     sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
 
     sp = sub.add_parser(

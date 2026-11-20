@@ -51,6 +51,7 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     POST /ui/visits             digest). Each is evidence from a local user, not verified, never an approval
     POST /v1/logs, /v1/metrics  Claude Code's own telemetry, OTLP/HTTP JSON (`otlp.py`, decision 0019): identity
                                 dropped on arrival; model requests, prompts and tool calls kept as `otel` events
+    POST /sessions/opened, /ended  what `onloop open <role>` reports: the session and its step (`sessions_route.py`)
     GET /, GET /assets/...      the UI's built files (`ui.py`), with a strict Content-Security-Policy
 """
 
@@ -82,7 +83,14 @@ EVENTS_PAGE = 500
 STREAM_POLL_S = 1.0
 STREAM_KEEPALIVE_S = 15.0
 MAX_BODY = 1024 * 1024
-WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/", "/tasks/", "/v1/")  # /v1/: OTLP (decision 0019)
+WRITE_PREFIXES = (
+    "/hooks/",
+    "/sources/",
+    "/messages/",
+    "/tasks/",
+    "/v1/",
+    "/sessions/",
+)  # /v1/, /sessions/: 0019
 UI_WRITE = "/ui/messages"
 # the page's task writes (decision 0013), each evidence and none authority: -> the /tasks/ action they become
 UI_TASK_WRITES = {"/ui/tasks/resolve": "resolve", "/ui/tasks/keep": "keep", "/ui/visits": "visit"}

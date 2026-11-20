@@ -20,6 +20,14 @@ All notable changes to this project are recorded here. The format follows
   arrival. A model request, a prompt and a tool call become `cost.request`, `turn.prompted` and `tool.ended` events,
   each with only its named fields: tokens, model and duration, a prompt's length but never its text, a tool's name and
   result but never its parameters. Metrics are answered and stored nowhere.
+- **`onloop open <role>`** (decision 0019): your own interactive Claude Code session for an onloop role, measured like
+  the sessions onloop starts. It runs with `--setting-sources project,local`, so the user settings file and its OTel
+  keys are not loaded for it, and with onloop's own OTel environment, so its telemetry goes to onloopd only.
+  `--step KIND:REF` names what it works on (`task:`, `pr:`, `branch:`, `node:`); `--dry-run` prints the command.
+  Its start and end are `session.opened`, `step.started` and `step.ended` events.
+- **A carried turn is a step:** the carrier logs `step.started` and `step.ended` around each run, on the one item its
+  deliveries are about, else the run. Its turn now runs with onloop's OTel environment, and never with an OTel
+  variable inherited from onloopd's own environment.
 
 ## [0.5.0] - 2026-11-20
 

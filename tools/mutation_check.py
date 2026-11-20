@@ -2003,6 +2003,36 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a session onloop starts keeps the OTel variables it inherited, so it could export to another collector",
+        "src/onloop/telemetry.py",
+        "    out = without(base)\n",
+        "    out = dict(base)\n",
+        ["tests/test_onloop_open.py::test_a_sessions_otel_environment_is_onloops_own_and_nothing_inherited"],
+    ),
+    (
+        "onloop open loads the user settings file, and with it the global OTel keys",
+        "src/onloop/telemetry.py",
+        'SETTING_SOURCES = "project,local"',
+        'SETTING_SOURCES = "user,project,local"',
+        [
+            "tests/test_onloop_open.py::test_onloop_open_runs_with_project_and_local_settings_and_onloops_environment"
+        ],
+    ),
+    (
+        "a carried turn keeps onloopd's own OTel variables when onloopd's address is unknown",
+        "src/onloop/carrier/loop.py",
+        "        base = telemetry.without(guards.child_env(self.environ))\n",
+        "        base = guards.child_env(self.environ)\n",
+        ["tests/test_onloop_open.py::test_a_carried_turn_gets_onloops_otel_environment_and_none_inherited"],
+    ),
+    (
+        "onloop open --dry-run prints onloopd's token",
+        "src/onloop/cli.py",
+        '"Authorization=Bearer <onloopd\'s token>" if k == "OTEL_EXPORTER_OTLP_HEADERS" else env[k]',
+        "env[k]",
+        ["tests/test_onloop_open.py::test_onloop_open_dry_run_prints_the_command_and_never_the_token"],
+    ),
+    (
         "the OTLP receiver reads a logs export before dropping the identity attributes",
         "src/onloop/daemon/otlp.py",
         "    scrub(body)\n    out: list[dict[str, Any]] = []\n",

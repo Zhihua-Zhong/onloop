@@ -20,6 +20,7 @@ LAYERS = {
         "testing",
         "localday",
         "plaintext",
+        "telemetry",
     },
     1: {
         "ledger",
