@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneFrame, type ReplayIndex, type ReplayWindow } from "@/lib/replay";
+import { breakdown, buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow } from "@/lib/replay";
 import { Loading, Problem } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -92,12 +92,13 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
     staleTime: Infinity,
   });
   const ix = useIndex(q.data);
+  const bd = useMemo(() => (q.data ? breakdown(q.data) : []), [q.data]);
   if (q.isPending || (q.data && !ix)) return <Loading what="the replay" />;
   if (q.isError) return <Problem error={q.error} />;
-  return <Player ix={ix!} hours={hours} params={params} />;
+  return <Player ix={ix!} bd={bd} hours={hours} params={params} />;
 }
 
-function Player({ ix, hours, params }: { ix: ReplayIndex; hours: number; params: URLSearchParams }) {
+function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[]; hours: number; params: URLSearchParams }) {
   const initial = Number(params.get("t"));
   const [t, setT] = useState(() => (initial >= ix.from && initial <= ix.to ? initial : ix.known));
   const [speed, setSpeed] = useState<number>(() => {
@@ -221,6 +222,7 @@ function Player({ ix, hours, params }: { ix: ReplayIndex; hours: number; params:
       <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
       {table ? <AtCursor frame={frame} ix={ix} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
       {!table && <AtCursor frame={frame} ix={ix} compact />}
+      <WhereItWent bd={bd} hours={hours} />
     </div>
   );
 }
@@ -482,5 +484,78 @@ function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: Repl
         </tbody>
       </table>
     </div>
+  );
+}
+
+function WhereItWent({ bd, hours }: { bd: LaneBreakdown[]; hours: number }) {
+  const lanes = bd.filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1));
+  const busiest = Math.max(1, ...lanes.map((L) => KINDS.reduce((s, k) => s + L.time_s[k], 0)));
+  const span = hours >= 24 ? `${hours / 24} day${hours > 24 ? "s" : ""}` : `${hours} h`;
+  return (
+    <section className="mt-4 rounded-ui border border-line bg-surface" data-testid="breakdown" aria-label="Where the time went">
+      <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line px-3 py-2">
+        <h2 className="text-[15px] font-semibold">Where the time went</h2>
+        <p className="text-[12px] text-muted">
+          In the whole window ({span}), not at the cursor. Tokens are input, output and cache creation; cache reads are apart.
+        </p>
+      </header>
+      {lanes.length === 0 ? (
+        <p className="px-3 py-3 text-[13px] text-muted">Nothing in this window.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {lanes.map((L) => {
+            const total = KINDS.reduce((s, k) => s + L.time_s[k], 0);
+            const share = L.tokens ? Math.round((100 * L.between.tokens) / L.tokens) : 0;
+            return (
+              <li key={L.name} className="px-3 py-2.5" data-testid="breakdown-lane" data-lane={L.name}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="w-28 shrink-0 text-[13px] font-medium">{L.name}</span>
+                  <span className="flex h-3 min-w-[120px] flex-1 overflow-hidden rounded-sm bg-raised" style={{ maxWidth: `${Math.max(4, (100 * total) / busiest)}%` }} aria-hidden>
+                    {KINDS.map((k) =>
+                      L.time_s[k] > 0 ? (
+                        <span key={k} className={cn("h-full", KIND_DOT[k])} style={{ width: `${(100 * L.time_s[k]) / Math.max(total, 1e-9)}%` }} title={`${KIND_LABEL[k]}: ${duration(L.time_s[k])}`} data-kind={k} />
+                      ) : null,
+                    )}
+                  </span>
+                  <span className="text-[12.5px] text-muted">
+                    {KINDS.filter((k) => L.time_s[k] >= 1)
+                      .map((k) => `${KIND_LABEL[k].toLowerCase()} ${duration(L.time_s[k])}`)
+                      .join(" · ") || "no time in a state"}
+                  </span>
+                  <span className="ml-auto text-[12.5px] tabular-nums">
+                    {L.tokens ? (
+                      <>
+                        <span className="font-medium">{tokens(L.tokens)} tokens</span>
+                        <span className="text-muted"> · {tokens(L.cache_read)} cache reads</span>
+                      </>
+                    ) : (
+                      <span className="text-muted">no model requests</span>
+                    )}
+                  </span>
+                </div>
+                {L.tokens > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[7.75rem] max-sm:pl-0">
+                    {L.steps.map((c) => (
+                      <span key={`${c.step}|${c.by}`} className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px]" data-testid="step-cost" data-by={c.by}>
+                        <span className="font-mono">{c.step.replace(/^step:/, "")}</span>
+                        <span className="tabular-nums">{tokens(c.tokens)}</span>
+                        <span className={cn("rounded px-1 text-[11px]", c.by === "rule" ? "bg-state-human/15 text-fg" : "bg-raised text-muted")} title={c.by === "rule" ? "No step was recorded on the session; the next commit on its branch carries this node" : "onloop recorded this step when it started the work"}>
+                          {c.by === "rule" ? "attributed by rule" : "recorded"}
+                        </span>
+                      </span>
+                    ))}
+                    {L.between.requests > 0 && (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-line px-2 py-0.5 text-[12px] text-muted" data-testid="between-steps" title="Requests no step was recorded for and no rule placed: never charged to the nearest step">
+                        between steps <span className="tabular-nums text-fg">{tokens(L.between.tokens)}</span> ({share}% of the lane's tokens)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

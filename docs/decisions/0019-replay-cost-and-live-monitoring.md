@@ -67,15 +67,21 @@ Four spikes measured the ground (in the project's notes, not the repository):
 
 - **When onloop dispatches the work** (a task, a carried turn, `onloop open <role>`), it records the step on the
   session as it starts. No inference is needed.
-- **Otherwise, rule E:** the step named in the turn's opening message (a task, a PR, a branch, a node trailer), else
-  the step of the next commit on that branch. Every figure from it reads "attributed by rule".
+- **Otherwise, rule E's clause 2:** the `Node:` trailer of the next commit on the branch the session works on. onloop
+  records the session's repository path and branch name at `session.opened` and `step.started`, both its own facts;
+  the rule reads a commit's time and trailer only, never its content. Every figure from it reads "attributed by
+  rule", and the share left "between steps" stays visible.
+- **Clause 1 is unavailable by design:** the step named in the turn's opening message would need the prompt's text,
+  and prompts are never logged (§1). Corrected on 2026-11-20, on the onloop lead's ruling, which also rejected
+  extracting a step reference from the prompt.
 - **A "between steps" bar** holds the tokens and time of turns no step names. They are never charged to the nearest
   step: S2 found that would about double each step's cost.
 
 | Option | Source | Verdict |
 |---|---|---|
 | Record the step when onloop dispatches | S2's recommendation; R7b's b1 | **Chosen**, wherever onloop starts the work |
-| Rule E: the opening message, else the next commit | S2: 96% of step tokens | **Chosen** for the rest, labelled |
+| Rule E: the opening message, else the next commit | S2: 96% of step tokens | **Clause 2 chosen** for the rest, labelled; clause 1 needs prompt text, never logged |
+| Turn prompt logging on, keeping only a step reference | the builder's option (b), 2026-11-20 | Rejected by the onloop lead: prompt content stays off |
 | The turn's own tool calls | S2: 78% | Rejected: a turn's tools name many steps |
 | `prompt.id` and `session.id` alone | S1 | Not a step: they group a turn and a session |
 | A switch log the agents write | the R7 pilot's `worklog.jsonl` | Rejected for the product: it depends on discipline, and the pilot's own log had gaps |

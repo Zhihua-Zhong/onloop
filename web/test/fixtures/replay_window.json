@@ -665,6 +665,9 @@
     7
    ]
   },
+  "step_by": [
+   "recorded"
+  ],
   "steps": [
    "step:task:t-12"
   ],

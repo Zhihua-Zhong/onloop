@@ -1,6 +1,7 @@
 """The `/sessions/` write route: what `onloop open <role>` reports (decision 0019, a8).
 
-    POST /sessions/opened   {"role", "session_id", "cwd"?, "step"?: "KIND:REF"}   -> session.opened, and step.started
+    POST /sessions/opened   {"role", "session_id", "cwd"?, "repo"?, "branch"?, "step"?: "KIND:REF"}
+                            -> session.opened, and step.started (both with the repo and the branch, for rule E)
     POST /sessions/ended    {"role", "session_id", "step"?: "KIND:REF", "exit_code"?}  -> step.ended
 
 Each event has `source = "cli"`, the role as its actor, and the ledger's own time. Its id is derived from the session
@@ -32,17 +33,31 @@ def events_for(rest: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         raise WriteRefused(404, "a session report is POST /sessions/opened or /sessions/ended")
     role, sid = _str(body, "role"), _str(body, "session_id")
     text = _str(body, "step", required=False)
+    place = {
+        k: (body[k][:300] if isinstance(body.get(k), str) and body[k] else None) for k in ("repo", "branch")
+    }
     try:
         step = telemetry.parse_step(text) if text else None
         out = []
         if which == "opened":
             cwd = body.get("cwd") if isinstance(body.get("cwd"), str) else None
-            out.append(telemetry.opened_event(source="cli", role=role or "", session_id=sid or "", cwd=cwd))
+            out.append(
+                telemetry.opened_event(
+                    source="cli",
+                    role=role or "",
+                    session_id=sid or "",
+                    cwd=cwd,
+                    repo=place["repo"],
+                    branch=place["branch"],
+                )
+            )
         if step is not None:
             more: dict[str, Any] = {}
             code = body.get("exit_code")
             if which == "ended" and isinstance(code, int) and not isinstance(code, bool):
                 more["exit_code"] = code
+            if which == "opened":
+                more.update(place)
             out.append(
                 telemetry.step_event(
                     "started" if which == "opened" else "ended",

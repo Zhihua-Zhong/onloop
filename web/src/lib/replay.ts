@@ -26,6 +26,7 @@ export interface ReplayWindow {
   changes: { t: number[]; lane: number[]; state: number[] };
   requests: { t: number[]; lane: number[]; total: number[]; cache_read: number[]; step: number[] };
   steps: string[];
+  step_by?: string[]; // per step: "recorded", or "rule" (rule E's clause 2: the next commit's Node: trailer)
 }
 
 export interface LaneIndex {
@@ -207,4 +208,56 @@ export function naiveFrame(w: ReplayWindow, t: number): { state: number; time_s:
     for (let i = 0; i < w.requests.t.length; i++) if (w.requests.lane[i] === li && w.requests.t[i] <= at) tokens += w.requests.total[i];
     return { state: t > known ? -1 : state, time_s: time, tokens };
   });
+}
+
+export interface StepTokens {
+  step: string;
+  by: "recorded" | "rule";
+  tokens: number;
+  cache_read: number;
+  requests: number;
+}
+
+export interface LaneBreakdown {
+  name: string;
+  time_s: Record<Kind, number>; // in the window: at_to less at_from
+  tokens: number;
+  cache_read: number;
+  requests: number;
+  steps: StepTokens[]; // most tokens first
+  between: { tokens: number; cache_read: number; requests: number }; // no step recorded and none by rule
+}
+
+/** Where each lane's time and tokens went in the window (decision 0019, a2 and a3): the four kinds of time, and the
+ * tokens by step, recorded or attributed by rule, with what is left between steps kept apart and visible. */
+export function breakdown(w: ReplayWindow): LaneBreakdown[] {
+  const out: LaneBreakdown[] = w.lanes.map((name, i) => {
+    const time = zero();
+    for (const k of KINDS) time[k] = Math.max(0, (w.at_to[i]?.time_s[k] ?? 0) - (w.at_from[i]?.time_s[k] ?? 0));
+    return { name, time_s: time, tokens: 0, cache_read: 0, requests: 0, steps: [], between: { tokens: 0, cache_read: 0, requests: 0 } };
+  });
+  const per: Map<number, StepTokens>[] = w.lanes.map(() => new Map());
+  for (let r = 0; r < w.requests.t.length; r++) {
+    const L = out[w.requests.lane[r]];
+    const tok = w.requests.total[r];
+    const cache = w.requests.cache_read[r];
+    L.tokens += tok;
+    L.cache_read += cache;
+    L.requests += 1;
+    const si = w.requests.step[r];
+    if (si < 0) {
+      L.between.tokens += tok;
+      L.between.cache_read += cache;
+      L.between.requests += 1;
+      continue;
+    }
+    const m = per[w.requests.lane[r]];
+    const c = m.get(si) ?? { step: w.steps[si], by: w.step_by?.[si] === "rule" ? "rule" : "recorded", tokens: 0, cache_read: 0, requests: 0 };
+    c.tokens += tok;
+    c.cache_read += cache;
+    c.requests += 1;
+    m.set(si, c);
+  }
+  out.forEach((L, i) => (L.steps = [...per[i].values()].sort((a, b) => b.tokens - a.tokens || a.step.localeCompare(b.step))));
+  return out;
 }

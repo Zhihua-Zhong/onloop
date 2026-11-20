@@ -17,10 +17,16 @@ idle and counts nowhere. Anything still open runs to `now` (the end of the windo
 clipped to [start, end].
 
 **Tokens** come from `cost.request` events (Claude Code's own telemetry, decision 0019 §5): input, output and cache
-creation, with cache reads apart since they cost far less. A request is charged to **the step recorded on its session**
-at its time (a `step.started` / `step.ended` span from the carrier, `onloop open` or a supervisor step), else to the
-lane's **between steps**: never to the nearest step (spike S2: that would about double each step's cost). Rule E, the
-fallback by the turn's opening message or the next commit, has no input yet: prompt text is never stored (§1).
+creation, with cache reads apart since they cost far less. A request is charged to
+
+1. **the step recorded on its session** at its time (a `step.started` / `step.ended` span from the carrier or
+   `onloop open`): `attributed: recorded`;
+2. else, by **rule E's clause 2**, to the `Node:` trailer of the next commit on the branch its session works on (the
+   repository and branch onloop recorded at `session.opened` or `step.started`): `attributed: rule`. Only the
+   commit's time and its trailer are read, never its content. Clause 1, the step named in the turn's opening message,
+   is unavailable by design: prompts are never logged (§1);
+3. else to the lane's **between steps**: never to the nearest step (spike S2: that would about double each step's
+   cost).
 """
 
 from __future__ import annotations
@@ -28,6 +34,8 @@ from __future__ import annotations
 import bisect
 import datetime as dt
 import json
+import re
+import subprocess
 from typing import Any
 
 from . import events as ev
@@ -179,11 +187,69 @@ def _step_at(spans: list[tuple[int, int, str]], starts: list[int], t: int) -> st
     return None
 
 
+_NODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _places(ledger: Any) -> dict[str, tuple[list[int], list[tuple[str, str]]]]:
+    """Per session, where it worked over time: (times, [(repo, branch)]), from session.opened and step.started."""
+    out: dict[str, tuple[list[int], list[tuple[str, str]]]] = {}
+    for r in ledger.select(
+        "SELECT ts_system, payload FROM events WHERE kind IN ('session.opened', 'step.started') ORDER BY seq"
+    ):
+        p = _payload(r)
+        sid, repo, branch = p.get("session_id"), p.get("repo"), p.get("branch")
+        if isinstance(sid, str) and isinstance(repo, str) and isinstance(branch, str) and repo and branch:
+            ts, where = out.setdefault(sid, ([], []))
+            ts.append(_ms(r["ts_system"]))
+            where.append((repo, branch))
+    return out
+
+
+def node_commits(repo: str, branch: str) -> tuple[list[int], list[str | None]]:
+    """The branch's commits, oldest first: their committer times (ms) and their Node: trailer (None without one).
+    Reads the time and the trailer only. An unknown repository or branch has none."""
+    try:
+        r = subprocess.run(
+            [
+                "git",
+                "-C",
+                repo,
+                "log",
+                "--reverse",
+                "--format=%ct%x1f%(trailers:key=Node,valueonly,separator=%x1e)",
+                f"refs/heads/{branch}",
+                "--",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return [], []
+    if r.returncode != 0:
+        return [], []
+    times: list[int] = []
+    nodes: list[str | None] = []
+    for line in r.stdout.splitlines():
+        ct, _, trailer = line.partition("\x1f")
+        if not ct.strip().isdigit():
+            continue
+        node = trailer.split("\x1e")[0].strip()
+        times.append(int(ct) * 1000)
+        nodes.append(node if _NODE.match(node) else None)
+    return times, nodes
+
+
 def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
-    """Every model request in [start, end], oldest first: its time (ms), lane, token fields, and the step recorded on
-    its session at that time (None: between steps). The one attribution `build` and the replay's window both use."""
+    """Every model request in [start, end], oldest first: its time (ms), lane, token fields, its step and how that
+    step was found (`by`: recorded, rule, or None between steps). The one attribution `build` and the replay's window
+    both use."""
     spans = _spans(ledger)
     starts = {sid: [x[0] for x in v] for sid, v in spans.items()}
+    places = _places(ledger)
+    commits: dict[tuple[str, str], tuple[list[int], list[str | None]]] = {}
     out = []
     for r in ledger.select(
         "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system <= ? "
@@ -194,7 +260,18 @@ def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
         t = _ms(r["ts_system"])
         sid = p.get("session_id")
         step = _step_at(spans.get(sid, []), starts.get(sid, []), t) if isinstance(sid, str) else None
-        out.append({"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step})
+        by = "recorded" if step else None
+        if step is None and isinstance(sid, str) and sid in places:
+            ts, where = places[sid]
+            k = bisect.bisect_right(ts, t) - 1
+            if k >= 0:
+                if where[k] not in commits:
+                    commits[where[k]] = node_commits(*where[k])
+                ctimes, nodes = commits[where[k]]
+                j = bisect.bisect_right(ctimes, t)  # the next commit after the request
+                if j < len(ctimes) and nodes[j]:
+                    step, by = f"step:node:{nodes[j]}", "rule"
+        out.append({"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step, "by": by})
     return out
 
 
@@ -255,14 +332,12 @@ def build(ledger: Any, start: str, end: str, now: str | None = None) -> dict[str
         if q["step"] is None:
             _add(L["between_steps"], q["payload"])
         else:
-            _add(L["steps"].setdefault(q["step"], _zero()), q["payload"])
+            _add(L["steps"].setdefault((q["step"], q["by"]), _zero()), q["payload"])
     out = []
     for name in sorted(lanes):
         L = lanes[name]
         L["time_s"] = {k: round(v, 3) for k, v in L["time_s"].items()}
-        L["steps"] = [
-            {"step": s, "attributed": "recorded", "tokens": t} for s, t in sorted(L["steps"].items())
-        ]
+        L["steps"] = [{"step": s, "attributed": by, "tokens": t} for (s, by), t in sorted(L["steps"].items())]
         out.append(L)
     totals = {"time_s": dict.fromkeys(KINDS, 0.0), "tokens": _zero(), "turns": 0}
     for L in out:

@@ -2031,6 +2031,24 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
     ),
     (
+        "rule E charges a request to the commit before it, not the next one on its branch",
+        "src/onloop/timeline.py",
+        "                j = bisect.bisect_right(ctimes, t)  # the next commit after the request\n",
+        "                j = bisect.bisect_right(ctimes, t) - 1\n",
+        [
+            "tests/test_timeline.py::test_a_request_no_step_covers_goes_to_the_next_commits_node_attributed_by_rule"
+        ],
+    ),
+    (
+        "a step attributed by rule E reads as recorded",
+        "src/onloop/timeline.py",
+        '                    step, by = f"step:node:{nodes[j]}", "rule"\n',
+        '                    step, by = f"step:node:{nodes[j]}", "recorded"\n',
+        [
+            "tests/test_timeline.py::test_a_request_no_step_covers_goes_to_the_next_commits_node_attributed_by_rule"
+        ],
+    ),
+    (
         "the timeline lets a carried run's harness time win over the turn working inside it",
         "src/onloop/timeline.py",
         'KINDS = ("working", "harness", "waiting", "queued")',

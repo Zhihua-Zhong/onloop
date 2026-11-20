@@ -21,6 +21,7 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
 from collections.abc import Mapping
 from typing import Any
 
@@ -38,6 +39,38 @@ _SESSION = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 # Removed before onloop's own are set, with every OTEL_* name: an endpoint, a header or a content switch from the
 # parent never reaches the child.
 _CLEARED = ("CLAUDE_CODE_ENABLE_TELEMETRY",)
+
+
+def place(cwd: str | pathlib.Path | None) -> dict[str, str | None]:
+    """Where a session works: its repository's root and its branch, read from git in `cwd`. Only these two names are
+    kept, both onloop's own facts (decision 0019, rule E's clause 2); never a commit's content. None when not known."""
+    out: dict[str, str | None] = {"repo": None, "branch": None}
+    if not cwd:
+        return out
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+        head = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return out
+    if top.returncode == 0 and top.stdout.strip():
+        out["repo"] = top.stdout.strip()[:300]
+    if head.returncode == 0 and head.stdout.strip() not in ("", "HEAD"):
+        out["branch"] = head.stdout.strip()[:120]
+    return out
 
 
 def target(state: pathlib.Path) -> tuple[int, str] | None:
@@ -131,8 +164,17 @@ def step_event(
     }
 
 
-def opened_event(*, source: str, role: str, session_id: str, cwd: str | None = None) -> dict[str, Any]:
-    """`session.opened`: `onloop open <role>` started an interactive session for the role."""
+def opened_event(
+    *,
+    source: str,
+    role: str,
+    session_id: str,
+    cwd: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+) -> dict[str, Any]:
+    """`session.opened`: `onloop open <role>` started an interactive session for the role, in `cwd`, on `branch` of
+    `repo` (rule E's clause 2 reads the branch's next commit)."""
     _check(role, session_id)
     return {
         "id": _eid("session.opened", session_id),
@@ -140,5 +182,5 @@ def opened_event(*, source: str, role: str, session_id: str, cwd: str | None = N
         "kind": "session.opened",
         "subject_ref": f"session:{session_id}",
         "actor": role,
-        "payload": {"role": role, "session_id": session_id, "cwd": cwd},
+        "payload": {"role": role, "session_id": session_id, "cwd": cwd, "repo": repo, "branch": branch},
     }

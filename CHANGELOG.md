@@ -23,6 +23,13 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Where the time went** (decision 0019, a2 and a3), under the Replay view's lanes: per role, its four kinds of
+  time in the window as one bar, its tokens and cache reads, and its tokens by step, each labelled "recorded" or
+  "attributed by rule", with what is left "between steps" shown with its share.
+- **Rule E's clause 2** attributes a request no recorded step covers to the `Node:` trailer of the next commit on
+  the branch its session works on. `session.opened` and `step.started` now record the session's repository path and
+  branch name; the rule reads a commit's time and trailer only. Clause 1 (the turn's opening message) is unavailable
+  by design: prompts are never logged.
 - **The Replay view** (decision 0019, a1), `#/replay`: the team's work as lanes in proportion to time, over the last
   hour, 6 hours, a day or a week. A cursor shows each lane's state, its four kinds of time and its tokens at that
   moment, with the step of its latest request; it plays at 1x, 10x, 60x or 600x, and jumps from one state change to

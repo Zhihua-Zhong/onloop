@@ -49,6 +49,7 @@ class _Story:
         self.at = now
         self.steps: list[tuple[float, int, Callable[[Ledger], object]]] = []
         self.n = 0
+        self.repo: str | None = None  # the made-up repository rule E reads (decision 0019)
 
     def __call__(self) -> str:  # the ledger's clock
         return self.at
@@ -758,6 +759,46 @@ def _tail(run: int) -> str:
     )
 
 
+DEMO_REPO = "demo-repo"  # a made-up repository next to the demo ledger, for rule E's clause 2
+
+
+def _demo_repo(path: pathlib.Path, now: str) -> pathlib.Path | None:
+    """A tiny git repository with branch `feat/date-check`: a first commit, then one with `Node: n-date` 23.5 minutes
+    before now, so the lead's requests after its recorded step are attributed by rule, and its last one is not."""
+    import os
+    import subprocess
+
+    repo = path.resolve().parent / DEMO_REPO
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "demo",
+        "GIT_AUTHOR_EMAIL": "demo",
+        "GIT_COMMITTER_NAME": "demo",
+        "GIT_COMMITTER_EMAIL": "demo",
+    }
+    try:
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init", "-q", "-b", "feat/date-check"], check=True, capture_output=True
+        )
+        for ago, msg in (
+            (2 * HOUR, "the date check, a first cut"),
+            (23 * MIN + 30, "the date check\n\nNode: n-date"),
+        ):
+            when = ev.shift_ts(now, -ago).replace(".000Z", "+00:00").replace("Z", "+00:00")
+            (repo / "notes.txt").write_text(msg, encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "notes.txt"], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-q", "-m", msg],
+                check=True,
+                capture_output=True,
+                env={**env, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when},
+            )
+    except (OSError, subprocess.CalledProcessError):
+        return None  # no git: the requests stay between steps
+    return repo
+
+
 def _telemetry(s: _Story) -> None:
     """The replay's story (decision 0019): Claude Code's own telemetry for the carried runs and for one session the
     person opened with `onloop open`, each request as `cost.request`, and the steps onloop recorded. Made up."""
@@ -813,7 +854,13 @@ def _telemetry(s: _Story) -> None:
         40 * MIN,
         "session.opened",
         "session:s-lead-open",
-        {"role": "lead", "session_id": "s-lead-open", "cwd": "/work/onloop"},
+        {
+            "role": "lead",
+            "session_id": "s-lead-open",
+            "cwd": s.repo,
+            "repo": s.repo,
+            "branch": "feat/date-check",
+        },
         source="cli",
         actor="lead",
     )
@@ -838,6 +885,8 @@ def build(path: pathlib.Path, now: str | None = None) -> str:
     _story(story)
     _carrier(story)
     _asks(story)
+    repo = _demo_repo(path, now)
+    story.repo = str(repo) if repo else None
     _telemetry(story)
     with Ledger(path, clock=story) as led:
         story.write(led)

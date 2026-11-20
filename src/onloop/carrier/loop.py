@@ -109,6 +109,7 @@ class Carrier:
         say: Callable[[str], None] = lambda m: None,
     ):
         self.led, self.cfg, self.state = ledger, cfg, state_dir
+        self._places: dict[str, dict[str, str | None]] = {}
         self.lock = lock or threading.Lock()
         self.environ = dict(os.environ if environ is None else environ)
         self.read_listing = read_listing or (
@@ -208,6 +209,12 @@ class Carrier:
         port and token it has no OTel variable at all, and with `--setting-sources project` no OTel key loads: the turn
         exports nothing."""
         return telemetry.for_session(guards.child_env(self.environ), self.state, role.name)
+
+    def _place(self, role: CarriedRole) -> dict[str, str | None]:
+        """The role's repository and branch, for rule E (decision 0019); read once per role, git is not free."""
+        if role.name not in self._places:
+            self._places[role.name] = telemetry.place(role.cwd)
+        return self._places[role.name]
 
     def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str]:
         """What a carried turn works on: the one item its deliveries are about, else the run itself."""
@@ -659,7 +666,7 @@ class Carrier:
             # the step is logged with the lease, in the same hold of the writer: no extra wait before the spawn, while
             # the lease has no holder pid yet
             step_ = self._step(led, claim)
-            started = self._step_event("started", role, step_, run_id=claim.run_id)
+            started = self._step_event("started", role, step_, run_id=claim.run_id, **self._place(role))
             if started:
                 led.append(started)
         rep.acted.append(claim.run_id)

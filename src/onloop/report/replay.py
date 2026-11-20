@@ -8,8 +8,8 @@ The answer is in columns, parallel arrays, so a week of a hundred thousand reque
     kinds                    working, harness, waiting, queued; a state is an index here, -1 is idle
     at_from[i]               lane i at `from`: its state, its four kinds of time so far, its tokens so far
     changes  {t, lane, state}            each state change inside the window, oldest first (t in epoch ms)
-    requests {t, lane, total, cache_read, step}   each model request, with its recorded step (an index into
-                             `steps`, or -1: between steps)
+    requests {t, lane, total, cache_read, step}   each model request, with its step (an index into `steps`, or -1:
+                             between steps); `step_by[i]` says how step i was found: recorded, or rule
     at_to[i]                 lane i at `to`, the same as at_from: what a frame at `to` must show
 
 A frame at t is `at_from` plus the changes and requests up to t (a binary search per lane, spike S3). "So far" counts
@@ -94,20 +94,23 @@ def window(
     order = sorted(range(len(changes["t"])), key=lambda i: (changes["t"][i], changes["lane"][i]))
     changes = {k: [v[i] for i in order] for k, v in changes.items()}
     steps: list[str] = []
-    step_ix: dict[str, int] = {}
+    step_by: list[str] = []
+    step_ix: dict[tuple[str, str], int] = {}
     reqs: dict[str, list[int]] = {"t": [], "lane": [], "total": [], "cache_read": [], "step": []}
     for q in reqs_all:
         if q["t"] < lo or q["lane"] not in index:
             continue
         total, cache = tl.tokens_of(q["payload"])
-        if q["step"] is not None and q["step"] not in step_ix:
-            step_ix[q["step"]] = len(steps)
+        key = (q["step"], q["by"])
+        if q["step"] is not None and key not in step_ix:
+            step_ix[key] = len(steps)
             steps.append(q["step"])
+            step_by.append(q["by"])
         reqs["t"].append(q["t"])
         reqs["lane"].append(index[q["lane"]])
         reqs["total"].append(total)
         reqs["cache_read"].append(cache)
-        reqs["step"].append(step_ix[q["step"]] if q["step"] is not None else -1)
+        reqs["step"].append(step_ix[key] if q["step"] is not None else -1)
     return {
         "from": start,
         "to": end,
@@ -121,6 +124,7 @@ def window(
         "changes": changes,
         "requests": reqs,
         "steps": steps,
+        "step_by": step_by,  # per step: recorded, or rule (attributed by rule E's clause 2)
     }
 
 

@@ -1024,7 +1024,9 @@ def cmd_open(args) -> int:
             v = "Authorization=Bearer <onloopd's token>" if k == "OTEL_EXPORTER_OTLP_HEADERS" else env[k]
             _say(f"{k}={v}")
         return 0
-    body = {"role": args.role, "session_id": sid, "cwd": cwd}
+    from . import telemetry
+
+    body = {"role": args.role, "session_id": sid, "cwd": cwd, **telemetry.place(cwd)}
     if step:
         body["step"] = f"{step[0]}:{step[1]}"
     code, out = _post_onloopd(state, "/sessions/opened", body)

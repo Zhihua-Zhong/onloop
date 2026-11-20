@@ -210,3 +210,87 @@ def test_the_sweep_gives_the_same_segments_as_checking_every_instant():
         else:
             want.append((a, b, kind))
     assert tl.segments(raw) == want
+
+
+# -- rule E's clause 2: the next commit's Node: trailer on the session's branch (decision 0019) ------------------------
+
+
+def git_repo(path, commits):
+    """A repository with one commit per (hh:mm, node or None), at those committer times, on branch `work`."""
+    import os
+    import subprocess
+
+    path.mkdir()
+
+    def git(*a, when=None):
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t",
+        }
+        if when:
+            env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = when
+        subprocess.run(["git", "-C", str(path), *a], check=True, capture_output=True, env=env)
+
+    git("init", "-q", "-b", "work")
+    for i, (hm, node) in enumerate(commits):
+        (path / "f.txt").write_text(str(i), encoding="utf-8")
+        git("add", "f.txt")
+        msg = f"change {i}" + (f"\n\nNode: {node}" if node else "")
+        git("commit", "-q", "-m", msg, when=at(hm).replace(".000Z", "+00:00"))
+    return path
+
+
+def test_a_request_no_step_covers_goes_to_the_next_commits_node_attributed_by_rule(tmp_path):
+    repo = git_repo(tmp_path / "repo", [("10:10", "a1"), ("10:20", None), ("10:40", "a2")])
+    clock = Clock()
+    with Ledger(tmp_path / "l.db", clock=clock) as led:
+        clock.t = at("10:00")
+        led.append(
+            {
+                "id": "open",
+                "source": "cli",
+                "kind": "session.opened",
+                "subject_ref": "session:s9",
+                "actor": "builder",
+                "payload": {"session_id": "s9", "role": "builder", "repo": str(repo), "branch": "work"},
+            }
+        )
+        otel(led, clock, at("10:05"), "r1", "s9", input_tokens=1, output_tokens=1)  # before a1's commit
+        otel(led, clock, at("10:15"), "r2", "s9", input_tokens=2, output_tokens=2)  # next commit has no Node
+        otel(led, clock, at("10:30"), "r3", "s9", input_tokens=3, output_tokens=3)  # before a2's commit
+        step(led, clock, at("10:31"), "started", "s9", "t-9")
+        otel(
+            led, clock, at("10:32"), "r4", "s9", input_tokens=4, output_tokens=4
+        )  # a recorded step wins over rule
+        step(led, clock, at("10:33"), "ended", "s9", "t-9")
+        otel(led, clock, at("10:50"), "r5", "s9", input_tokens=5, output_tokens=5)  # no commit after it
+        t = derive.timeline(led, at("10:00"), at("11:00"), now=at("11:00"))
+    (b,) = [L for L in t["lanes"] if L["lane"] == "builder"]
+    got = {(s["step"], s["attributed"]): s["tokens"]["total"] for s in b["steps"]}
+    assert got == {("step:node:a1", "rule"): 2, ("step:node:a2", "rule"): 6, ("step:task:t-9", "recorded"): 8}
+    assert b["between_steps"]["total"] == 4 + 10 and b["between_steps"]["requests"] == 2
+
+
+def test_rule_e_reads_nothing_without_a_known_branch(tmp_path):
+    clock = Clock()
+    with Ledger(tmp_path / "l.db", clock=clock) as led:
+        otel(led, clock, at("10:05"), "r1", "s8", input_tokens=1, output_tokens=1)
+        t = derive.timeline(led, at("10:00"), at("11:00"), now=at("11:00"))
+    (b,) = [L for L in t["lanes"] if L["lane"] == "builder"]
+    assert b["steps"] == [] and b["between_steps"]["requests"] == 1
+
+
+def test_a_session_records_only_its_repository_and_branch(tmp_path):
+    from onloop import telemetry
+
+    repo = git_repo(tmp_path / "repo", [("10:10", "a1")])
+    where = telemetry.place(repo)
+    assert where == {"repo": where["repo"], "branch": "work"} and where["repo"].replace("\\", "/").endswith(
+        "/repo"
+    )
+    assert telemetry.place(tmp_path / "not-a-repo-xyz") == {"repo": None, "branch": None}
+    e = telemetry.opened_event(source="cli", role="builder", session_id="s1", cwd=str(repo), **where)
+    assert set(e["payload"]) == {"role", "session_id", "cwd", "repo", "branch"}

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildIndex, columns, frameAt, jump, KINDS, naiveFrame, type ReplayWindow } from "../src/lib/replay.ts";
+import { breakdown, buildIndex, columns, frameAt, jump, KINDS, naiveFrame, type ReplayWindow } from "../src/lib/replay.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/replay_window.json", import.meta.url), "utf8")) as {
   window: ReplayWindow;
@@ -99,4 +99,17 @@ test("a frame of a week of a hundred thousand requests is fast", () => {
   for (let k = 0; k < 1000; k++) frameAt(ix, w.from_ms + Math.floor(Math.random() * (w.to_ms - w.from_ms)));
   const per = (performance.now() - t0) / 1000;
   assert.ok(per < 1, `${per} ms per frame`);
+});
+
+test("the breakdown is the window's time and tokens, each token in one step or between steps", () => {
+  const w = fixture.window;
+  const b = breakdown(w);
+  b.forEach((L, i) => {
+    for (const k of KINDS) close(L.time_s[k], w.at_to[i].time_s[k] - w.at_from[i].time_s[k], `${L.name} ${k}`);
+    assert.equal(L.tokens, w.at_to[i].tokens - w.at_from[i].tokens, `${L.name} tokens`);
+    assert.equal(L.tokens, L.between.tokens + L.steps.reduce((s, c) => s + c.tokens, 0), `${L.name} steps + between`);
+  });
+  const builder = b.find((L) => L.name === "builder")!;
+  assert.deepEqual(builder.steps.map((s) => [s.step, s.by]), [["step:task:t-12", "recorded"]]);
+  assert.equal(builder.between.requests, 1);
 });
