@@ -20,6 +20,12 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **The Replay view** (decision 0019, a1), `#/replay`: the team's work as lanes in proportion to time, over the last
+  hour, 6 hours, a day or a week. A cursor shows each lane's state, its four kinds of time and its tokens at that
+  moment, with the step of its latest request; it plays at 1x, 10x, 60x or 600x, and jumps from one state change to
+  the next. The page indexes onloopd's window once (off its own thread past 100 000 events), so a frame is two binary
+  searches per lane; the lanes are drawn per pixel column, whatever the number of events. "Show as a table" gives
+  the same numbers. The demo ledger has a made-up telemetry story to show it.
 - **`GET /api/replay?from=&to=&lanes=`** (decision 0019): the replay's window, at most 31 days, in columns: each
   lane at `from` and at `to` (its state, its four kinds of time so far, its tokens so far), and the state changes and
   model requests inside, each request with its recorded step. A frame anywhere in the window needs nothing before

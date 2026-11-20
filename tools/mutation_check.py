@@ -2003,6 +2003,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the replay's page drops the time a lane has spent in its current state since its last change",
+        "web/src/lib/replay.ts",
+        "(time[k] = L.cum[ki][i] + (state === ki ? (at - L.ct[i]) / 1000 : 0))",
+        "(time[k] = L.cum[ki][i])",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
+        "the replay's page counts time after now, where nothing is known yet",
+        "web/src/lib/replay.ts",
+        "  const at = Math.min(t, known);\n  const i = lastAtOrBefore(L.ct, at);",
+        "  const at = t;\n  const i = lastAtOrBefore(L.ct, at);",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
         "the replay's window starts every lane's time at zero, so a frame needs data before the window",
         "src/onloop/report/replay.py",
         "                before[kind] += (min(b, lo) - a) / 1000\n",

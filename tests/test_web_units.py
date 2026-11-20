@@ -46,3 +46,12 @@ def test_a_view_recovers_when_onloopd_comes_back():
     screen while a refresh fails, and "Failed to fetch" is said in plain words."""
     r = _node_test("recovery.test.ts")
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_replays_index_gives_the_ledgers_own_frames_in_the_page():
+    """Decision 0019, spike S3: a frame from the page's index is the ledger's timeline at that time (the fixture
+    tests/test_replay_api.py writes from derive.timeline), agrees with the naive fold, stops at now, and costs well
+    under a millisecond at 100 000 requests."""
+    r = _node_test("replay.test.ts")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]

@@ -17,6 +17,7 @@ import { TeamView } from "@/views/Team";
 import { SchedulesView } from "@/views/Schedules";
 import { AuditView } from "@/views/Audit";
 import { ConversationView } from "@/views/Conversation";
+import { ReplayView } from "@/views/Replay";
 
 // Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
 const FlowView = lazy(retrying(() => import("@/views/Flow")));
@@ -203,6 +204,7 @@ export default function App() {
             <MapView params={route.params} path={route.path} />
           </Suspense>
         )}
+        {route.view === "replay" && <ReplayView params={route.params} />}
         {route.view === "outcome" && <OutcomeView params={route.params} />}
         {route.view === "activity" && <ActivityView params={route.params} />}
         {route.view === "team" && <TeamView />}

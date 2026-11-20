@@ -1,0 +1,674 @@
+{
+ "expected": [
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 60.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 0.0
+     },
+     "tokens": 0
+    }
+   ],
+   "t": 1793613720000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 27.0
+     },
+     "tokens": 0
+    }
+   ],
+   "t": 1793613807000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 114.0
+     },
+     "tokens": 0
+    }
+   ],
+   "t": 1793613894000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 201.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793613981000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 288.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614068000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 375.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614155000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614242000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614329000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614416000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614503000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614590000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614677000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1800.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614764000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1851.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614851000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 1938.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793614938000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2025.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793615025000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2112.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793615112000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2199.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793615199000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2286.0,
+      "working": 420.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793615286000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2340.0,
+      "working": 453.0
+     },
+     "tokens": 70
+    }
+   ],
+   "t": 1793615373000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2400.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615460000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2487.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615547000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2574.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615634000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2661.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615721000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2748.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615808000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2835.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615895000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 2922.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793615982000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3009.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616069000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3096.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616156000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3183.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616243000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3270.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616330000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3357.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616417000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3444.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616504000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3531.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616591000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616678000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616765000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616852000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793616939000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793617026000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793617113000
+  },
+  {
+   "lanes": [
+    {
+     "time_s": {
+      "harness": 120.0,
+      "queued": 60.0,
+      "waiting": 3540.0,
+      "working": 480.0
+     },
+     "tokens": 77
+    }
+   ],
+   "t": 1793617200000
+  }
+ ],
+ "note": "made up: tests/test_timeline.py's ledger; regenerated by tests/test_replay_api.py",
+ "window": {
+  "at_from": [
+   {
+    "cache_read": 0,
+    "requests": 0,
+    "state": 1,
+    "time_s": {
+     "harness": 60.0,
+     "queued": 60.0,
+     "waiting": 1800.0,
+     "working": 0.0
+    },
+    "tokens": 0
+   }
+  ],
+  "at_to": [
+   {
+    "cache_read": 303,
+    "requests": 2,
+    "state": 2,
+    "time_s": {
+     "harness": 120.0,
+     "queued": 60.0,
+     "waiting": 3540.0,
+     "working": 480.0
+    },
+    "tokens": 77
+   }
+  ],
+  "changes": {
+   "lane": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "state": [
+    0,
+    -1,
+    2,
+    0,
+    2,
+    -1
+   ],
+   "t": [
+    1793613780000,
+    1793614200000,
+    1793614800000,
+    1793615340000,
+    1793615400000,
+    1793616600000
+   ]
+  },
+  "from": "2026-11-02T10:02:00.000Z",
+  "from_ms": 1793613720000,
+  "kinds": [
+   "working",
+   "harness",
+   "waiting",
+   "queued"
+  ],
+  "lanes": [
+   "builder"
+  ],
+  "now": "2026-11-02T10:50:00.000Z",
+  "requests": {
+   "cache_read": [
+    300,
+    3
+   ],
+   "lane": [
+    0,
+    0
+   ],
+   "step": [
+    0,
+    -1
+   ],
+   "t": [
+    1793613900000,
+    1793615400000
+   ],
+   "total": [
+    70,
+    7
+   ]
+  },
+  "steps": [
+   "step:task:t-12"
+  ],
+  "to": "2026-11-02T11:00:00.000Z",
+  "to_ms": 1793617200000
+ }
+}

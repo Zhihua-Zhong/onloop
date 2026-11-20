@@ -758,6 +758,77 @@ def _tail(run: int) -> str:
     )
 
 
+def _telemetry(s: _Story) -> None:
+    """The replay's story (decision 0019): Claude Code's own telemetry for the carried runs and for one session the
+    person opened with `onloop open`, each request as `cost.request`, and the steps onloop recorded. Made up."""
+
+    def step(
+        ago: float, which: str, role: str, sid: str, kind: str, ref: str, source: str = "carrier"
+    ) -> None:
+        s.event(
+            ago,
+            f"step.{which}",
+            f"step:{kind}:{ref}",
+            {"role": role, "session_id": sid, "step": {"kind": kind, "ref": ref}},
+            source=source,
+            actor=role,
+        )
+
+    n = [0]
+
+    def requests(role: str, sid: str, first_ago: float, last_ago: float, every: float, out: int) -> None:
+        ago = first_ago
+        while ago >= last_ago:
+            n[0] += 1
+            s.event(
+                ago,
+                "cost.request",
+                f"session:{sid}",
+                {
+                    "session_id": sid,
+                    "role": role,
+                    "prompt_id": f"p-{sid}-{int(first_ago)}",
+                    "model": "claude-demo",
+                    "input_tokens": 40 + n[0] % 7,
+                    "output_tokens": out + 13 * (n[0] % 5),
+                    "cache_read_tokens": 18_000 + 250 * (n[0] % 11),
+                    "cache_creation_tokens": 600 + 40 * (n[0] % 3),
+                    "duration_ms": int(min(every, 30) * 700),
+                    "request_id": f"req-{n[0]:04d}",
+                    "query_source": "repl_main_thread",
+                    "cost_usd": 0.01,
+                    "sequence": n[0],
+                },
+                source="otel",
+                actor=role,
+            )
+            ago -= every
+
+    # the designer's refused run, on the docs node
+    step(2 * HOUR + 53 * MIN, "started", "designer", "s-designer", "node", "n-docs")
+    requests("designer", "s-designer", 2 * HOUR + 53 * MIN - 5, 2 * HOUR + 52 * MIN + 5, 20, 220)
+    step(2 * HOUR + 52 * MIN, "ended", "designer", "s-designer", "node", "n-docs")
+    # the lead's own session, opened with `onloop open lead --step branch:feat/date-check`
+    s.event(
+        40 * MIN,
+        "session.opened",
+        "session:s-lead-open",
+        {"role": "lead", "session_id": "s-lead-open", "cwd": "/work/onloop"},
+        source="cli",
+        actor="lead",
+    )
+    step(40 * MIN, "started", "lead", "s-lead-open", "branch", "feat/date-check", source="cli")
+    requests("lead", "s-lead-open", 39 * MIN, 31 * MIN, 45, 900)
+    step(30 * MIN, "ended", "lead", "s-lead-open", "branch", "feat/date-check", source="cli")
+    requests("lead", "s-lead-open", 25 * MIN, 23 * MIN, 60, 300)  # after the step: between steps
+    # the builder's two runs: the draft for pr#102, then the one still running on the credential task
+    step(51 * MIN, "started", "builder", "s-builder", "pr", "102")
+    requests("builder", "s-builder", 50 * MIN + 50, 47 * MIN + 10, 20, 1400)
+    step(47 * MIN, "ended", "builder", "s-builder", "pr", "102")
+    step(10 * MIN, "started", "builder", "s-builder", "task", "t-cred")
+    requests("builder", "s-builder", 9 * MIN + 30, 30, 30, 1100)
+
+
 def build(path: pathlib.Path, now: str | None = None) -> str:
     """Write the demo ledger at `path`, which must not exist yet. Returns the `now` it was built against."""
     now = ev.norm_ts(now) if now else ev.now_ts()
@@ -767,6 +838,7 @@ def build(path: pathlib.Path, now: str | None = None) -> str:
     _story(story)
     _carrier(story)
     _asks(story)
+    _telemetry(story)
     with Ledger(path, clock=story) as led:
         story.write(led)
         from onloop.daemon import task_returns

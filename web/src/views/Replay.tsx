@@ -1,0 +1,486 @@
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { get } from "@/lib/api";
+import { duration, plural } from "@/lib/format";
+import { href } from "@/lib/route";
+import { buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneFrame, type ReplayIndex, type ReplayWindow } from "@/lib/replay";
+import { Loading, Problem } from "@/components/kit";
+import { cn } from "@/lib/utils";
+
+// Replay (decision 0019, a1): the team's work over time, as lanes in proportion to time. A cursor shows each lane's
+// state, its four kinds of time and its tokens at that moment; it plays at 1x, 10x, 60x or 600x, or jumps from one
+// state change to the next. Every number comes from onloopd's window (GET /api/replay) and the page's index of it.
+
+const WINDOWS: [number, string][] = [
+  [1, "1 h"],
+  [6, "6 h"],
+  [24, "24 h"],
+  [168, "7 days"],
+];
+const SPEEDS = [1, 10, 60, 600] as const;
+const WORKER_AT = 100_000; // events in a window past which the index is built off the page's thread
+
+export const KIND_LABEL: Record<Kind, string> = { working: "Working", harness: "Harness", waiting: "Waiting on you", queued: "Queued" };
+const KIND_HELP: Record<Kind, string> = {
+  working: "a turn running, or a model request",
+  harness: "onloop starting or finishing a carried turn, with no turn running yet",
+  waiting: "a task the role asked you, still open",
+  queued: "a message to the role, not yet delivered",
+};
+const KIND_FILL: Record<Kind, string> = {
+  working: "fill-state-done",
+  harness: "fill-state-external",
+  waiting: "fill-state-human",
+  queued: "fill-state-void",
+};
+const KIND_DOT: Record<Kind, string> = { working: "bg-state-done", harness: "bg-state-external", waiting: "bg-state-human", queued: "bg-state-void" };
+
+function stamp(ms: number, withDay: boolean, seconds = false): string {
+  const d = new Date(ms);
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hour12: false });
+  return withDay ? `${d.toLocaleDateString([], { weekday: "short" })} ${t}` : t;
+}
+
+function tokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
+
+function useIndex(w: ReplayWindow | undefined): ReplayIndex | null {
+  const [ix, setIx] = useState<ReplayIndex | null>(null);
+  useEffect(() => {
+    if (!w) return;
+    const events = w.changes.t.length + w.requests.t.length;
+    if (events <= WORKER_AT || typeof Worker === "undefined") {
+      setIx(buildIndex(w));
+      return;
+    }
+    const worker = new Worker(new URL("../lib/replayWorker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (e: MessageEvent<ReplayIndex>) => setIx(e.data);
+    worker.onerror = () => setIx(buildIndex(w)); // the page's own thread, slower, still right
+    worker.postMessage(w);
+    return () => worker.terminate();
+  }, [w]);
+  return ix;
+}
+
+export function ReplayView({ params }: { params: URLSearchParams }) {
+  const hours = Number(params.get("hours")) || 24;
+  // the window ends when the view opens a span; another span is a new window, ending then
+  const end = useMemo(() => Date.now(), [hours]);
+  const to = useMemo(() => new Date(end).toISOString(), [end]);
+  const from = useMemo(() => new Date(end - hours * 3_600_000).toISOString(), [end, hours]);
+  const q = useQuery({
+    queryKey: ["replay", from, to],
+    queryFn: () => get<ReplayWindow>(`/api/replay?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+    staleTime: Infinity,
+  });
+  const ix = useIndex(q.data);
+  if (q.isPending || (q.data && !ix)) return <Loading what="the replay" />;
+  if (q.isError) return <Problem error={q.error} />;
+  return <Player ix={ix!} hours={hours} params={params} />;
+}
+
+function Player({ ix, hours, params }: { ix: ReplayIndex; hours: number; params: URLSearchParams }) {
+  const initial = Number(params.get("t"));
+  const [t, setT] = useState(() => (initial >= ix.from && initial <= ix.to ? initial : ix.known));
+  const [speed, setSpeed] = useState<number>(() => {
+    const s = Number(params.get("speed"));
+    return (SPEEDS as readonly number[]).includes(s) ? s : 60;
+  });
+  const [playing, setPlaying] = useState(false);
+  const table = params.get("table") === "1";
+  const frameMs = useRef(0);
+  const box = useRef<HTMLDivElement>(null);
+
+  // the URL keeps the cursor and the speed, so a reload or a shared link opens the same moment; not on every frame
+  const keep = useCallback(
+    (at: number, sp = speed) => {
+      window.history.replaceState(null, "", href("replay", { hours: String(hours), t: String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
+    },
+    [hours, speed, table],
+  );
+
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      setT((cur) => {
+        const next = cur + dt * speed;
+        if (next >= ix.known) {
+          setPlaying(false);
+          return ix.known;
+        }
+        return next;
+      });
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, speed, ix.known]);
+
+  useEffect(() => {
+    if (!playing) keep(t);
+  }, [playing, t, keep]);
+
+  const t0 = performance.now();
+  const frame = useMemo(() => frameAt(ix, t), [ix, t]);
+  useLayoutEffect(() => {
+    frameMs.current = performance.now() - t0;
+    box.current?.setAttribute("data-frame-ms", frameMs.current.toFixed(2));
+  });
+
+  const go = (dir: 1 | -1) => {
+    const at = jump(ix, t, dir);
+    setPlaying(false);
+    setT(at ?? (dir === 1 ? ix.known : ix.from));
+  };
+  const toggle = () => {
+    if (!playing && t >= ix.known) setT(ix.from); // at the end, play starts over
+    setPlaying((p) => !p);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type !== "range") return;
+    if (e.key === " ") {
+      e.preventDefault();
+      toggle();
+    } else if (e.key === "ArrowRight" && e.shiftKey) {
+      e.preventDefault();
+      go(1);
+    } else if (e.key === "ArrowLeft" && e.shiftKey) {
+      e.preventDefault();
+      go(-1);
+    }
+  };
+
+  const active = frame.filter((_, i) => isActive(ix, i));
+  const totals = KINDS.reduce((acc, k) => ({ ...acc, [k]: frame.reduce((s, f) => s + f.time_s[k], 0) }), {} as Record<Kind, number>);
+  const spanDays = (ix.to - ix.from) / 86_400_000 > 1;
+
+  return (
+    <div ref={box} className="mx-auto max-w-[1600px] px-6 py-5 max-sm:px-4" data-testid="replay" onKeyDown={onKey}>
+      <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+        <h1 className="text-[20px] font-semibold">Replay</h1>
+        <p className="text-[13px] text-muted">Who did what, how long it took, and what it cost, over time.</p>
+        <div className="ml-auto flex items-center gap-1" role="group" aria-label="Time window">
+          {WINDOWS.map(([h, label]) => (
+            <a
+              key={h}
+              href={href("replay", { hours: String(h) })}
+              aria-current={h === hours ? "true" : undefined}
+              className={cn("rounded-md px-2.5 py-1 text-[13px]", h === hours ? "bg-raised font-medium text-fg" : "text-muted hover:bg-raised/60 hover:text-fg")}
+            >
+              {label}
+            </a>
+          ))}
+          <a
+            href={href("replay", { hours: String(hours), t: String(Math.round(t)), speed: String(speed), table: table ? undefined : "1" })}
+            className="ml-2 rounded-md border border-line px-2.5 py-1 text-[13px] hover:bg-raised/60"
+            data-testid="table-toggle"
+          >
+            {table ? "Show lanes" : "Show as a table"}
+          </a>
+        </div>
+      </header>
+      <Controls
+        t={t}
+        ix={ix}
+        speed={speed}
+        playing={playing}
+        spanDays={spanDays}
+        onToggle={toggle}
+        onSpeed={(s) => {
+          setSpeed(s);
+          keep(t, s);
+        }}
+        onJump={go}
+        onScrub={(at) => {
+          setPlaying(false);
+          setT(at);
+        }}
+      />
+      <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
+      {table ? <AtCursor frame={frame} ix={ix} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
+      {!table && <AtCursor frame={frame} ix={ix} compact />}
+    </div>
+  );
+}
+
+function isActive(ix: ReplayIndex, i: number): boolean {
+  const L = ix.lanes[i];
+  return L.ct.length > 1 || L.cs[0] >= 0 || L.rt.length > 0;
+}
+
+function Controls(p: {
+  t: number;
+  ix: ReplayIndex;
+  speed: number;
+  playing: boolean;
+  spanDays: boolean;
+  onToggle: () => void;
+  onSpeed: (s: number) => void;
+  onJump: (d: 1 | -1) => void;
+  onScrub: (t: number) => void;
+}) {
+  const after = p.t > p.ix.known;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-ui border border-line bg-surface px-3 py-2" data-testid="controls">
+      <button type="button" onClick={() => p.onJump(-1)} className="grid h-8 w-8 place-items-center rounded-md hover:bg-raised" aria-label="Previous change" title="Previous change (Shift+Left)" data-testid="prev">
+        <SkipBack className="h-4 w-4" aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={p.onToggle}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-bg hover:opacity-90"
+        aria-label={p.playing ? "Pause" : "Play"}
+        title="Play or pause (Space)"
+        data-testid="play"
+        data-playing={p.playing ? "1" : undefined}
+      >
+        {p.playing ? <Pause className="h-4 w-4" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />}
+        {p.playing ? "Pause" : "Play"}
+      </button>
+      <button type="button" onClick={() => p.onJump(1)} className="grid h-8 w-8 place-items-center rounded-md hover:bg-raised" aria-label="Next change" title="Next change (Shift+Right)" data-testid="next">
+        <SkipForward className="h-4 w-4" aria-hidden />
+      </button>
+      <div className="flex items-center gap-0.5" role="group" aria-label="Speed">
+        {SPEEDS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => p.onSpeed(s)}
+            aria-pressed={s === p.speed}
+            data-testid={`speed-${s}`}
+            className={cn("rounded-md px-2 py-1 text-[12.5px] tabular-nums", s === p.speed ? "bg-raised font-semibold text-fg" : "text-muted hover:bg-raised/60 hover:text-fg")}
+          >
+            {s}×
+          </button>
+        ))}
+      </div>
+      <span className="font-mono text-[13px] tabular-nums" data-testid="cursor-time" title="The moment the lanes and the numbers show">
+        {stamp(p.t, p.spanDays, true)}
+      </span>
+      {after && <span className="text-[12px] text-muted">after now: nothing is known yet</span>}
+      <input
+        type="range"
+        min={p.ix.from}
+        max={p.ix.to}
+        step={1000}
+        value={p.t}
+        onChange={(e) => p.onScrub(Number(e.target.value))}
+        aria-label="Moment in the window"
+        aria-valuetext={stamp(p.t, true, true)}
+        className="min-w-[160px] flex-1 accent-[hsl(var(--accent))]"
+        data-testid="scrubber"
+      />
+    </div>
+  );
+}
+
+function Summary({ frame, active, lanes, totals }: { frame: LaneFrame[]; active: number; lanes: number; totals: Record<Kind, number> }) {
+  const tok = frame.reduce((s, f) => s + f.tokens, 0);
+  const cache = frame.reduce((s, f) => s + f.cache_read, 0);
+  const now = KINDS.map((k, ki) => [k, frame.filter((f) => f.state === ki).length] as const).filter(([, n]) => n);
+  return (
+    <div className="mt-3 space-y-1 text-[14px] leading-snug" data-testid="summary">
+      <p>
+        <span className="font-semibold">{now.length ? now.map(([k, n]) => `${n} ${KIND_LABEL[k].toLowerCase()}`).join(", ") : "No lane busy"}</span>
+        <span className="text-muted"> at the cursor, of {plural(active, "lane")} with activity in this window ({lanes} in all).</span>
+      </p>
+      <p className="text-muted">
+        So far: {KINDS.map((k) => `${KIND_LABEL[k].toLowerCase()} ${duration(totals[k])}`).join(" · ")} ·{" "}
+        <span className="text-fg">{tokens(tok)} tokens</span>, and {tokens(cache)} read from the cache.
+      </p>
+    </div>
+  );
+}
+
+function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: LaneFrame[]; t: number; spanDays: boolean; onScrub: (t: number) => void }) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const narrow = width > 0 && width < 640;
+  const gutter = narrow ? 92 : 150;
+  const right = narrow ? 8 : 16;
+  const plot = Math.max(0, width - gutter - right);
+  const order = useMemo(() => ix.lanes.map((_, i) => i).filter((i) => isActive(ix, i)), [ix]);
+  const idle = ix.lanes.filter((_, i) => !isActive(ix, i)).map((L) => L.name);
+  const cols = useMemo(
+    () => (plot > 0 ? order.map((i) => columns(ix.lanes[i], ix.from, ix.to, Math.floor(plot), ix.known)) : []),
+    [ix, order, plot],
+  );
+  const x = (ms: number) => gutter + ((ms - ix.from) / (ix.to - ix.from)) * plot;
+  const AXIS = 22;
+  const ROW = narrow ? 34 : 30;
+  const height = AXIS + order.length * ROW + (idle.length ? 44 : 0) + 8;
+  const tickMs = (() => {
+    const span = ix.to - ix.from;
+    const want = narrow ? 4 : 8;
+    const steps = [60_000, 300_000, 900_000, 1_800_000, 3_600_000, 3 * 3_600_000, 6 * 3_600_000, 12 * 3_600_000, 86_400_000];
+    return steps.find((s) => span / s <= want) ?? 86_400_000;
+  })();
+  const ticks: number[] = [];
+  for (let m = Math.ceil(ix.from / tickMs) * tickMs; m <= ix.to; m += tickMs) ticks.push(m);
+  const drag = useRef(false);
+  const scrubAt = (e: React.PointerEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - box.left;
+    if (px < gutter) return;
+    onScrub(Math.max(ix.from, Math.min(ix.to, ix.from + ((px - gutter) / plot) * (ix.to - ix.from))));
+  };
+
+  return (
+    <div ref={ref} className="relative mt-4 select-none rounded-ui border border-line bg-surface" data-testid="lanes">
+      {width > 0 && (
+        <svg
+          width={width}
+          height={height}
+          role="img"
+          aria-label={`Replay of ${plural(order.length, "lane")}; the table view lists the same numbers at the cursor`}
+          onPointerDown={(e) => {
+            drag.current = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            scrubAt(e);
+          }}
+          onPointerMove={(e) => drag.current && scrubAt(e)}
+          onPointerUp={() => (drag.current = false)}
+          className="cursor-col-resize"
+        >
+          {ticks.map((m) => (
+            <g key={m}>
+              <line x1={x(m)} x2={x(m)} y1={AXIS - 4} y2={height - 6} className="stroke-line" strokeWidth={1} />
+              <text x={x(m) > width - 48 ? x(m) - 3 : x(m) + 3} y={AXIS - 8} textAnchor={x(m) > width - 48 ? "end" : "start"} className="fill-muted text-[11px]">
+                {stamp(m, spanDays && new Date(m).getHours() === 0)}
+              </text>
+            </g>
+          ))}
+          {ix.known < ix.to && (
+            <rect x={x(ix.known)} y={AXIS - 4} width={x(ix.to) - x(ix.known)} height={height - AXIS} className="fill-raised" fillOpacity={0.6} data-testid="after-now" />
+          )}
+          {order.map((li, row) => {
+            const L = ix.lanes[li];
+            const f = frame[li];
+            const y = AXIS + row * ROW;
+            const mid = y + ROW / 2;
+            const runs: { x0: number; x1: number; k: number }[] = [];
+            cols[row]?.forEach((c, cx) => {
+              if (c.kind < 0) return;
+              const last = runs[runs.length - 1];
+              if (last && last.k === c.kind && last.x1 === cx) last.x1 = cx + 1;
+              else runs.push({ x0: cx, x1: cx + 1, k: c.kind });
+            });
+            const maxReq = Math.max(1, ...(cols[row] ?? []).map((c) => c.requests));
+            return (
+              <g key={L.name} data-testid="lane" data-lane={L.name} data-state={f.state >= 0 ? KINDS[f.state] : "idle"}>
+                {row > 0 && <line x1={0} x2={width} y1={y} y2={y} className="stroke-line" strokeWidth={1} strokeOpacity={0.6} />}
+                <text x={12} y={mid + 4} className="fill-fg text-[13px] font-medium">
+                  {L.name}
+                </text>
+                <line x1={gutter} x2={gutter + plot} y1={mid} y2={mid} className="stroke-line" strokeWidth={1} />
+                {runs.map((r, i) => (
+                  <rect key={i} x={gutter + r.x0} y={mid - 6} width={r.x1 - r.x0} height={12} className={KIND_FILL[KINDS[r.k]]} fillOpacity={0.85} data-kind={KINDS[r.k]} />
+                ))}
+                {(cols[row] ?? []).map((c, cx) =>
+                  c.requests ? (
+                    <rect key={`q${cx}`} x={gutter + cx} y={mid + 7} width={1} height={Math.max(1.5, (c.requests / maxReq) * 5)} className="fill-fg" fillOpacity={0.55} />
+                  ) : null,
+                )}
+              </g>
+            );
+          })}
+          {idle.length > 0 && (
+            <text x={12} y={AXIS + order.length * ROW + 18} className="fill-muted text-[12.5px]" data-testid="idle-lanes">
+              <tspan className="fill-fg font-medium">{plural(idle.length, "lane")} with nothing in this window:</tspan>
+              <tspan x={12} dy={17}>
+                {idle.join(", ")}
+              </tspan>
+            </text>
+          )}
+          <line x1={x(t)} x2={x(t)} y1={AXIS - 6} y2={height - 4} className="stroke-accent" strokeWidth={2} data-testid="cursor" />
+        </svg>
+      )}
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-2 text-[12px] text-muted" data-testid="legend">
+        {KINDS.map((k) => (
+          <span key={k} className="inline-flex items-center gap-1.5" title={KIND_HELP[k]}>
+            <span className={cn("inline-block h-2.5 w-4 shrink-0 rounded-sm opacity-85", KIND_DOT[k])} aria-hidden />
+            <span>
+              <span className="text-fg">{KIND_LABEL[k]}:</span> {KIND_HELP[k]}
+            </span>
+          </span>
+        ))}
+        <span>Ticks under a lane are model requests. Drag on the lanes to move the cursor.</span>
+      </p>
+    </div>
+  );
+}
+
+function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: ReplayIndex; compact?: boolean }) {
+  const rows = frame.map((f, i) => ({ f, i })).filter(({ i }) => !compact || isActive(ix, i));
+  return (
+    <div className="mt-4 overflow-x-auto rounded-ui border border-line bg-surface" data-testid={compact ? "at-cursor" : "replay-table"}>
+      <table className="w-full text-left text-[13px]">
+        <caption className="px-3 pt-2 text-left text-[12px] text-muted">At the cursor, so far in this ledger</caption>
+        <thead className="text-[12px] text-muted">
+          <tr className="border-b border-line">
+            <th className="px-3 py-2 font-medium">Lane</th>
+            <th className="px-3 py-2 font-medium">At the cursor</th>
+            {KINDS.map((k) => (
+              <th key={k} className="px-3 py-2 text-right font-medium" title={KIND_HELP[k]}>
+                {KIND_LABEL[k]}
+              </th>
+            ))}
+            <th className="px-3 py-2 text-right font-medium" title="Input, output and cache creation; cache reads apart">
+              Tokens
+            </th>
+            <th className="px-3 py-2 text-right font-medium">Cache reads</th>
+            <th className="px-3 py-2 font-medium" title="The step recorded on the session of the lane's latest request">
+              Step
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ f }) => (
+            <tr key={f.name} className="border-b border-line last:border-0" data-testid="cursor-row" data-lane={f.name}>
+              <td className="px-3 py-1.5 font-medium">{f.name}</td>
+              <td className="px-3 py-1.5">
+                {f.state >= 0 ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={cn("h-2 w-2 shrink-0 rounded-full", KIND_DOT[KINDS[f.state]])} aria-hidden />
+                    {KIND_LABEL[KINDS[f.state]]}
+                  </span>
+                ) : (
+                  <span className="text-muted">idle</span>
+                )}
+              </td>
+              {KINDS.map((k) => (
+                <td key={k} className="px-3 py-1.5 text-right tabular-nums">
+                  {f.time_s[k] >= 1 ? duration(f.time_s[k]) : <span className="text-muted">—</span>}
+                </td>
+              ))}
+              <td className="px-3 py-1.5 text-right tabular-nums">{f.tokens ? tokens(f.tokens) : <span className="text-muted">—</span>}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-muted">{f.cache_read ? tokens(f.cache_read) : "—"}</td>
+              <td className="px-3 py-1.5 font-mono text-[12px]">{f.step >= 0 ? ix.steps[f.step].replace(/^step:/, "") : f.requests ? <span className="font-sans text-muted">between steps</span> : ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
