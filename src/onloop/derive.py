@@ -5,6 +5,8 @@
     waiting_on_you(ledger, now, card_ids) -> dict          the one "waiting on you" count (finding #20)
     turns_per_role(reader, start, end) -> dict[str, int]   turns that ended in [start, end], per role
     timeline(ledger, start, end, now) -> dict              per lane, its four kinds of time and its tokens by step
+    your_wait(ledger, start, end, now) -> dict             the person's wait: the one count, each item's age, and the
+                                                           share of [start, end] in which anything waited on them
 
 Now, Flow, Activity and the map call these and count nothing on their own, so two views never disagree about the
 same thing. `tests/test_agreement.py` holds every view to that on the demo ledger, the generic replay and, on 8793, the
@@ -57,6 +59,58 @@ def timeline(ledger: Any, start: str, end: str, now: str | None = None) -> dict[
     from . import timeline as tl
 
     return tl.build(ledger, start, end, now)
+
+
+def your_wait(ledger: Any, start: str, end: str, now: str) -> dict[str, Any]:
+    """The person's wait made visible (decision 0019, a7). `count` is `waiting_on_you`'s, the one count every view
+    shows; `oldest_s` the longest any open item has waited; `share` the fraction of [start, end] (cut at now) in which
+    at least one of the person's tasks was open; `by_role` the open items per role that asked."""
+    from . import events as ev
+
+    yours = waiting_on_you(ledger, now)
+    out: dict[str, Any] = {
+        "count": yours["count"],
+        "oldest_s": None,
+        "share": 0.0,
+        "waited_s": 0.0,
+        "by_role": {},
+    }
+    if not has_tasks(ledger):
+        return out
+    open_ = ledger.select(
+        "SELECT id, author_role, opened_at FROM human_tasks WHERE id IN ({})".format(
+            ",".join("?" * len(yours["task_ids"])) or "''"
+        ),
+        tuple(yours["task_ids"]),
+    )
+    ages = [(ev.parse_ts(now) - ev.parse_ts(r["opened_at"])).total_seconds() for r in open_]
+    out["oldest_s"] = max(ages) if ages else None
+    for r in open_:
+        role = r["author_role"] or "unattributed"
+        out["by_role"][role] = out["by_role"].get(role, 0) + 1
+    hi = min(end, now)
+    if hi <= start:
+        return out
+    spans = sorted(
+        (max(r["opened_at"], start), min(r["resolved_at"] or hi, hi))
+        for r in ledger.select(
+            "SELECT opened_at, resolved_at FROM human_tasks WHERE opened_at < ? AND (resolved_at IS NULL OR resolved_at > ?)",
+            (hi, start),
+        )
+    )
+    covered, reach = 0.0, None
+    for a, b in spans:
+        if b <= a:
+            continue
+        if reach is None or a > reach:
+            covered += _secs(a, b)
+            reach = b
+        elif b > reach:
+            covered += _secs(reach, b)
+            reach = b
+    out["waited_s"] = round(covered, 3)
+    out["share"] = round(covered / _secs(start, hi), 4)
+    return out
 
 
 # -- the map, zoom 0 (decision 0018; the overview plan's §12.2 and §12.3) ---------------------------------------------

@@ -499,6 +499,8 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
         "stalls": _stalls(ledger, alerts, now_ts),
         "health": _health(ledger, alerts, now_ts, heartbeat),
         "quiet": _quiet_with_gaps(ledger, now_ts),
+        # the person's wait over the last day (decision 0019, a7): the one count, the oldest item, the share of the day
+        "your_wait": derive.your_wait(ledger, ev.shift_ts(now_ts, -86400), now_ts, now_ts),
     }
 
 

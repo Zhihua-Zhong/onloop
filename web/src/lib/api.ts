@@ -60,6 +60,14 @@ export interface ScheduleHealth {
   owner_role: string | null;
 }
 
+export interface YourWait {
+  count: number;
+  oldest_s: number | null;
+  share: number; // of the window (cut at now) in which at least one of your tasks was open
+  waited_s: number;
+  by_role: Record<string, number>;
+}
+
 export interface NowModel {
   now: string;
   constraint: Bottleneck | null;
@@ -68,6 +76,8 @@ export interface NowModel {
   waiting_on_you: (WaitCard | TaskCard)[];
   quiet: { since: string; state: "idle" | "waiting"; waits: { waiter: string; on: string; since: string }[]; onloop_down_s?: number } | null;
   stalls: Stall[];
+  /** The person's wait over the last day (decision 0019, a7): the one count, the oldest item, the share of the day. */
+  your_wait?: YourWait;
   health: {
     /** onloopd's own gaps in the last week (finding #14): time with no record, never shown as quiet. */
     gaps: { from: string; to: string; seconds: number; cause: string | null; while_running: boolean | null }[];

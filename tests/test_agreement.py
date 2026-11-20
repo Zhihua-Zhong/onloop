@@ -345,3 +345,29 @@ def test_the_timeline_counts_turns_as_activity_does_and_each_second_once(which, 
             s["tokens"]["total"] for s in L["steps"]
         )
     assert t["totals"]["turns"] == a["turns"]
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_the_persons_wait_is_one_count_on_now_the_map_and_replay(which, demo_path, replay_path):
+    """Decision 0019, a7: Now's line, the replay's window and the map count what waits on you from one derivation."""
+    from onloop.report import replay
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        n = views.now(led, now)
+        z = derive.zoom0(led, now)
+        w = replay.window(led, now, ev_shift(now, -6 * 3600), now)
+    counts = {
+        "now_line": n["your_wait"]["count"],
+        "now_list": len(n["waiting_on_you"]),
+        "map": z["signals"]["waiting_on_you"],
+        "replay": w["your_wait"]["count"],
+    }
+    assert len(set(counts.values())) == 1, counts
+    assert 0.0 <= w["your_wait"]["share"] <= 1.0 and 0.0 <= n["your_wait"]["share"] <= 1.0
+
+
+def ev_shift(ts, s):
+    from onloop import events as ev
+
+    return ev.shift_ts(ts, s)

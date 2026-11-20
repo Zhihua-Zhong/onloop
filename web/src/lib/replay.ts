@@ -28,6 +28,7 @@ export interface ReplayWindow {
   steps: string[];
   step_by?: string[]; // per step: "recorded", or "rule" (rule E's clause 2: the next commit's Node: trailer)
   working_now?: WorkingNow[]; // the recorded steps open at the window's end (decision 0019, a6)
+  your_wait?: { count: number; oldest_s: number | null; share: number; waited_s: number; by_role: Record<string, number> }; // a7
 }
 
 export interface WorkingNow {

@@ -673,6 +673,15 @@
   ],
   "to": "2026-11-02T11:00:00.000Z",
   "to_ms": 1793617200000,
-  "working_now": []
+  "working_now": [],
+  "your_wait": {
+   "by_role": {
+    "builder": 2
+   },
+   "count": 2,
+   "oldest_s": 6600.0,
+   "share": 0.625,
+   "waited_s": 1800.0
+  }
  }
 }

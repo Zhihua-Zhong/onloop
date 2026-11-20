@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import derive
 from .. import events as ev
 from .. import timeline as tl
 from .views import QueryError
@@ -126,6 +127,7 @@ def window(
         "requests": reqs,
         "steps": steps,
         "step_by": step_by,  # per step: recorded, or rule (attributed by rule E's clause 2)
+        "your_wait": derive.your_wait(reader, start, end, now),  # the person's wait in the window (a7)
         # the steps open at the window's end (or now, when earlier): who is working on what, and its tokens so far
         "working_now": [
             {

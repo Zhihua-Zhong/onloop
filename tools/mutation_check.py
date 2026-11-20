@@ -2031,6 +2031,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
     ),
     (
+        "the person's wait counts the window after now, where nothing is known",
+        "src/onloop/derive.py",
+        "    hi = min(end, now)\n",
+        "    hi = end\n",
+        ["tests/test_timeline.py::test_the_persons_wait_is_the_share_of_the_window_with_anything_open"],
+    ),
+    (
         "working now keeps a step that has already ended",
         "src/onloop/timeline.py",
         "            if a <= t <= b:\n",

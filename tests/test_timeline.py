@@ -302,3 +302,10 @@ def test_working_now_is_each_open_recorded_step_with_its_tokens_so_far(led):
     ]
     assert tl.working_now(led, at("10:20")) == []  # the step ended at 10:08
     assert tl.working_now(led, at("10:03")) == []  # and began at 10:04
+
+
+def test_the_persons_wait_is_the_share_of_the_window_with_anything_open(led):
+    w = derive.your_wait(led, at("09:00"), at("11:00"), at("10:50"))
+    # t0 waited 09:00-09:30 and t1 from 10:20, still open at now (10:50): one hour of the 110 minutes up to now
+    assert w["waited_s"] == 3600.0 and w["share"] == round(3600 / 6600, 4)
+    assert w["count"] == derive.waiting_on_you(led, at("10:50"))["count"]

@@ -5,7 +5,7 @@ import { useNowMs, useTicking } from "@/lib/clock";
 import { useHeartbeat } from "@/lib/heartbeat";
 import { currentBeat } from "@/lib/tick";
 import { ArrowRight, ExternalLink } from "lucide-react";
-import { api, type NowModel, type Stall, type TaskCard, type WaitCard } from "@/lib/api";
+import { api, type NowModel, type Stall, type TaskCard, type WaitCard, type YourWait } from "@/lib/api";
 import { DigestBand, TaskList, TaskRows } from "@/views/Tasks";
 import { ago, clock, duration, plural, reason } from "@/lib/format";
 import { href } from "@/lib/route";
@@ -322,6 +322,7 @@ function TasksFirst({ m }: { m: NowModel }) {
   return (
     <>
       <CompactBanner m={m} />
+      {m.your_wait && <YourWaitLine w={m.your_wait} />}
       <DigestBand />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-5">
         <Section title="Waiting on you" count={tasks.length} t="human" testid="col-waiting" note={<span className="max-sm:hidden">in order: weight, then when the delay costs, then age</span>}>
@@ -404,5 +405,24 @@ export function NowView() {
         )
       )}
     </div>
+  );
+}
+
+// The person's wait made visible (decision 0019, a7): the same count as the list below, how long the oldest has
+// waited, and how much of the last day anything waited on you. The Replay view shows it for any window.
+function YourWaitLine({ w }: { w: YourWait }) {
+  return (
+    <p className="mb-3 text-[13.5px]" data-testid="your-wait">
+      <span className="font-semibold text-state-human">{w.count} waiting on you</span>
+      {w.oldest_s != null && w.count > 0 && <span className="text-muted"> · the oldest for {duration(w.oldest_s)}</span>}
+      <span className="text-muted">
+        {" "}
+        · something waited on you {Math.round(w.share * 100)}% of the last 24 h ({duration(w.waited_s)})
+      </span>
+      {" "}
+      <a href={href("replay", { hours: "24" })} className="text-accent hover:underline">
+        see it in Replay
+      </a>
+    </p>
   );
 }

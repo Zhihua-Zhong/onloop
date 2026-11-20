@@ -23,6 +23,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Your wait made visible** (decision 0019, a7): Now says how many items wait on you (the same count as its list),
+  how long the oldest has waited, and how much of the last day anything waited on you, with a link to Replay.
+  Replay's "Where the time went" starts with the same for its window. `derive.your_wait` is the one derivation; the
+  agreement test holds Now, the map and Replay to one count.
 - **Who is working now** (decision 0019, a6): the Replay view opens live when no moment is in its link. The window
   ends now and is read again every 15 s, the cursor stays at now, and "Working now" lists each step onloop recorded
   that is open, with its role, how long it has run and its tokens so far. Moving the cursor leaves live; "Go live"

@@ -108,6 +108,7 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
       ix={ix!}
       bd={bd}
       working={q.data?.working_now ?? []}
+      wait={q.data?.your_wait ?? null}
       hours={hours}
       params={params}
       live={live}
@@ -123,6 +124,7 @@ function Player(p: {
   ix: ReplayIndex;
   bd: LaneBreakdown[];
   working: WorkingNow[];
+  wait: ReplayWindow["your_wait"] | null;
   hours: number;
   params: URLSearchParams;
   live: boolean;
@@ -267,7 +269,7 @@ function Player(p: {
       <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
       {table ? <AtCursor frame={frame} ix={ix} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
       {!table && <AtCursor frame={frame} ix={ix} compact />}
-      <WhereItWent bd={bd} hours={hours} />
+      <WhereItWent bd={bd} hours={hours} wait={p.wait} />
     </div>
   );
 }
@@ -363,8 +365,8 @@ function Summary({ frame, active, lanes, totals }: { frame: LaneFrame[]; active:
   return (
     <div className="mt-3 space-y-1 text-[14px] leading-snug" data-testid="summary">
       <p>
-        <span className="font-semibold">{now.length ? now.map(([k, n]) => `${n} ${KIND_LABEL[k].toLowerCase()}`).join(", ") : "No lane busy"}</span>
-        <span className="text-muted"> at the cursor, of {plural(active, "lane")} with activity in this window ({lanes} in all).</span>
+        <span className="font-semibold">{now.length ? now.map(([k, n]) => `${plural(n, "lane")} ${KIND_LABEL[k].toLowerCase()}`).join(", ") : "No lane busy"}</span>
+        <span className="text-muted"> at the cursor, of {plural(active, "lane")} with activity in this window ({lanes} in all). A lane is a role; one role can hold many items.</span>
       </p>
       <p className="text-muted">
         So far: {KINDS.map((k) => `${KIND_LABEL[k].toLowerCase()} ${duration(totals[k])}`).join(" · ")} ·{" "}
@@ -545,7 +547,7 @@ function AtCursor({ frame, ix, compact = false }: { frame: LaneFrame[]; ix: Repl
   );
 }
 
-function WhereItWent({ bd, hours }: { bd: LaneBreakdown[]; hours: number }) {
+function WhereItWent({ bd, hours, wait }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null }) {
   const lanes = bd.filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1));
   const busiest = Math.max(1, ...lanes.map((L) => KINDS.reduce((s, k) => s + L.time_s[k], 0)));
   const span = hours >= 24 ? `${hours / 24} day${hours > 24 ? "s" : ""}` : `${hours} h`;
@@ -557,6 +559,21 @@ function WhereItWent({ bd, hours }: { bd: LaneBreakdown[]; hours: number }) {
           In the whole window ({span}), not at the cursor. Tokens are input, output and cache creation; cache reads are apart.
         </p>
       </header>
+      {wait && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2.5" data-testid="your-wait-bar">
+          <span className="w-28 shrink-0 text-[13px] font-medium">You</span>
+          <span className="flex h-3 min-w-[120px] flex-1 overflow-hidden rounded-sm bg-raised" aria-hidden>
+            <span className="h-full bg-state-human" style={{ width: `${Math.round(wait.share * 100)}%` }} />
+          </span>
+          <span className="text-[12.5px]">
+            <span className="font-medium">something waited on you {Math.round(wait.share * 100)}% of the window</span>
+            <span className="text-muted">
+              {" "}
+              ({duration(wait.waited_s)}) · {wait.count} waiting now{wait.oldest_s != null && wait.count > 0 ? `, the oldest for ${duration(wait.oldest_s)}` : ""}
+            </span>
+          </span>
+        </div>
+      )}
       {lanes.length === 0 ? (
         <p className="px-3 py-3 text-[13px] text-muted">Nothing in this window.</p>
       ) : (
