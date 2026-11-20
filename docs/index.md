@@ -11,6 +11,8 @@
 - [FAQ](faq.md)
 - [The map](map.md): where the work is stuck and whether it is you, at zoom 0, 1 and 2, with its colours, words and
   limits.
+- [Replay](replay.md): who did what, how long it took and what it cost, over time; the telemetry behind it, cost by
+  step, `onloop open` and a step's products (decision 0019)
 - [The UI](ui.md): the six views onloopd serves (Now, Flow, Team, Conversation, Schedules and Audit), how it is built,
   served and tested
 - [The session carrier](carrier.md): how onloop delivers messages into the role sessions, off by default

@@ -23,6 +23,8 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
+  products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,
   and previous-change from the end goes to the last change before it; playback keeps the wall clock (600x is 600x,
   even in a throttled or background tab); the figures are the window's by default, labelled "In this 6 h window, up
