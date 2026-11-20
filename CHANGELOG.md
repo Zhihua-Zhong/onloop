@@ -13,6 +13,14 @@ All notable changes to this project are recorded here. The format follows
   Every event is kept, unchanged. Back the ledger file up first if you may want to go back; 0.5.x refuses a
   schema-10 file.
 
+### Added
+
+- **onloopd receives Claude Code's own telemetry** (decision 0019): `POST /v1/logs` and `POST /v1/metrics`, OTLP/HTTP
+  with JSON encoding, with onloopd's token. The identity attributes Claude Code sends when signed in are dropped on
+  arrival. A model request, a prompt and a tool call become `cost.request`, `turn.prompted` and `tool.ended` events,
+  each with only its named fields: tokens, model and duration, a prompt's length but never its text, a tool's name and
+  result but never its parameters. Metrics are answered and stored nowhere.
+
 ## [0.5.0] - 2026-11-20
 
 0.5.0 shows where a team's work stands at a glance. It adds the map, one picture with levels from the goals down to

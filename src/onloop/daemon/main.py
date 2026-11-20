@@ -35,7 +35,7 @@ from ..detect import core as detect
 from ..detect import event_fired, no_outcome, pr_expiry, reconcile, same_goal, schedules, wakers
 from ..ingest import github as github_ingest
 from ..overlay.ledger import Ledger
-from . import hook_receiver, jobs, sources, task_returns, token
+from . import hook_receiver, jobs, otlp, sources, task_returns, token
 from . import server as srv
 from .config import OnloopdConfig
 from .routes import Routes
@@ -45,6 +45,7 @@ ROUTES: list[tuple[str, Callable[..., dict[str, Any]]]] = [
     ("/hooks/", hook_receiver.handle),
     ("/sources/", sources.handle),
     ("/tasks/", sources.tasks_route),
+    ("/v1/", otlp.handle),
 ]
 
 # The detectors run on every tick, after the ingest: (name, detector). They record; nothing acts in R2.

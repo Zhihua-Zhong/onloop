@@ -2003,6 +2003,29 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the OTLP receiver reads a logs export before dropping the identity attributes",
+        "src/onloop/daemon/otlp.py",
+        "    scrub(body)\n    out: list[dict[str, Any]] = []\n",
+        "    out: list[dict[str, Any]] = []\n",
+        [
+            "tests/test_otlp_receiver.py::test_identity_is_scrubbed_from_the_body_itself_before_anything_reads_it"
+        ],
+    ),
+    (
+        "the OTLP receiver keeps a prompt's text instead of its length",
+        "src/onloop/daemon/otlp.py",
+        '("length", "prompt_length", "int")',
+        '("length", "prompt", "str")',
+        ["tests/test_otlp_receiver.py::test_the_three_kinds_keep_only_their_fields_and_no_identity"],
+    ),
+    (
+        "the OTLP receiver gives each record a fresh id, so a redelivered batch is logged twice",
+        "src/onloop/daemon/otlp.py",
+        'eid = hashlib.sha256("\\x1f".join(("otel", kind, session, str(seq))).encode("utf-8")).hexdigest()',
+        'eid = f"otel-{uuid.uuid4().hex}"',
+        ["tests/test_otlp_receiver.py::test_a_logs_export_is_logged_once_even_when_redelivered"],
+    ),
+    (
         "version 8's migration reads the current source set, so adding a source rewrites an old migration",
         "src/onloop/overlay/schema.py",
         '  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_8)}),',

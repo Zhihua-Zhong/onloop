@@ -4,9 +4,10 @@ It binds the loopback address only: `make_server` refuses any other host, and ev
 and name this server by its own Host: the loopback address or `localhost`, with its port. Any other Host is refused, so a
 web page elsewhere cannot reach it by DNS rebinding. `localhost` is accepted because WebAuthn refuses an IP literal as the
 relying-party id, so a page that uses passkeys is served as http://localhost:<port>.
-GET and HEAD read. POST is taken only on the write routes (`/hooks/...` and `/sources/...`) and only when the server
-was given a writer and a token: the request must carry `Authorization: Bearer <token>`, `Content-Type:
-application/json` and a body of at most 1 MiB that decodes strictly as UTF-8 to a JSON object. Everything else is 405.
+GET and HEAD read. POST is taken only on the write routes (`/hooks/...`, `/sources/...`, `/v1/...` and the others
+in WRITE_PREFIXES) and only when the server was given a writer and a token: the request must carry `Authorization:
+Bearer <token>`, `Content-Type: application/json`, no compression, and a body of at most 1 MiB that decodes strictly as
+UTF-8 to a JSON object. Everything else is 405.
 The token keeps out other programs and web pages; it is not a boundary against agents running as the same user, which
 can read it (decision 0008), so what arrives here is evidence, never authority.
 
@@ -48,6 +49,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     POST /ui/tasks/resolve      the page's task writes (decision 0013), under the same rules as /ui/messages: mark a
     POST /ui/tasks/keep         task done or declined, keep a returned task with a reason, record a visit (it keys the
     POST /ui/visits             digest). Each is evidence from a local user, not verified, never an approval
+    POST /v1/logs, /v1/metrics  Claude Code's own telemetry, OTLP/HTTP JSON (`otlp.py`, decision 0019): identity
+                                dropped on arrival; model requests, prompts and tool calls kept as `otel` events
     GET /, GET /assets/...      the UI's built files (`ui.py`), with a strict Content-Security-Policy
 """
 
@@ -79,7 +82,7 @@ EVENTS_PAGE = 500
 STREAM_POLL_S = 1.0
 STREAM_KEEPALIVE_S = 15.0
 MAX_BODY = 1024 * 1024
-WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/", "/tasks/")
+WRITE_PREFIXES = ("/hooks/", "/sources/", "/messages/", "/tasks/", "/v1/")  # /v1/: OTLP (decision 0019)
 UI_WRITE = "/ui/messages"
 # the page's task writes (decision 0013), each evidence and none authority: -> the /tasks/ action they become
 UI_TASK_WRITES = {"/ui/tasks/resolve": "resolve", "/ui/tasks/keep": "keep", "/ui/visits": "visit"}
@@ -302,6 +305,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
             self._drain()
             self._send_json(415, {"error": "a write is a JSON body (Content-Type: application/json)"})
+            return
+        if (self.headers.get("Content-Encoding") or "identity").strip().lower() != "identity":
+            self._drain()
+            self._send_json(415, {"error": "a write is not compressed (no Content-Encoding)"})
             return
         try:
             length = int(self.headers.get("Content-Length") or "-1")
