@@ -6,6 +6,13 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Upgrading
+
+- **The ledger moves from schema 9 to schema 10** (decision 0019): the events table takes the source `otel`, Claude
+  Code's own telemetry received by onloopd, and gains an index on each event's own time, for the replay's windows.
+  Every event is kept, unchanged. Back the ledger file up first if you may want to go back; 0.5.x refuses a
+  schema-10 file.
+
 ## [0.5.0] - 2026-11-20
 
 0.5.0 shows where a team's work stands at a glance. It adds the map, one picture with levels from the goals down to

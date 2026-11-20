@@ -2003,6 +2003,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "version 8's migration reads the current source set, so adding a source rewrites an old migration",
+        "src/onloop/overlay/schema.py",
+        '  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_8)}),',
+        '  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),',
+        ["tests/test_overlay_schema_v10.py::test_version_10_keeps_the_earlier_source_sets"],
+    ),
+    (
+        "schema 10 has no index on an event's own time, so a replay window scans the whole log",
+        "src/onloop/overlay/schema.py",
+        "CREATE INDEX events_time ON events(COALESCE(at, ts_system), seq);\n",
+        "",
+        ["tests/test_overlay_schema_v10.py::test_a_replay_window_on_an_events_own_time_uses_the_time_index"],
+    ),
+    (
         "the map shows a lower-bound age as exact (a wait that began before the first export)",
         "src/onloop/derive.py",
         '    return first is None or first >= w["since"]',

@@ -25,7 +25,9 @@ SOURCES_6 = (*SOURCES_5, "carrier", "cli")
 # version 7: a read adapter other than the built-in GitHub ingest (decision 0013)
 SOURCES_7 = (*SOURCES_6, "adapter")
 # version 8: a team's daily snapshot, replayed by `onloop import snapshot` (decision 0017)
-SOURCES = (*SOURCES_7, "import")
+SOURCES_8 = (*SOURCES_7, "import")
+# version 10: Claude Code's own OpenTelemetry export, received by onloopd with identity dropped (decision 0019)
+SOURCES = (*SOURCES_8, "otel")
 ITEM_KINDS = ("task", "decision", "followup", "alert")
 ITEM_STATES = ("open", "ready", "blocked", "in_review", "done")
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
@@ -723,7 +725,7 @@ CREATE TABLE events_v8 (
   seq         INTEGER PRIMARY KEY AUTOINCREMENT,
   id          TEXT NOT NULL UNIQUE,
   {_ts("ts_system", nullable=False)},
-  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES_8)}),
   kind        TEXT NOT NULL,
   subject_ref TEXT NOT NULL,
   actor       TEXT,
@@ -807,6 +809,44 @@ CREATE TABLE feedback_links (
 CREATE UNIQUE INDEX one_live_feedback_link ON feedback_links(feedback_id, kind, ref) WHERE withdrawn_at IS NULL
 """
 
+# Version 10: replay, cost and live monitoring (decision 0019).
+# - `events.source` also takes `otel`: an event from onloopd's OTLP receiver (Claude Code's own telemetry, with the
+#   identity attributes dropped on arrival);
+# - an index on an event's own time, for the replay's windows (`GET /api/replay?from=&to=`).
+# The new kinds need no table: they are events, read by the derive layer. Each is an OCEL 2.0 event type (KINDS_10).
+SCHEMA_10 = f"""
+CREATE TABLE events_v10 (
+  seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id          TEXT NOT NULL UNIQUE,
+  {_ts("ts_system", nullable=False)},
+  source      TEXT NOT NULL CHECK ({_in("source", SOURCES)}),
+  kind        TEXT NOT NULL,
+  subject_ref TEXT NOT NULL,
+  actor       TEXT,
+  {_ts("at")},
+  payload     TEXT NOT NULL CHECK (json_valid(payload))
+);
+INSERT INTO events_v10 (seq, id, ts_system, source, kind, subject_ref, actor, at, payload) SELECT seq, id, ts_system, source, kind, subject_ref, actor, at, payload FROM events ORDER BY seq;
+DROP TABLE events;
+ALTER TABLE events_v10 RENAME TO events;
+CREATE INDEX events_kind ON events(kind, seq);
+CREATE INDEX events_subject ON events(subject_ref, seq);
+CREATE INDEX events_time ON events(COALESCE(at, ts_system), seq);
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END;
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'the ledger log is append-only'); END
+"""
+
+# The kinds schema 10 brings, each with its OCEL 2.0 event type (decision 0019, §5): the same events a person's work
+# will produce when human sources arrive, on the same object types (session, prompt, role, step, tool).
+KINDS_10 = {
+    "cost.request": "model request",  # from Claude Code's api_request: tokens, model, duration, query source
+    "turn.prompted": "prompt received",  # from user_prompt: its length only, never its text
+    "tool.ended": "tool call ended",  # from tool_result: the tool, success and duration, never its parameters
+    "step.started": "step started",  # logged by onloop when it dispatches work, and by `onloop open`
+    "step.ended": "step ended",
+    "session.opened": "session opened",  # `onloop open <role>`
+}
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
@@ -817,6 +857,7 @@ MIGRATIONS: list[str] = [
     SCHEMA_7,
     SCHEMA_8,
     SCHEMA_9,
+    SCHEMA_10,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 
