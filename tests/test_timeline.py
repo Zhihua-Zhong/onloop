@@ -294,3 +294,11 @@ def test_a_session_records_only_its_repository_and_branch(tmp_path):
     assert telemetry.place(tmp_path / "not-a-repo-xyz") == {"repo": None, "branch": None}
     e = telemetry.opened_event(source="cli", role="builder", session_id="s1", cwd=str(repo), **where)
     assert set(e["payload"]) == {"role", "session_id", "cwd", "repo", "branch"}
+
+
+def test_working_now_is_each_open_recorded_step_with_its_tokens_so_far(led):
+    assert [(w["lane"], w["step"], w["tokens"]["total"]) for w in tl.working_now(led, at("10:06"))] == [
+        ("builder", "step:task:t-12", 70)
+    ]
+    assert tl.working_now(led, at("10:20")) == []  # the step ended at 10:08
+    assert tl.working_now(led, at("10:03")) == []  # and began at 10:04

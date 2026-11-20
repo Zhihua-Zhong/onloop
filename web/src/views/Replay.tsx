@@ -4,7 +4,8 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { breakdown, buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow } from "@/lib/replay";
+import { breakdown, buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
+import { useNowMs } from "@/lib/clock";
 import { Loading, Problem } from "@/components/kit";
 import { cn } from "@/lib/utils";
 
@@ -80,27 +81,64 @@ function useIndex(w: ReplayWindow | undefined): ReplayIndex | null {
   return ix;
 }
 
+const LIVE_EVERY_MS = 15_000;
+
 export function ReplayView({ params }: { params: URLSearchParams }) {
   const hours = Number(params.get("hours")) || 24;
-  // the window ends when the view opens a span; another span is a new window, ending then
-  const end = useMemo(() => Date.now(), [hours]);
-  const to = useMemo(() => new Date(end).toISOString(), [end]);
-  const from = useMemo(() => new Date(end - hours * 3_600_000).toISOString(), [end, hours]);
+  // Live (a6): with no cursor in the URL the window ends now and moves with the clock, asked again every 15 s; the
+  // cursor stays at now. Any move of the cursor leaves live; the Live button returns to it.
+  const [live, setLive] = useState(() => !params.get("t"));
   const q = useQuery({
-    queryKey: ["replay", from, to],
-    queryFn: () => get<ReplayWindow>(`/api/replay?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
-    staleTime: Infinity,
+    queryKey: ["replay", hours],
+    queryFn: () => {
+      const end = Date.now();
+      const from = new Date(end - hours * 3_600_000).toISOString();
+      const to = new Date(end).toISOString();
+      return get<ReplayWindow>(`/api/replay?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    },
+    staleTime: live ? 0 : Infinity,
+    refetchInterval: live ? LIVE_EVERY_MS : false,
   });
   const ix = useIndex(q.data);
   const bd = useMemo(() => (q.data ? breakdown(q.data) : []), [q.data]);
   if (q.isPending || (q.data && !ix)) return <Loading what="the replay" />;
-  if (q.isError) return <Problem error={q.error} />;
-  return <Player ix={ix!} bd={bd} hours={hours} params={params} />;
+  if (q.isError && !q.data) return <Problem error={q.error} />;
+  return (
+    <Player
+      ix={ix!}
+      bd={bd}
+      working={q.data?.working_now ?? []}
+      hours={hours}
+      params={params}
+      live={live}
+      setLive={(on) => {
+        setLive(on);
+        if (on) void q.refetch();
+      }}
+    />
+  );
 }
 
-function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[]; hours: number; params: URLSearchParams }) {
+function Player(p: {
+  ix: ReplayIndex;
+  bd: LaneBreakdown[];
+  working: WorkingNow[];
+  hours: number;
+  params: URLSearchParams;
+  live: boolean;
+  setLive: (on: boolean) => void;
+}) {
+  const { ix, bd, hours, params, live, setLive } = p;
   const initial = Number(params.get("t"));
-  const [t, setT] = useState(() => (initial >= ix.from && initial <= ix.to ? initial : ix.known));
+  const [t, setTRaw] = useState(() => (initial >= ix.from && initial <= ix.to ? initial : ix.known));
+  // a cursor the person moves leaves live; live keeps the cursor at now as each new window arrives
+  const setT: typeof setTRaw = (v) => {
+    if (live) setLive(false);
+    setTRaw(v);
+  };
+  useEffect(() => {
+    if (live) setTRaw(ix.known);
+  }, [live, ix]);
   const [speed, setSpeed] = useState<number>(() => {
     const s = Number(params.get("speed"));
     return (SPEEDS as readonly number[]).includes(s) ? s : 60;
@@ -113,9 +151,9 @@ function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[
   // the URL keeps the cursor and the speed, so a reload or a shared link opens the same moment; not on every frame
   const keep = useCallback(
     (at: number, sp = speed) => {
-      window.history.replaceState(null, "", href("replay", { hours: String(hours), t: String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
+      window.history.replaceState(null, "", href("replay", { hours: String(hours), t: live ? undefined : String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
     },
-    [hours, speed, table],
+    [hours, speed, table, live],
   );
 
   useEffect(() => {
@@ -125,7 +163,7 @@ function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[
     const step = (now: number) => {
       const dt = now - last;
       last = now;
-      setT((cur) => {
+      setTRaw((cur) => {
         const next = cur + dt * speed;
         if (next >= ix.known) {
           setPlaying(false);
@@ -156,8 +194,9 @@ function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[
     setT(at ?? (dir === 1 ? ix.known : ix.from));
   };
   const toggle = () => {
-    if (!playing && t >= ix.known) setT(ix.from); // at the end, play starts over
-    setPlaying((p) => !p);
+    if (live) setLive(false);
+    if (!playing && t >= ix.known) setTRaw(ix.from); // at the end, play starts over
+    setPlaying((v) => !v);
   };
   const onKey = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type !== "range") return;
@@ -205,6 +244,11 @@ function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[
       <Controls
         t={t}
         ix={ix}
+        live={live}
+        onLive={() => {
+          setPlaying(false);
+          setLive(true);
+        }}
         speed={speed}
         playing={playing}
         spanDays={spanDays}
@@ -219,6 +263,7 @@ function Player({ ix, bd, hours, params }: { ix: ReplayIndex; bd: LaneBreakdown[
           setT(at);
         }}
       />
+      {live && <Working working={p.working} />}
       <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
       {table ? <AtCursor frame={frame} ix={ix} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
       {!table && <AtCursor frame={frame} ix={ix} compact />}
@@ -235,6 +280,8 @@ function isActive(ix: ReplayIndex, i: number): boolean {
 function Controls(p: {
   t: number;
   ix: ReplayIndex;
+  live: boolean;
+  onLive: () => void;
   speed: number;
   playing: boolean;
   spanDays: boolean;
@@ -278,6 +325,17 @@ function Controls(p: {
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        onClick={p.onLive}
+        aria-pressed={p.live}
+        data-testid="live-toggle"
+        title={p.live ? "Following now: the window moves with the clock and is read again every 15 s" : "Back to now, and follow it"}
+        className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px]", p.live ? "bg-state-done/15 font-medium text-fg" : "text-muted hover:bg-raised/60 hover:text-fg")}
+      >
+        <span className={cn("h-2 w-2 rounded-full", p.live ? "bg-state-done" : "bg-state-void")} aria-hidden />
+        {p.live ? "Live" : "Go live"}
+      </button>
       <span className="font-mono text-[13px] tabular-nums" data-testid="cursor-time" title="The moment the lanes and the numbers show">
         {stamp(p.t, p.spanDays, true)}
       </span>
@@ -554,6 +612,35 @@ function WhereItWent({ bd, hours }: { bd: LaneBreakdown[]; hours: number }) {
               </li>
             );
           })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Working({ working }: { working: WorkingNow[] }) {
+  const nowMs = useNowMs();
+  return (
+    <section className="mt-3 rounded-ui border border-l-[3px] border-line border-l-state-done bg-surface px-3 py-2" data-testid="working-now" aria-label="Working now">
+      <h2 className="text-[14px] font-semibold">Working now</h2>
+      {working.length === 0 ? (
+        <p className="mt-0.5 text-[13px] text-muted">No step onloop recorded is open now. Work without a recorded step shows in the lanes, not here.</p>
+      ) : (
+        <ul className="mt-1 space-y-0.5 text-[13px]">
+          {working.map((w) => (
+            <li key={`${w.lane}|${w.step}`} className="flex flex-wrap items-baseline gap-x-2" data-testid="working-row" data-lane={w.lane}>
+              <span className="font-medium">{w.lane}</span>
+              <span className="font-mono text-[12.5px]">{w.step.replace(/^step:/, "")}</span>
+              <span className="text-muted">for {duration((nowMs - w.since_ms) / 1000)}</span>
+              <span className="tabular-nums">
+                {tokens(w.tokens)} tokens so far
+                <span className="text-muted">
+                  {" "}
+                  · {tokens(w.cache_read)} cache reads · {plural(w.requests, "model request")}
+                </span>
+              </span>
+            </li>
+          ))}
         </ul>
       )}
     </section>

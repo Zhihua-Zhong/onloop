@@ -23,6 +23,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Who is working now** (decision 0019, a6): the Replay view opens live when no moment is in its link. The window
+  ends now and is read again every 15 s, the cursor stays at now, and "Working now" lists each step onloop recorded
+  that is open, with its role, how long it has run and its tokens so far. Moving the cursor leaves live; "Go live"
+  returns. `GET /api/replay` answers `working_now` for the window's end.
 - **Where the time went** (decision 0019, a2 and a3), under the Replay view's lanes: per role, its four kinds of
   time in the window as one bar, its tokens and cache reads, and its tokens by step, each labelled "recorded" or
   "attributed by rule", with what is left "between steps" shown with its share.

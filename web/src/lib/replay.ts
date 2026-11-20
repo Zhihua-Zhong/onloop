@@ -27,6 +27,16 @@ export interface ReplayWindow {
   requests: { t: number[]; lane: number[]; total: number[]; cache_read: number[]; step: number[] };
   steps: string[];
   step_by?: string[]; // per step: "recorded", or "rule" (rule E's clause 2: the next commit's Node: trailer)
+  working_now?: WorkingNow[]; // the recorded steps open at the window's end (decision 0019, a6)
+}
+
+export interface WorkingNow {
+  lane: string;
+  step: string;
+  since_ms: number;
+  tokens: number;
+  cache_read: number;
+  requests: number;
 }
 
 export interface LaneIndex {

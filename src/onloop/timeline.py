@@ -176,6 +176,36 @@ def _spans(ledger: Any) -> dict[str, list[tuple[int, int, str]]]:
     return out
 
 
+def working_now(ledger: Any, at: str) -> list[dict[str, Any]]:
+    """Who is working on what at `at` (decision 0019, a6): every recorded step open then (started at or before `at`,
+    not ended before it), with its lane, its session, since when, and the tokens of its requests so far."""
+    t = _ms(at)
+    lanes: dict[tuple[str, str], str] = {}
+    for r in ledger.select(
+        "SELECT subject_ref, actor, payload FROM events WHERE kind = 'step.started' ORDER BY seq"
+    ):
+        sid = _payload(r).get("session_id")
+        if isinstance(sid, str):
+            lanes[(sid, r["subject_ref"])] = r["actor"] or NO_ROLE
+    out = []
+    for sid, spans in _spans(ledger).items():
+        for a, b, step in spans:
+            if a <= t <= b:
+                out.append(
+                    {"lane": lanes.get((sid, step), NO_ROLE), "session_id": sid, "step": step, "since_ms": a}
+                )
+    if out:
+        since = _iso(min(w["since_ms"] for w in out))
+        acc: dict[tuple[str, str], dict[str, int]] = {}
+        for q in requests(ledger, since, at):
+            sid = q["payload"].get("session_id")
+            if q["by"] == "recorded" and isinstance(sid, str):
+                _add(acc.setdefault((sid, q["step"]), _zero()), q["payload"])
+        for w in out:
+            w["tokens"] = acc.get((w["session_id"], w["step"]), _zero())
+    return sorted(out, key=lambda w: (w["lane"], w["since_ms"]))
+
+
 def _step_at(spans: list[tuple[int, int, str]], starts: list[int], t: int) -> str | None:
     """The step recorded on a session at t: the latest one started at or before t that has not ended before t."""
     i = bisect.bisect_right(starts, t) - 1

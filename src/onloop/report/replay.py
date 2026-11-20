@@ -11,6 +11,7 @@ The answer is in columns, parallel arrays, so a week of a hundred thousand reque
     requests {t, lane, total, cache_read, step}   each model request, with its step (an index into `steps`, or -1:
                              between steps); `step_by[i]` says how step i was found: recorded, or rule
     at_to[i]                 lane i at `to`, the same as at_from: what a frame at `to` must show
+    working_now              the recorded steps open at `to` (or now): lane, step, since, tokens so far on it
 
 A frame at t is `at_from` plus the changes and requests up to t (a binary search per lane, spike S3). "So far" counts
 from the start of the ledger. Everything comes from `derive.timeline`, so the replay and every other view agree.
@@ -125,6 +126,19 @@ def window(
         "requests": reqs,
         "steps": steps,
         "step_by": step_by,  # per step: recorded, or rule (attributed by rule E's clause 2)
+        # the steps open at the window's end (or now, when earlier): who is working on what, and its tokens so far
+        "working_now": [
+            {
+                "lane": x["lane"],
+                "step": x["step"],
+                "since_ms": x["since_ms"],
+                "tokens": x["tokens"]["total"],
+                "cache_read": x["tokens"]["cache_read"],
+                "requests": x["tokens"]["requests"],
+            }
+            for x in tl.working_now(reader, min(now, end))
+            if want is None or x["lane"] in want
+        ],
     }
 
 

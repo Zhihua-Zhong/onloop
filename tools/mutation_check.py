@@ -2031,6 +2031,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
     ),
     (
+        "working now keeps a step that has already ended",
+        "src/onloop/timeline.py",
+        "            if a <= t <= b:\n",
+        "            if a <= t:\n",
+        ["tests/test_timeline.py::test_working_now_is_each_open_recorded_step_with_its_tokens_so_far"],
+    ),
+    (
         "rule E charges a request to the commit before it, not the next one on its branch",
         "src/onloop/timeline.py",
         "                j = bisect.bisect_right(ctimes, t)  # the next commit after the request\n",
@@ -2058,8 +2065,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the timeline charges a request to a step that had already ended (the nearest step)",
         "src/onloop/timeline.py",
-        "        if a <= t <= b:\n",
-        "        if a <= t:\n",
+        "        a, b, step = spans[i]\n        if a <= t <= b:\n",
+        "        a, b, step = spans[i]\n        if a <= t:\n",
         ["tests/test_timeline.py::test_a_requests_tokens_go_to_its_recorded_step_else_between_steps"],
     ),
     (
