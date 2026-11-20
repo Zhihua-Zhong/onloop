@@ -26,6 +26,7 @@ fallback by the turn's opening message or the next commit, has no input yet: pro
 from __future__ import annotations
 
 import bisect
+import datetime as dt
 import json
 from typing import Any
 
@@ -34,20 +35,19 @@ from . import events as ev
 KINDS = ("working", "harness", "waiting", "queued")  # the order wins an overlap
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens")
 NO_ROLE = "(no role)"
+MAX_REQUEST_S = 3600  # the longest a model request is taken to run
 
 
-def _ms(ts: str) -> int:
-    return int(ev.parse_ts(ts).timestamp() * 1000)
+def ms(ts: str) -> int:
+    """A stored timestamp as epoch milliseconds (fromisoformat: the hot path of a week of requests)."""
+    return int(dt.datetime.fromisoformat(ts[:-1] + "+00:00").timestamp() * 1000)
 
 
-def _iso(ms: int) -> str:
-    return ev.norm_ts(_dt(ms)) or ""
+_ms = ms
 
 
-def _dt(ms: int) -> Any:
-    import datetime as dt
-
-    return dt.datetime.fromtimestamp(ms / 1000, dt.UTC)
+def _iso(t: int) -> str:
+    return dt.datetime.fromtimestamp(t / 1000, dt.UTC).strftime("%Y-%m-%dT%H:%M:%S.") + f"{t % 1000:03d}Z"
 
 
 def _payload(row: dict[str, Any]) -> dict[str, Any]:
@@ -55,7 +55,7 @@ def _payload(row: dict[str, Any]) -> dict[str, Any]:
     return p if isinstance(p, dict) else json.loads(p or "{}")
 
 
-def _has(ledger: Any, table: str) -> bool:
+def has_table(ledger: Any, table: str) -> bool:
     return bool(ledger.select("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)))
 
 
@@ -76,7 +76,7 @@ def intervals(ledger: Any, start: str, end: str, now: str) -> dict[str, list[tup
         (start, end),
     ):
         add(r["role"], r["started_at"], r["ended_at"], "working")
-    if _has(ledger, "runs"):
+    if has_table(ledger, "runs"):
         processing = {
             r["run_id"]: r["t"]
             for r in ledger.select(
@@ -90,14 +90,14 @@ def intervals(ledger: Any, start: str, end: str, now: str) -> dict[str, list[tup
             add(r["role"], r["started_at"], r["ended_at"], "harness")
             if processing.get(r["id"]):
                 add(r["role"], processing[r["id"]], r["ended_at"], "working")
-    if _has(ledger, "human_tasks"):
+    if has_table(ledger, "human_tasks"):
         for r in ledger.select(
             "SELECT author_role, opened_at, resolved_at FROM human_tasks WHERE author_role IS NOT NULL AND opened_at <= ? "
             "AND (resolved_at IS NULL OR resolved_at >= ?)",
             (end, start),
         ):
             add(r["author_role"], r["opened_at"], r["resolved_at"], "waiting")
-    if _has(ledger, "deliveries"):
+    if has_table(ledger, "deliveries"):
         for r in ledger.select(
             "SELECT to_role, created_at, delivered_at, state, next_attempt_at FROM deliveries WHERE created_at <= ?",
             (end,),
@@ -108,9 +108,11 @@ def intervals(ledger: Any, start: str, end: str, now: str) -> dict[str, list[tup
             if r["delivered_at"] is None and not waiting:
                 continue  # never delivered and no longer waiting (cancelled, escalated, given up): not queued
             add(r["to_role"], r["created_at"], r["delivered_at"], "queued")
+    # A request is working over its own duration, before it is logged: one that ends after `end` (up to
+    # MAX_REQUEST_S later) was already working inside the window.
     for r in ledger.select(
         "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system <= ?",
-        (start, end),
+        (start, ev.shift_ts(end, MAX_REQUEST_S)),
     ):
         dur = _payload(r).get("duration_ms")
         if isinstance(dur, int) and dur > 0:
@@ -177,8 +179,33 @@ def _step_at(spans: list[tuple[int, int, str]], starts: list[int], t: int) -> st
     return None
 
 
+def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
+    """Every model request in [start, end], oldest first: its time (ms), lane, token fields, and the step recorded on
+    its session at that time (None: between steps). The one attribution `build` and the replay's window both use."""
+    spans = _spans(ledger)
+    starts = {sid: [x[0] for x in v] for sid, v in spans.items()}
+    out = []
+    for r in ledger.select(
+        "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system <= ? "
+        "ORDER BY seq",
+        (start, end),
+    ):
+        p = _payload(r)
+        t = _ms(r["ts_system"])
+        sid = p.get("session_id")
+        step = _step_at(spans.get(sid, []), starts.get(sid, []), t) if isinstance(sid, str) else None
+        out.append({"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step})
+    return out
+
+
 def _zero() -> dict[str, int]:
     return {"input": 0, "output": 0, "cache_creation": 0, "cache_read": 0, "total": 0, "requests": 0}
+
+
+def tokens_of(p: dict[str, Any]) -> tuple[int, int]:
+    """A request's (total, cache reads): total is input, output and cache creation; cache reads are kept apart."""
+    v = {f: p.get(f) if isinstance(p.get(f), int) else 0 for f in TOKEN_FIELDS}
+    return v["input_tokens"] + v["output_tokens"] + v["cache_creation_tokens"], v["cache_read_tokens"]
 
 
 def _add(acc: dict[str, int], p: dict[str, Any]) -> None:
@@ -198,8 +225,6 @@ def build(ledger: Any, start: str, end: str, now: str | None = None) -> dict[str
 
     now = now or end
     raw = intervals(ledger, start, end, now)
-    spans = _spans(ledger)
-    starts = {sid: [x[0] for x in v] for sid, v in spans.items()}
     lanes: dict[str, dict[str, Any]] = {}
 
     def lane(name: str) -> dict[str, Any]:
@@ -215,7 +240,7 @@ def build(ledger: Any, start: str, end: str, now: str | None = None) -> dict[str
             }
         return lanes[name]
 
-    for r in ledger.select("SELECT id FROM roles ORDER BY id") if _has(ledger, "roles") else []:
+    for r in ledger.select("SELECT id FROM roles ORDER BY id") if has_table(ledger, "roles") else []:
         lane(r["id"])
     for name, rs in raw.items():
         L = lane(name)
@@ -224,24 +249,13 @@ def build(ledger: Any, start: str, end: str, now: str | None = None) -> dict[str
             L["time_s"][kind] += (b - a) / 1000
     for name, n in derive.turns_per_role(ledger, start, end).items():
         lane(name)["turns"] = n
-    for r in ledger.select(
-        "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system <= ? "
-        "ORDER BY seq",
-        (start, end),
-    ):
-        p = _payload(r)
-        L = lane(r["actor"] or NO_ROLE)
-        _add(L["tokens"], p)
-        sid = p.get("session_id")
-        step = (
-            _step_at(spans.get(sid, []), starts.get(sid, []), _ms(r["ts_system"]))
-            if isinstance(sid, str)
-            else None
-        )
-        if step is None:
-            _add(L["between_steps"], p)
+    for q in requests(ledger, start, end):
+        L = lane(q["lane"])
+        _add(L["tokens"], q["payload"])
+        if q["step"] is None:
+            _add(L["between_steps"], q["payload"])
         else:
-            _add(L["steps"].setdefault(step, _zero()), p)
+            _add(L["steps"].setdefault(q["step"], _zero()), q["payload"])
     out = []
     for name in sorted(lanes):
         L = lanes[name]

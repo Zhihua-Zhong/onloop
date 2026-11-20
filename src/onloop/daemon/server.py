@@ -31,6 +31,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/activity           the Activity view: one lane per role with its turns on a time axis, side sessions under
                                 their role, the longest silence per role, turns per hour (?hours=48; 1 to 336)
     GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
+    GET /api/replay             the replay's window (decision 0019): ?from=&to= (at most 31 days), ?lanes=a,b; each
+                                lane at `from` and at `to`, the state changes and model requests inside, in columns
     GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
@@ -501,6 +503,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
             elif url.path == "/api/flow":
                 body = views.flow(reader, ev.now_ts())
+            elif url.path == "/api/replay":
+                from ..report import replay
+
+                try:
+                    body = replay.window(
+                        reader,
+                        ev.now_ts(),
+                        query.get("from", [None])[0],
+                        query.get("to", [None])[0],
+                        query.get("lanes", [None])[0],
+                    )
+                except views.QueryError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
             elif url.path == "/api/map":
                 from .. import derive
 

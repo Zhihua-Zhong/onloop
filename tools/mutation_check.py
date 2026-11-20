@@ -2003,6 +2003,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the replay's window starts every lane's time at zero, so a frame needs data before the window",
+        "src/onloop/report/replay.py",
+        "                before[kind] += (min(b, lo) - a) / 1000\n",
+        "                before[kind] += 0\n",
+        ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
+    ),
+    (
+        "the timeline misses a model request still running at the end of the window",
+        "src/onloop/timeline.py",
+        "        (start, ev.shift_ts(end, MAX_REQUEST_S)),\n",
+        "        (start, end),\n",
+        ["tests/test_replay_api.py::test_every_frame_in_the_window_equals_the_ledgers_timeline_to_that_time"],
+    ),
+    (
         "the timeline lets a carried run's harness time win over the turn working inside it",
         "src/onloop/timeline.py",
         'KINDS = ("working", "harness", "waiting", "queued")',

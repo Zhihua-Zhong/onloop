@@ -20,6 +20,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **`GET /api/replay?from=&to=&lanes=`** (decision 0019): the replay's window, at most 31 days, in columns: each
+  lane at `from` and at `to` (its state, its four kinds of time so far, its tokens so far), and the state changes and
+  model requests inside, each request with its recorded step. A frame anywhere in the window needs nothing before
+  it. A model request counts as working over its own duration, so one still running at `to` shows in the window.
 - **The replay's timeline** (decision 0019, `derive.timeline`): per role, its time cut into working, harness,
   waiting on the person and queued, each second counted once in the first kind that covers it, and its tokens
   (input, output and cache creation, with cache reads apart) by the step recorded on the session, else "between
