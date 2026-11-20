@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { breakdown, buildIndex, columns, frameAt, jump, KINDS, naiveFrame, type ReplayWindow } from "../src/lib/replay.ts";
+import { breakdown, buildIndex, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/replay_window.json", import.meta.url), "utf8")) as {
   window: ReplayWindow;
@@ -112,4 +112,38 @@ test("the breakdown is the window's time and tokens, each token in one step or b
   const builder = b.find((L) => L.name === "builder")!;
   assert.deepEqual(builder.steps.map((s) => [s.step, s.by]), [["step:task:t-12", "recorded"]]);
   assert.equal(builder.between.requests, 1);
+});
+
+test("playback keeps the wall clock at 2 frames a second: 600x is 600x", () => {
+  // a throttled tab: frames every 500 ms for 2.1 s; the cursor must move 2.1 s x 600 = 1260 s
+  const start = 0;
+  const end = 86_400_000;
+  let t = start;
+  for (let wall = 0; wall <= 2100; wall += 500) t = playhead(start, 0, wall, 600, end);
+  t = playhead(start, 0, 2100, 600, end);
+  assert.equal(t, 1_260_000);
+  assert.equal(playhead(end - 1000, 0, 5000, 600, end), end, "clamped only at the window's end");
+});
+
+test("Play at the end starts over; previous from the end is the last change before it", () => {
+  const ix = buildIndex(fixture.window);
+  assert.equal(playFrom(ix, ix.known), ix.from);
+  assert.equal(playFrom(ix, ix.known - 200), ix.from, "a frame short of the end is the end");
+  const mid = ix.from + (ix.known - ix.from) / 2;
+  assert.equal(playFrom(ix, mid), mid);
+  const last = ix.marks.filter((m) => m <= ix.known - 1000).at(-1)!;
+  assert.equal(previous(ix, ix.known), last);
+  assert.ok(previous(ix, ix.known)! < ix.known - 999);
+});
+
+test("in the window's terms, no lane has more time than has elapsed since the window's start", () => {
+  const w = fixture.window;
+  const ix = buildIndex(w);
+  for (const t of [ix.from, ix.from + 600_000, ix.known]) {
+    const f = inWindow(ix, frameAt(ix, t));
+    for (const L of f) {
+      const sum = KINDS.reduce((s, k) => s + L.time_s[k], 0);
+      assert.ok(sum <= (t - ix.from) / 1000 + 0.01, `${L.name} at ${t}: ${sum}`);
+    }
+  }
 });

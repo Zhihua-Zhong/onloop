@@ -272,3 +272,38 @@ export function breakdown(w: ReplayWindow): LaneBreakdown[] {
   out.forEach((L, i) => (L.steps = [...per[i].values()].sort((a, b) => b.tokens - a.tokens || a.step.localeCompare(b.step))));
   return out;
 }
+
+/** Playback by the wall clock (the lead's finding: 600x ran at about 290x in a throttled tab). The cursor is the
+ * anchor plus the elapsed wall time times the speed, clamped only at the end: a tab that gets two frames a second
+ * skips frames but keeps time. */
+export function playhead(anchorT: number, anchorWall: number, nowWall: number, speed: number, end: number): number {
+  return Math.min(end, anchorT + Math.max(0, nowWall - anchorWall) * speed);
+}
+
+/** How close to the end counts as "at the end": a second, or a thousandth of the window when that is more. A cursor
+ * kept in a link from a pause can sit a frame short of the end. */
+export function endSlack(ix: ReplayIndex): number {
+  return Math.max(1000, (ix.to - ix.from) / 1000);
+}
+
+/** Where Play starts (the video idiom): from the window's start when the cursor is at the end, else where it is. */
+export function playFrom(ix: ReplayIndex, t: number): number {
+  return t >= ix.known - endSlack(ix) ? ix.from : t;
+}
+
+/** The previous change, at least a second before the cursor, so that from the end it is the last change before it
+ * and never one a few milliseconds back. */
+export function previous(ix: ReplayIndex, t: number): number | null {
+  return jump(ix, t - 1000 + 1, -1);
+}
+
+/** A frame in the window's terms: what happened between the window's start and the cursor (the frame less each
+ * lane's totals at `from`). Each lane's time is then at most the time elapsed since the window's start. */
+export function inWindow(ix: ReplayIndex, frame: LaneFrame[]): LaneFrame[] {
+  return frame.map((f, i) => {
+    const b = ix.lanes[i].base;
+    const time = { ...f.time_s };
+    for (const k of KINDS) time[k] = Math.max(0, f.time_s[k] - (b.time_s[k] ?? 0));
+    return { ...f, time_s: time, tokens: f.tokens - b.tokens, cache_read: f.cache_read - b.cache_read, requests: f.requests - b.requests };
+  });
+}

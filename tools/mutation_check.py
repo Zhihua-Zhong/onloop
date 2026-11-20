@@ -2003,6 +2003,27 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
+        "web/src/lib/replay.ts",
+        "anchorT + Math.max(0, nowWall - anchorWall) * speed",
+        "anchorT + Math.min(Math.max(0, nowWall - anchorWall), 100) * speed",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
+        "Play a frame short of the end does not start over",
+        "web/src/lib/replay.ts",
+        "return t >= ix.known - endSlack(ix) ? ix.from : t;",
+        "return t >= ix.known ? ix.from : t;",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
+        "the replay's window figures keep the ledger's totals before the window",
+        "web/src/lib/replay.ts",
+        "time[k] = Math.max(0, f.time_s[k] - (b.time_s[k] ?? 0));",
+        "time[k] = f.time_s[k];",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
         "the replay's page drops the time a lane has spent in its current state since its last change",
         "web/src/lib/replay.ts",
         "(time[k] = L.cum[ki][i] + (state === ki ? (at - L.ct[i]) / 1000 : 0))",

@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { breakdown, buildIndex, columns, frameAt, jump, KINDS, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
+import { breakdown, buildIndex, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -37,6 +37,9 @@ const KIND_FILL: Record<Kind, string> = {
   queued: "fill-state-void",
 };
 const KIND_DOT: Record<Kind, string> = { working: "bg-state-done", harness: "bg-state-external", waiting: "bg-state-human", queued: "bg-state-void" };
+// The work carries the weight; a wait is true but light (the lead's finding: days-long waits drowned the work)
+const KIND_WEIGHT: Record<Kind, number> = { working: 0.95, harness: 0.8, waiting: 0.22, queued: 0.45 };
+const KIND_SWATCH: Record<Kind, string> = { working: "opacity-95", harness: "opacity-80", waiting: "opacity-25", queued: "opacity-50" };
 
 function stamp(ms: number, withDay: boolean, seconds = false): string {
   const d = new Date(ms);
@@ -148,6 +151,7 @@ function Player(p: {
   });
   const [playing, setPlaying] = useState(false);
   const table = params.get("table") === "1";
+  const ledgerScope = params.get("scope") === "ledger"; // the window's figures by default; the ledger's on request
   const [picked, setPicked] = useState<string | null>(null); // a step whose products are shown (a4)
   const frameMs = useRef(0);
   const box = useRef<HTMLDivElement>(null);
@@ -160,25 +164,38 @@ function Player(p: {
     [hours, speed, table, live],
   );
 
+  // playback by the wall clock: the cursor is where it was when play (or a new speed) began, plus the wall time since
+  // then times the speed; a throttled tab skips frames but keeps time
+  const tRef = useRef(t);
+  tRef.current = t;
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
-    let last = performance.now();
-    const step = (now: number) => {
-      const dt = now - last;
-      last = now;
-      setTRaw((cur) => {
-        const next = cur + dt * speed;
-        if (next >= ix.known) {
-          setPlaying(false);
-          return ix.known;
-        }
-        return next;
-      });
-      raf = requestAnimationFrame(step);
+    let done = false;
+    const anchorT = tRef.current;
+    const anchorWall = performance.now();
+    const tick = () => {
+      if (done) return;
+      const next = playhead(anchorT, anchorWall, performance.now(), speed, ix.known);
+      setTRaw(next);
+      if (next >= ix.known) {
+        done = true;
+        setPlaying(false);
+      }
+    };
+    const step = () => {
+      tick();
+      if (!done) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    // a background or throttled tab gets few or no animation frames; a timer still fires, and the time comes from the
+    // wall clock either way
+    const timer = window.setInterval(tick, 250);
+    return () => {
+      done = true;
+      cancelAnimationFrame(raf);
+      window.clearInterval(timer);
+    };
   }, [playing, speed, ix.known]);
 
   useEffect(() => {
@@ -193,13 +210,13 @@ function Player(p: {
   });
 
   const go = (dir: 1 | -1) => {
-    const at = jump(ix, t, dir);
+    const at = dir === 1 ? jump(ix, t, 1) : previous(ix, t);
     setPlaying(false);
     setT(at ?? (dir === 1 ? ix.known : ix.from));
   };
   const toggle = () => {
     if (live) setLive(false);
-    if (!playing && t >= ix.known) setTRaw(ix.from); // at the end, play starts over
+    if (!playing) setTRaw(playFrom(ix, t)); // at the end, play starts over (the video idiom)
     setPlaying((v) => !v);
   };
   const onKey = (e: React.KeyboardEvent) => {
@@ -217,8 +234,11 @@ function Player(p: {
   };
 
   const active = frame.filter((_, i) => isActive(ix, i));
-  const totals = KINDS.reduce((acc, k) => ({ ...acc, [k]: frame.reduce((s, f) => s + f.time_s[k], 0) }), {} as Record<Kind, number>);
+  const shown = useMemo(() => (ledgerScope ? frame : inWindow(ix, frame)), [ledgerScope, frame, ix]);
   const spanDays = (ix.to - ix.from) / 86_400_000 > 1;
+  const span = hours >= 24 ? `${hours / 24} day${hours > 24 ? "s" : ""}` : `${hours} h`;
+  const scope = ledgerScope ? `Since the ledger began, up to ${stamp(t, spanDays)}` : `In this ${span} window, up to ${stamp(t, spanDays)}`;
+  const scopeHref = href("replay", { hours: String(hours), t: String(Math.round(t)), speed: String(speed), table: table ? "1" : undefined, scope: ledgerScope ? undefined : "ledger" });
 
   return (
     <div ref={box} className="mx-auto max-w-[1600px] px-6 py-5 max-sm:px-4" data-testid="replay" onKeyDown={onKey}>
@@ -268,10 +288,10 @@ function Player(p: {
         }}
       />
       {live && <Working working={p.working} />}
-      <Summary frame={frame} active={active.length} lanes={frame.length} totals={totals} />
+      <Summary frame={frame} shown={shown} active={active.length} lanes={frame.length} scope={scope} wait={p.wait} span={span} />
       {picked && <Products step={picked} at={t} onClose={() => setPicked(null)} />}
-      {table ? <AtCursor frame={frame} ix={ix} onPick={setPicked} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
-      {!table && <AtCursor frame={frame} ix={ix} compact onPick={setPicked} />}
+      {table ? <AtCursor frame={shown} ix={ix} onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
+      {!table && <AtCursor frame={shown} ix={ix} compact onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
       <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={setPicked} />
     </div>
   );
@@ -361,19 +381,47 @@ function Controls(p: {
   );
 }
 
-function Summary({ frame, active, lanes, totals }: { frame: LaneFrame[]; active: number; lanes: number; totals: Record<Kind, number> }) {
-  const tok = frame.reduce((s, f) => s + f.tokens, 0);
-  const cache = frame.reduce((s, f) => s + f.cache_read, 0);
+function Summary(p: {
+  frame: LaneFrame[];
+  shown: LaneFrame[];
+  active: number;
+  lanes: number;
+  scope: string;
+  wait: ReplayWindow["your_wait"] | null;
+  span: string;
+}) {
+  const { frame, shown } = p;
+  // the glance trial's first question, answered without adding anything up: who did most, and what it cost
+  const top = [...shown].sort((a, b) => b.time_s.working - a.time_s.working || b.tokens - a.tokens)[0];
+  const tok = shown.reduce((s, f) => s + f.tokens, 0);
+  const cache = shown.reduce((s, f) => s + f.cache_read, 0);
   const now = KINDS.map((k, ki) => [k, frame.filter((f) => f.state === ki).length] as const).filter(([, n]) => n);
   return (
     <div className="mt-3 space-y-1 text-[14px] leading-snug" data-testid="summary">
-      <p>
-        <span className="font-semibold">{now.length ? now.map(([k, n]) => `${plural(n, "lane")} ${KIND_LABEL[k].toLowerCase()}`).join(", ") : "No lane busy"}</span>
-        <span className="text-muted"> at the cursor, of {plural(active, "lane")} with activity in this window ({lanes} in all). A lane is a role; one role can hold many items.</span>
+      <p className="text-[12.5px] font-medium text-muted" data-testid="scope">
+        {p.scope}
+      </p>
+      <p data-testid="most-work">
+        {top && top.time_s.working >= 1 ? (
+          <>
+            <span className="font-semibold">Most work: {top.name}</span>, {duration(top.time_s.working)} working
+            {top.tokens ? <>, {tokens(top.tokens)} tokens</> : null}.
+            <span className="text-muted"> The team: {tokens(tok)} tokens, {tokens(cache)} more read from the cache.</span>
+          </>
+        ) : (
+          <span className="text-muted">No lane worked in this span. The team: {tokens(tok)} tokens.</span>
+        )}
       </p>
       <p className="text-muted">
-        So far: {KINDS.map((k) => `${KIND_LABEL[k].toLowerCase()} ${duration(totals[k])}`).join(" · ")} ·{" "}
-        <span className="text-fg">{tokens(tok)} tokens</span>, and {tokens(cache)} read from the cache.
+        At the cursor: <span className="text-fg">{now.length ? now.map(([k, n]) => `${plural(n, "lane")} ${KIND_LABEL[k].toLowerCase()}`).join(", ") : "no lane busy"}</span>, of{" "}
+        {plural(p.active, "lane")} with activity ({p.lanes} in all). A lane is a role.
+        {p.wait && (
+          <>
+            {" "}
+            <span className="text-fg">{p.wait.count} waiting on you now</span>; something waited on you {Math.round(p.wait.share * 100)}% of the
+            whole {p.span}.
+          </>
+        )}
       </p>
     </div>
   );
@@ -385,7 +433,21 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
   const gutter = narrow ? 92 : 150;
   const right = narrow ? 8 : 16;
   const plot = Math.max(0, width - gutter - right);
-  const order = useMemo(() => ix.lanes.map((_, i) => i).filter((i) => isActive(ix, i)), [ix]);
+  // who worked comes first: lanes in order of their working time in the window, the ones that only waited after
+  const order = useMemo(() => {
+    const worked = (i: number) => {
+      const L = ix.lanes[i];
+      const at = (t: number) => {
+        const k = lastAtOrBeforeIdx(L.ct, t);
+        return k < 0 ? 0 : L.cum[0][k] + (L.cs[k] === 0 ? (t - L.ct[k]) / 1000 : 0);
+      };
+      return at(ix.known) - at(ix.from);
+    };
+    return ix.lanes
+      .map((_, i) => i)
+      .filter((i) => isActive(ix, i))
+      .sort((a, b) => worked(b) - worked(a) || ix.lanes[a].name.localeCompare(ix.lanes[b].name));
+  }, [ix]);
   const idle = ix.lanes.filter((_, i) => !isActive(ix, i)).map((L) => L.name);
   const cols = useMemo(
     () => (plot > 0 ? order.map((i) => columns(ix.lanes[i], ix.from, ix.to, Math.floor(plot), ix.known)) : []),
@@ -460,7 +522,7 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
                 </text>
                 <line x1={gutter} x2={gutter + plot} y1={mid} y2={mid} className="stroke-line" strokeWidth={1} />
                 {runs.map((r, i) => (
-                  <rect key={i} x={gutter + r.x0} y={mid - 6} width={r.x1 - r.x0} height={12} className={KIND_FILL[KINDS[r.k]]} fillOpacity={0.85} data-kind={KINDS[r.k]} />
+                  <rect key={i} x={gutter + r.x0} y={mid - 6} width={r.x1 - r.x0} height={12} className={KIND_FILL[KINDS[r.k]]} fillOpacity={KIND_WEIGHT[KINDS[r.k]]} data-kind={KINDS[r.k]} />
                 ))}
                 {(cols[row] ?? []).map((c, cx) =>
                   c.requests ? (
@@ -484,7 +546,7 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-2 text-[12px] text-muted" data-testid="legend">
         {KINDS.map((k) => (
           <span key={k} className="inline-flex items-center gap-1.5" title={KIND_HELP[k]}>
-            <span className={cn("inline-block h-2.5 w-4 shrink-0 rounded-sm opacity-85", KIND_DOT[k])} aria-hidden />
+            <span className={cn("inline-block h-2.5 w-4 shrink-0 rounded-sm", KIND_DOT[k], KIND_SWATCH[k])} aria-hidden />
             <span>
               <span className="text-fg">{KIND_LABEL[k]}:</span> {KIND_HELP[k]}
             </span>
@@ -496,12 +558,29 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
   );
 }
 
-function AtCursor({ frame, ix, compact = false, onPick }: { frame: LaneFrame[]; ix: ReplayIndex; compact?: boolean; onPick: (s: string) => void }) {
-  const rows = frame.map((f, i) => ({ f, i })).filter(({ i }) => !compact || isActive(ix, i));
+function AtCursor(p: {
+  frame: LaneFrame[];
+  ix: ReplayIndex;
+  compact?: boolean;
+  onPick: (s: string) => void;
+  scope: string;
+  scopeHref: string;
+  ledgerScope: boolean;
+}) {
+  const { frame, ix, compact = false, onPick } = p;
+  const rows = frame
+    .map((f, i) => ({ f, i }))
+    .filter(({ i }) => !compact || isActive(ix, i))
+    .sort((a, b) => b.f.time_s.working - a.f.time_s.working || b.f.tokens - a.f.tokens || a.f.name.localeCompare(b.f.name));
   return (
     <div className="mt-4 overflow-x-auto rounded-ui border border-line bg-surface" data-testid={compact ? "at-cursor" : "replay-table"}>
       <table className="w-full text-left text-[13px]">
-        <caption className="px-3 pt-2 text-left text-[12px] text-muted">At the cursor, so far in this ledger</caption>
+        <caption className="px-3 pt-2 text-left text-[12px] text-muted" data-testid="table-scope">
+          {p.scope}: time in each state, and tokens. Most work first.{" "}
+          <a href={p.scopeHref} className="text-accent hover:underline" data-testid="scope-toggle">
+            {p.ledgerScope ? "Show this window only" : "Show the ledger's totals"}
+          </a>
+        </caption>
         <thead className="text-[12px] text-muted">
           <tr className="border-b border-line">
             <th className="px-3 py-2 font-medium">Lane</th>
@@ -561,7 +640,9 @@ function AtCursor({ frame, ix, compact = false, onPick }: { frame: LaneFrame[]; 
 }
 
 function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null; onPick: (s: string) => void }) {
-  const lanes = bd.filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1));
+  const lanes = bd
+    .filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1))
+    .sort((a, b) => b.time_s.working - a.time_s.working || b.tokens - a.tokens || a.name.localeCompare(b.name));
   const busiest = Math.max(1, ...lanes.map((L) => KINDS.reduce((s, k) => s + L.time_s[k], 0)));
   const span = hours >= 24 ? `${hours / 24} day${hours > 24 ? "s" : ""}` : `${hours} h`;
   return (
@@ -569,7 +650,7 @@ function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: 
       <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line px-3 py-2">
         <h2 className="text-[15px] font-semibold">Where the time went</h2>
         <p className="text-[12px] text-muted">
-          In the whole window ({span}), not at the cursor. Tokens are input, output and cache creation; cache reads are apart.
+          In the whole window ({span}), not at the cursor. Tokens are input, output and cache creation; cache reads are apart. Click a step to see what it produced.
         </p>
       </header>
       {wait && (
@@ -601,7 +682,7 @@ function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: 
                   <span className="flex h-3 min-w-[120px] flex-1 overflow-hidden rounded-sm bg-raised" style={{ maxWidth: `${Math.max(4, (100 * total) / busiest)}%` }} aria-hidden>
                     {KINDS.map((k) =>
                       L.time_s[k] > 0 ? (
-                        <span key={k} className={cn("h-full", KIND_DOT[k])} style={{ width: `${(100 * L.time_s[k]) / Math.max(total, 1e-9)}%` }} title={`${KIND_LABEL[k]}: ${duration(L.time_s[k])}`} data-kind={k} />
+                        <span key={k} className={cn("h-full", KIND_DOT[k], KIND_SWATCH[k])} style={{ width: `${(100 * L.time_s[k]) / Math.max(total, 1e-9)}%` }} title={`${KIND_LABEL[k]}: ${duration(L.time_s[k])}`} data-kind={k} />
                       ) : null,
                     )}
                   </span>

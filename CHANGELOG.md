@@ -23,6 +23,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,
+  and previous-change from the end goes to the last change before it; playback keeps the wall clock (600x is 600x,
+  even in a throttled or background tab); the figures are the window's by default, labelled "In this 6 h window, up
+  to …", with the ledger's totals on request and never a lane-sum of waits; waiting is a light tint and working full
+  colour, with lanes, table and breakdown ordered by work and the header naming who did most and its tokens.
 - **Products at the cursor** (decision 0019, a4): a node or branch step on the Replay view opens what it produced as
   of the cursor: the files its commits changed, each at its latest commit then, read from git in a repository onloop
   recorded. Markdown is rendered from a tree (its raw HTML stays text), images show, and HTML shows in a sandboxed
