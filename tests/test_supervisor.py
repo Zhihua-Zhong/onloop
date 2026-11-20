@@ -85,6 +85,7 @@ def test_the_command_line_is_built_exactly_from_the_role_table(tmp_path):
         "--strict-mcp-config",
         "--setting-sources",
         "project",
+        "--restricted",
         "--session-id",
         "00000000-0000-0000-0000-000000000001",
     ]

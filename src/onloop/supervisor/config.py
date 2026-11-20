@@ -61,8 +61,9 @@ PROMPT_VARS = frozenset(
 RESULT_FILE_VARS = frozenset({"role", "step_id", "item_kind", "item_number", "item_head", "item_head_short"})
 # What a role's after_result command may name: those, and the result just written (the .md and its .md.json).
 AFTER_RESULT_VARS = RESULT_FILE_VARS | {"result_file", "result_json"}
-# `user` is refused: the user settings file's `env` wins over the step's own environment (decision 0019, spike S4), so
-# a step that loads it could send its telemetry to a collector outside onloop.
+# `user` is refused: spike S4's addendum found that the user settings file's `env` wins over the step's own environment
+# (a step with `--setting-sources user` exported to the user file's endpoint, not onloop's), so a step that loads it
+# could send its telemetry to a collector outside onloop (decision 0019).
 SETTING_SOURCES = ("project", "local")
 CHECK_NAMES = ("ruleset", "all")
 VERSIONS = ("updated", "head")
@@ -221,9 +222,10 @@ class RoleSpec:
     charter: pathlib.Path | None = None  # a file whose text the template may include as $charter
     priority_paths: tuple[str, ...] = ()  # pull requests whose changed paths match these go first
     priority_when: str = "all"  # all: every changed path matches one; any: at least one does
-    setting_sources: tuple[str, ...] = (
-        "project",
-    )  # Claude Code settings the step loads (`--setting-sources`)
+    # Claude Code settings the step loads (`--setting-sources`)
+    setting_sources: tuple[str, ...] = ("project",)
+    # folders outside cwd the step may read (`--add-dir`): declared, never implied
+    add_dirs: tuple[pathlib.Path, ...] = ()
     result_schema: str | None = None  # a JSON Schema (as JSON text) for the step's structured result
     result_file: str | None = None  # where the supervisor writes the step's result, from beside the config
     result_base: pathlib.Path | None = None
@@ -251,6 +253,7 @@ class RoleSpec:
                 "priority_paths",
                 "priority_when",
                 "setting_sources",
+                "add_dirs",
                 "result_schema",
                 "result_file",
                 "after_result",
@@ -321,10 +324,11 @@ class RoleSpec:
         )
         if "user" in sources_:
             raise ConfigError(
-                f"{where}: setting_sources may not name user: the user settings file's env wins over the step's own, "
-                "so the step could send its telemetry to a collector outside onloop (decision 0019). Use project, "
-                "local, or both; the role table already gives the step its tools and model"
+                f"{where}: setting_sources may not name user: the user settings file's env wins over the step's own "
+                "(spike S4), so the step could send its telemetry to a collector outside onloop (decision 0019). Use "
+                "project, local, or both; the role table already gives the step its tools and model"
             )
+        add_dirs = tuple(_path(base, d) for d in _strs(raw.get("add_dirs"), f"{where}.add_dirs"))
         if not sources_ or set(sources_) - set(SETTING_SOURCES):
             raise ConfigError(
                 f"{where}: setting_sources is a non-empty list from {', '.join(SETTING_SOURCES)}"
@@ -388,6 +392,7 @@ class RoleSpec:
             priority_paths=_strs(raw.get("priority_paths"), f"{where}.priority_paths"),
             priority_when=when,
             setting_sources=sources_,
+            add_dirs=add_dirs,
             result_schema=schema,
             result_file=str(result_file) if result_file is not None else None,
             result_base=base,

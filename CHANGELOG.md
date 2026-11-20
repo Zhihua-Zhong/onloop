@@ -17,6 +17,9 @@ All notable changes to this project are recorded here. The format follows
   step could send its telemetry to a collector outside onloop. The role table already gives a step its tools and
   model. A step's environment has no inherited OTel variable; with an onloopd next to the default ledger it gets
   onloop's OTel environment toward it, and otherwise exports nothing.
+- **A supervisor step runs with `--restricted`**, as a carried turn does: Claude Code ignores every settings file for
+  it, so a repository's `.claude/settings.json` cannot widen the role's tools. Its file tools stay inside `cwd`; a
+  folder a step must read beyond it is declared in the role as `add_dirs` and passed as `--add-dir`.
 
 ### Added
 

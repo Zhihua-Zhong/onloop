@@ -84,3 +84,33 @@ def test_a_step_reports_to_the_onloopd_of_the_default_ledger(tmp_path):
 
 def test_telemetry_reads_the_files_onloopd_writes():
     assert telemetry.HEARTBEAT_FILE == daemon.HEARTBEAT_FILE and telemetry.TOKEN_FILE == token_mod.TOKEN_FILE
+
+
+def test_a_repositorys_allow_rule_does_not_widen_a_step(tmp_path):
+    """The lead's ruling (decision 0019): a step runs with --restricted, which makes Claude Code ignore every settings
+    file (its --help), so a repository's .claude/settings.json allow rule cannot add to the role's tools. Spike S4's
+    addendum 2 could not show the widening in an untrusted folder; this holds the command to the rule."""
+    repo = tmp_path / "repo"
+    (repo / ".claude").mkdir(parents=True)
+    (repo / ".claude" / "settings.json").write_text(
+        json.dumps({"permissions": {"allow": ["Bash(git push *)", "Write"]}}), encoding="utf-8"
+    )
+    cfg = config.from_dict(gated_raw(cwd=str(repo)), tmp_path / "s.yaml")
+    role = cfg.roles[0]
+    argv = step.build_command(("claude",), role, "u")
+    assert "--restricted" in argv
+    assert argv[argv.index("--allowedTools") + 1] == ",".join(role.allowed_tools)
+    assert "git push" not in " ".join(argv) and "Write" not in argv[argv.index("--tools") + 1]
+
+
+def test_a_folder_outside_cwd_is_read_only_when_the_role_declares_it(tmp_path):
+    cfg = config.from_dict(gated_raw(), tmp_path / "s.yaml")
+    assert "--add-dir" not in step.build_command(("claude",), cfg.roles[0], "u")
+    cfg = config.from_dict(
+        gated_raw(add_dirs=["../shared", str(tmp_path / "abs")]), tmp_path / "cfg" / "s.yaml"
+    )
+    argv = step.build_command(("claude",), cfg.roles[0], "u")
+    dirs = [argv[i + 1] for i, a in enumerate(argv) if a == "--add-dir"]
+    assert dirs == [str(tmp_path / "cfg" / ".." / "shared"), str(tmp_path / "abs")]
+    with pytest.raises(config.ConfigError, match="add_dirs"):
+        config.from_dict(gated_raw(add_dirs="../shared"), tmp_path / "s.yaml")

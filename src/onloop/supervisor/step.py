@@ -17,15 +17,21 @@ The command, for one role (flags as `claude --help` lists them; `--max-turns` is
 
     claude -p --output-format stream-json --verbose --max-turns N --permission-mode MODE
            --tools Read,Grep,Bash --allowedTools Read,Grep,Bash(gh pr view *)
-           --strict-mcp-config --setting-sources project --session-id UUID [--json-schema SCHEMA] [--model M]
+           --strict-mcp-config --setting-sources project --restricted [--add-dir DIR ...] --session-id UUID
+           [--json-schema SCHEMA] [--model M]
 
 The prompt goes on stdin, never on the command line, so no shell or `.cmd` shim ever parses it. `--tools` limits the
 built-in tools the step can see to the base names of `allowed_tools`; `--allowedTools` pre-approves exactly those
 patterns; `dontAsk` (the default mode) denies anything else instead of prompting, so a step that needs more fails and
 is logged, and never waits on a person. `--strict-mcp-config` with no `--mcp-config` gives the step no MCP servers.
-`--setting-sources` loads only the role's setting sources (`project` by default; `user` is refused, decision 0019).
-The step's environment is onloop's own OTel environment toward a running onloopd, or none at all.
-`--json-schema` asks for a structured result.
+`--restricted` makes Claude Code ignore every settings file (user, project and local), so a repository's
+`.claude/settings.json` cannot add allow rules that widen the role's tools: a step's tools are the role table's and
+nothing else. It also keeps the file tools inside the working directory; a folder a step must read beyond it is
+declared in the role as `add_dirs` and passed as `--add-dir`, never implied. (Steps once ran with
+`--setting-sources user` for the same reason; decision 0019 refuses `user`: spike S4 found the user file's `env` wins
+over the step's own, so its telemetry could go to a collector outside onloop.) `--setting-sources` still names the
+role's sources (`project` by default). The step's environment is onloop's own OTel environment toward a running
+onloopd, or none at all. `--json-schema` asks for a structured result.
 
 `result_text(path)` reads a step's final result object back from its output file, uncut, for a role's `result_file`.
 """
@@ -171,6 +177,11 @@ def build_command(claude: tuple[str, ...] | list[str], role: RoleSpec, session_i
         "--strict-mcp-config",
         "--setting-sources",
         ",".join(role.setting_sources),
+        "--restricted",  # no settings file widens the role's tools (decision 0019)
+    ]
+    for d in role.add_dirs:
+        argv += ["--add-dir", str(d)]
+    argv += [
         "--session-id",
         session_id,
     ]

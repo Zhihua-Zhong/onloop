@@ -2045,10 +2045,17 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_timeline.py::test_a_requests_tokens_go_to_its_recorded_step_else_between_steps"],
     ),
     (
+        "a supervisor step runs without --restricted, so a repository's allow rules can widen its tools",
+        "src/onloop/supervisor/step.py",
+        '        "--restricted",  # no settings file widens the role\'s tools (decision 0019)\n',
+        "",
+        ["tests/test_supervisor_telemetry.py::test_a_repositorys_allow_rule_does_not_widen_a_step"],
+    ),
+    (
         "a supervisor step may load the user settings file, whose env wins over its own",
         "src/onloop/supervisor/config.py",
-        '        if "user" in sources_:\n            raise ConfigError(\n                f"{where}: setting_sources may not name user: the user settings file\'s env wins over the step\'s own, "\n                "so the step could send its telemetry to a collector outside onloop (decision 0019). Use project, "\n                "local, or both; the role table already gives the step its tools and model"\n            )\n        if not sources_ or set(sources_) - set(SETTING_SOURCES):',
-        '        if not sources_ or set(sources_) - set(SETTING_SOURCES + ("user",)):',
+        '        if "user" in sources_:\n',
+        "        if False:\n",
         ["tests/test_supervisor_telemetry.py::test_a_step_that_asks_for_the_user_settings_file_is_refused"],
     ),
     (
