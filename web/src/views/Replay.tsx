@@ -791,9 +791,19 @@ function Products({ step, at, onClose }: { step: string; at: number; onClose: ()
   });
   const [open, setOpen] = useState<string | null>(null);
   const files = q.data?.files.filter((f) => !f.deleted) ?? [];
+  // a step clicked far down the page opens this panel above it: bring it into view and give it the focus, so the
+  // click is never seen to do nothing (the lead's finding 5)
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "start", behavior: "smooth" });
+    el.focus({ preventScroll: true });
+    setOpen(null);
+  }, [step]);
   const shown = files.find((f) => `${f.repo}|${f.path}` === open) ?? null;
   return (
-    <section className="mt-4 rounded-ui border border-l-[3px] border-line border-l-accent bg-surface" data-testid="products" aria-label={`Products of ${step}`}>
+    <section ref={panel} tabIndex={-1} className="mt-4 scroll-mt-3 rounded-ui border border-l-[3px] border-line border-l-accent bg-surface outline-none focus-visible:ring-2 focus-visible:ring-accent" data-testid="products" aria-label={`Products of ${step}`}>
       <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line px-3 py-2">
         <h2 className="text-[15px] font-semibold">
           What <span className="font-mono text-[14px]">{step.replace(/^step:/, "")}</span> produced
