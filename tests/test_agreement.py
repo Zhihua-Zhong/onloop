@@ -315,3 +315,33 @@ def test_a_wait_on_team_and_a_change_with_no_opener_are_one_holder_the_team(whic
     assert derive.TEAM in seen  # both ledgers have work the team holds as a whole
     assert derive.holder_name("team") == derive.holder_name(None) == derive.holder_name("") == derive.TEAM
     assert derive.holder_name("reviewer") == "reviewer"
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_the_timeline_counts_turns_as_activity_does_and_each_second_once(which, demo_path, replay_path):
+    """The replay's timeline (decision 0019) reads turns from the one derivation, as Activity does; within a lane its
+    segments never overlap, their times are its four kinds of time, and its tokens are its steps plus between steps."""
+    from onloop import events as ev
+    from onloop.report import activity
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        a = activity.activity(led, now, hours=72)
+        t = derive.timeline(led, a["from"], a["to"], now)
+    assert {L["lane"]: L["turns"] for L in t["lanes"] if L["turns"]} == {
+        lane["role"]: lane["turns"] for lane in a["lanes"] if lane["turns"]
+    }
+    window = (ev.parse_ts(a["to"]) - ev.parse_ts(a["from"])).total_seconds()
+    for L in t["lanes"]:
+        segs = L["segments"]
+        assert all(s[0] < s[1] for s in segs) and all(
+            x[1] <= y[0] for x, y in zip(segs, segs[1:], strict=False)
+        )
+        for k in t["kinds"]:
+            got = sum((ev.parse_ts(s[1]) - ev.parse_ts(s[0])).total_seconds() for s in segs if s[2] == k)
+            assert abs(got - L["time_s"][k]) < 0.01, (L["lane"], k)
+        assert sum(L["time_s"].values()) <= window + 0.01
+        assert L["tokens"]["total"] == L["between_steps"]["total"] + sum(
+            s["tokens"]["total"] for s in L["steps"]
+        )
+    assert t["totals"]["turns"] == a["turns"]

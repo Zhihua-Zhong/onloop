@@ -4,6 +4,7 @@
     your_tasks(ledger, now) -> list | None                 the person's open tasks in their one order, or None
     waiting_on_you(ledger, now, card_ids) -> dict          the one "waiting on you" count (finding #20)
     turns_per_role(reader, start, end) -> dict[str, int]   turns that ended in [start, end], per role
+    timeline(ledger, start, end, now) -> dict              per lane, its four kinds of time and its tokens by step
 
 Now, Flow, Activity and the map call these and count nothing on their own, so two views never disagree about the
 same thing. `tests/test_agreement.py` holds every view to that on the demo ledger, the generic replay and, on 8793, the
@@ -48,6 +49,14 @@ def turns_per_role(reader: Any, start: str, end: str) -> dict[str, int]:
         (start, end),
     )
     return {r["role"]: r["n"] for r in rows}
+
+
+def timeline(ledger: Any, start: str, end: str, now: str | None = None) -> dict[str, Any]:
+    """The replay's timeline (decision 0019): per lane, its segments and four kinds of time, its turns, and its tokens
+    by recorded step and between steps. See timeline.py."""
+    from . import timeline as tl
+
+    return tl.build(ledger, start, end, now)
 
 
 # -- the map, zoom 0 (decision 0018; the overview plan's §12.2 and §12.3) ---------------------------------------------

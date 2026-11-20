@@ -20,6 +20,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **The replay's timeline** (decision 0019, `derive.timeline`): per role, its time cut into working, harness,
+  waiting on the person and queued, each second counted once in the first kind that covers it, and its tokens
+  (input, output and cache creation, with cache reads apart) by the step recorded on the session, else "between
+  steps". Nothing is charged to the nearest step.
 - **onloopd receives Claude Code's own telemetry** (decision 0019): `POST /v1/logs` and `POST /v1/metrics`, OTLP/HTTP
   with JSON encoding, with onloopd's token. The identity attributes Claude Code sends when signed in are dropped on
   arrival. A model request, a prompt and a tool call become `cost.request`, `turn.prompted` and `tool.ended` events,

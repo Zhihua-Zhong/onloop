@@ -2003,6 +2003,20 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the timeline lets a carried run's harness time win over the turn working inside it",
+        "src/onloop/timeline.py",
+        'KINDS = ("working", "harness", "waiting", "queued")',
+        'KINDS = ("harness", "working", "waiting", "queued")',
+        ["tests/test_timeline.py::test_each_second_counts_once_in_the_first_kind_that_covers_it"],
+    ),
+    (
+        "the timeline charges a request to a step that had already ended (the nearest step)",
+        "src/onloop/timeline.py",
+        "        if a <= t <= b:\n",
+        "        if a <= t:\n",
+        ["tests/test_timeline.py::test_a_requests_tokens_go_to_its_recorded_step_else_between_steps"],
+    ),
+    (
         "a supervisor step may load the user settings file, whose env wins over its own",
         "src/onloop/supervisor/config.py",
         '        if "user" in sources_:\n            raise ConfigError(\n                f"{where}: setting_sources may not name user: the user settings file\'s env wins over the step\'s own, "\n                "so the step could send its telemetry to a collector outside onloop (decision 0019). Use project, "\n                "local, or both; the role table already gives the step its tools and model"\n            )\n        if not sources_ or set(sources_) - set(SETTING_SOURCES):',
