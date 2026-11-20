@@ -1,6 +1,7 @@
 # Decision 0019: replay, cost and live monitoring (R7a)
 
-- **Status:** Accepted on 2026-11-20, by the onloop lead, with the OCEL 2.0 mapping added to §5
+- **Status:** Accepted on 2026-11-20, by the onloop lead, with the OCEL 2.0 mapping added to §5. §1's steering was
+  corrected on 2026-11-20 to match the code, on the onloop lead's ruling: carried turns stay at `project`
 - **Date:** 2026-11-20
 - **Decided by:** the project lead's rulings of 2026-11-20 (R7 has two parts, and replay and monitoring come first;
   telemetry stays per process), with the onloop lead's acceptance of spikes S1, S2 and S3
@@ -13,7 +14,7 @@ A person on the loop cannot see what each agent did, how long it took, or what i
 this for a team of sessions. The R7 experiments found that a replay of the work over time is valuable on its own,
 before any plan is drawn on it.
 
-Three spikes measured the ground (in the project's notes, not the repository):
+Four spikes measured the ground (in the project's notes, not the repository):
 - **S1:** Claude Code's own OpenTelemetry export works on a subscription login with no API key. It gives one
   `api_request` event per model call, with tokens, a timestamp and a turn id (`prompt.id`).
   - A settings file's `env` overwrites the shell, and a repository's project settings are ignored for the exporter
@@ -22,6 +23,9 @@ Three spikes measured the ground (in the project's notes, not the repository):
 - **S2:** without a record of which step a session is on, "the step named in the turn's opening message, else the
   next commit's step" attributes 96% of step tokens correctly.
   - No rule can tell overhead (reports, tooling) from step work, and overhead was half the tokens.
+- **S4** (after acceptance, before a8): a local settings file's `none` does not stop a session whose own environment
+  selects `otlp`, and still stops one without it. When the user settings file is a source, its `env` wins over the
+  process's, so onloop's environment cannot be guaranteed there.
 - **S3:** a replay frame computed from per-lane prefix sums costs about 0.02 ms, even at a million events. Folding
   every event up to the cursor costs 17 ms at 100 000 events and 247 ms at a million.
 
@@ -29,9 +33,15 @@ Three spikes measured the ground (in the project's notes, not the repository):
 
 ### 1. Telemetry: per process, into onloopd, identity dropped on arrival
 
-- **Steering:** every session onloop starts runs with `--setting-sources project,local` and its own OTel
-  environment: OTLP/HTTP JSON to onloopd on the loopback address, onloop's resource attribute only, and prompt,
-  response and tool content off. It never sends to another project's collector.
+- **Steering:** every session onloop starts gets onloop's own OTel environment, with every inherited `OTEL_*`
+  variable removed first: OTLP/HTTP JSON to onloopd on the loopback address, with its token, onloop's role as the one
+  resource attribute, and prompt, response and tool content off. It never sends to another project's collector. No
+  session onloop starts loads the user settings file, whose `env` would win over the process's (S4).
+  - **A carried turn** runs with `--setting-sources project` and `--restricted`, so no settings file loads. Its hooks
+    come only through `--settings`. A restricted turn must not pick up permissions someone granted interactively, so
+    `local` is not added (the onloop lead's ruling, 2026-11-20).
+  - **A session from `onloop open`** runs with `--setting-sources project,local`. A local file's `none` does not stop
+    it, since its own environment selects `otlp` (S4).
 - **The receiver is in onloopd:** `POST /v1/metrics` and `POST /v1/logs`, JSON only, on the same loopback-only server
   as the page.
   - It drops `user.email`, `organization.id`, `user.account_uuid`, `user.account_id` and `user.id` before anything is
