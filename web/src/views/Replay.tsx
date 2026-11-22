@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { activityTimes, windowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
+import { activityTimes, linkWindowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -94,7 +94,7 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
   const [live, setLive] = useState(() => !params.get("t"));
   // A link with a moment opens the window that ends at that moment (read once, as the link opens): a shared link to
   // a past moment shows the same window whenever it is opened. Live drops it and ends the window now again.
-  const [anchor, setAnchor] = useState(() => windowEnd(params.get("t"), Date.now()));
+  const [anchor, setAnchor] = useState(() => linkWindowEnd(params.get("to"), params.get("t"), Date.now()));
   const q = useQuery({
     queryKey: ["replay", hours, live ? null : anchor],
     queryFn: () => {
@@ -189,9 +189,10 @@ function Player(p: {
   // the URL keeps the cursor and the speed, so a reload or a shared link opens the same moment; not on every frame
   const keep = useCallback(
     (at: number, sp = speed) => {
-      window.history.replaceState(null, "", href("replay", { hours: String(hours), t: live ? undefined : String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
+      // not live, the link names the window on screen (`to`, its end) as well as the cursor (`t`)
+      window.history.replaceState(null, "", href("replay", { hours: String(hours), to: live ? undefined : String(Math.round(ix.to)), t: live ? undefined : String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
     },
-    [hours, speed, table, live],
+    [hours, speed, table, live, ix.to],
   );
 
   // playback by the wall clock: the cursor is where it was when play (or a new speed) began, plus the wall time since

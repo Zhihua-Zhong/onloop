@@ -302,6 +302,13 @@ export function mostWorkClose(first: number, second: number): boolean {
   return first > 0 && second > 0 && second >= 0.9 * first;
 }
 
+/** Where a link's window ends: its `to` (the window on screen when the link was made), else its `t` (an older link
+ * names only the cursor), else now. A carried review of the anchor: with `t` alone, a link copied after the cursor
+ * moved opened the window that ends at the cursor, not the one on screen. */
+export function linkWindowEnd(to: string | null, t: string | null, nowMs: number): number | null {
+  return windowEnd(to, nowMs) ?? windowEnd(t, nowMs);
+}
+
 /** Where a link's window ends: at its moment `t` (epoch ms) when it names one in the past, so a shared link opens the
  * same window whenever it is opened; null otherwise (the window ends now, and moves with the clock when live). */
 export function windowEnd(t: string | null, nowMs: number): number | null {

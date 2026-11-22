@@ -120,7 +120,9 @@ All notable changes to this project are recorded here. The format follows
   Replay has no button for). docs/replay.md describes what moved into Replay (turn marks, the density rows, "No data
   before", "Data as of", "Quiet for") and rule E's limit when two roles share a branch.
 - **A Replay link with a moment opens the window that ends at that moment** (`#/replay?hours=6&t=<epoch ms>`),
-  whenever it is opened; until now the window always ended at the time the page was opened.
+  whenever it is opened; until now the window always ended at the time the page was opened. The link names the
+  window on screen (`to`) apart from the cursor (`t`), so moving the cursor does not change the window a copied link
+  opens.
 - **A server with no writer says it serves a copy**: the header reads "Read-only copy · data up to <time>" with a
   grey dot, never "Live" (`GET /api/heartbeat`'s `read_only`, `frozen` and `data_up_to`). A read-only view of a
   ledger an onloopd still writes (its heartbeat fresh beside it) is "Read-only view · Live" instead.

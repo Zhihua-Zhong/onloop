@@ -39,9 +39,9 @@ is read again every 15 s, and the cursor stays at now.
 
 **Moving in time:** Play plays at 1x, 10x, 60x or 600x (Space); at the end it starts over. Previous and next change
 (Shift+Left, Shift+Right) move between the lanes' state changes. Drag on the lanes or the slider to move the cursor.
-The link keeps the moment (`t`, epoch milliseconds) and the speed, so a reload or a shared link opens the same view:
-a link with a moment in the past opens the window that ends at that moment, whenever it is opened, and is not live.
-Live ends the window now again.
+The link keeps the window on screen (`to`, its end, epoch milliseconds), the cursor (`t`) and the speed, so a reload
+or a shared link opens the same view, whenever it is opened, not live. A link with only `t` (made before `to`)
+opens the window that ends at `t`. Live ends the window now again and drops both.
 
 **Example** (the demo ledger, made up): in the 24 h window at now, the header reads "Most work (working time): builder,
 28 min · cost 60k tokens" (when the next role worked within 10% of the first, both are named), and "Where the time went" shows the lead's tokens on `branch:feat/date-check` (recorded) and

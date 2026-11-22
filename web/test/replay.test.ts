@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { activityTimes, windowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
+import { activityTimes, windowEnd, linkWindowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/replay_window.json", import.meta.url), "utf8")) as {
   window: ReplayWindow;
@@ -189,4 +189,14 @@ test("the summary names both leaders when the second worked within 10% of the fi
   assert.equal(mostWorkClose(710, 600), false);
   assert.equal(mostWorkClose(710, 0), false);
   assert.equal(mostWorkClose(0, 0), false);
+});
+
+
+test("a link names the window on screen (to) apart from the cursor (t); an older link with t alone still opens", () => {
+  const end = Date.UTC(2026, 10, 22, 14, 0, 0);
+  const cursor = end - 3 * 3_600_000; // the cursor moved back three hours before the link was copied
+  const now = end + 2 * 3_600_000;
+  assert.equal(linkWindowEnd(String(end), String(cursor), now), end); // the window on screen, not the cursor's
+  assert.equal(linkWindowEnd(null, String(end), now), end); // an older link
+  assert.equal(linkWindowEnd(null, null, now), null); // no moment: now
 });
