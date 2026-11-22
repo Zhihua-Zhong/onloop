@@ -1,3 +1,59 @@
+# onloop 0.6.0
+
+onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop
+rather than **in** it. The agents open, review and merge pull requests themselves, and the person approves a short
+list of reserved changes and can overturn the rest.
+
+**0.6.0 shows who did what, how long it took and what it cost.** The Replay view draws the team's work over time, one
+lane per role, from Claude Code's own telemetry, and charges each model request's tokens to the step it was spent on.
+Nothing acts that 0.5.0 left off.
+
+## Install
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.6.0/onloop-0.6.0-py3-none-any.whl"
+onloop selftest
+onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790/#/replay
+```
+
+You need Python 3.11 or later, git, and the GitHub CLI for the commands that talk to GitHub. The page ships inside the
+wheel. A source checkout builds it first, with `cd web && npm ci && npm run build`. Each file of the release can be
+checked with `gh attestation verify` ([docs/release.md](docs/release.md)).
+
+## Upgrading from 0.5
+
+- **Back up your ledger file first.** The first time 0.6.0 opens a 0.5 ledger to write, it moves it to schema 10. It
+  keeps every event, and 0.5 cannot open the file afterwards.
+- **Flow and Activity are retired.** Their old links open the map and Replay; `GET /api/flow` and `GET /api/activity`
+  answer 404.
+- **A role that names `user` in `setting_sources` is refused:** remove it. Supervisor steps no longer read your
+  settings files.
+- **Start your own sessions with `onloop open <role>`** to see them in Replay.
+
+## What is new
+
+- **The Replay view** (`#/replay`): one lane per role over an hour, 6 hours, a day or a week, with a cursor, playback,
+  and "Where the time went" ([docs/replay.md](docs/replay.md)).
+- **Tokens by step:** each model request is charged to the step recorded on its session, else by rule E to the next
+  `Node:` commit on its branch, else "between steps", never to the nearest step.
+- **Telemetry, cross-checked:** onloopd receives Claude Code's own telemetry, drops its identity attributes, and
+  compares each carried run's own token count with what arrived.
+- **What a step produced**, as of the cursor, and **your wait** on Now, the map and Replay as one count.
+- **Releases built and attested by CI**, with every GitHub Action pinned and the dependencies audited.
+
+The full list is in [CHANGELOG.md](CHANGELOG.md).
+
+## Known limits
+
+- **Only sessions onloop starts are measured.** A session started any other way sends onloopd nothing.
+- **Rule E places nothing on a shared branch:** when several roles worked on a branch since its last `Node:` commit,
+  their requests stay between steps. Give each role its own branch, or name the step with `--step`.
+- **A turn whose start was not recorded** counts no working time; it shows as a mark at its end.
+- **Products are read for node and branch steps only.**
+- **The browser tests have a CI job (`e2e`) from this release.** The pages were also checked by hand in a built-in
+  browser.
+- **The session carrier** is as in 0.4.0: off by default.
+
 # onloop 0.5.0
 
 onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop

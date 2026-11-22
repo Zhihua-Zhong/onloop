@@ -170,6 +170,9 @@ It reconnects by itself.
   have stopped. It turns red with "onloopd not answering for N s" once neither the stream nor the heartbeat has
   answered for five seconds. A phone shows "quiet N s" and "offline N s".
 - While onloopd does not answer, Now keeps what it last read instead of an error.
+- A server with no writer serves a copy, and says so: the header reads "Read-only copy · data up to <time>" with a
+  grey dot, never "Live" (`GET /api/heartbeat`'s `read_only`, `frozen` and `data_up_to`). A read-only view of a
+  ledger an onloopd still writes, its heartbeat fresh beside it, reads "Read-only view · Live".
 
 ### Theme
 

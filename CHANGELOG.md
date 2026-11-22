@@ -4,186 +4,86 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-23
 
-### Upgrading
+0.6.0 shows who did what, how long it took and what it cost. The new Replay view draws the team's work over time, one
+lane per role, from Claude Code's own telemetry, which onloopd now receives, and charges each model request's tokens
+to the step it was spent on. Flow and Activity are retired: their parts are on Now, Replay and the map (decision
+0019). Supervisor steps no longer read your settings files (they run with `--restricted`). Releases are built by CI
+and attested.
 
-- **The ledger moves from schema 9 to schema 10** (decision 0019): the events table takes the source `otel`, Claude
-  Code's own telemetry received by onloopd, and gains an index on each event's own time, for the replay's windows.
-  Every event is kept, unchanged. Back the ledger file up first if you may want to go back; 0.5.x refuses a
-  schema-10 file.
-- **A supervisor step no longer loads the user settings file** (decision 0019). Its `setting_sources` default is now
-  `project`, and a role that names `user` is refused at load: the user file's `env` wins over the step's own, so the
-  step could send its telemetry to a collector outside onloop. The role table already gives a step its tools and
-  model. A step's environment has no inherited OTel variable; with an onloopd next to the default ledger it gets
-  onloop's OTel environment toward it, and otherwise exports nothing.
-- **A supervisor step runs with `--restricted`**, as a carried turn does: Claude Code ignores every settings file for
-  it, so a repository's `.claude/settings.json` cannot widen the role's tools. Its file tools stay inside `cwd`; a
-  folder a step must read beyond it is declared in the role as `add_dirs` and passed as `--add-dir`.
+### Upgrading from 0.5.0
 
-### Security
-
-- **Every GitHub Action is pinned by its full commit SHA**, with the version in a comment, in onloop's own CI and in
-  the workflows `onloop init` writes (checkout v4.4.0, setup-python v5.6.0, setup-node v4.4.0). A test keeps every
-  `uses:` pinned, one SHA per action. `.github/dependabot.yml` proposes grouped weekly updates for the Actions, pip
-  and npm.
-- **A vulnerability audit in CI**: the wheel job runs `pip-audit` on what the built wheel installs (any advisory fails,
-  since Python advisories carry no severity) and `npm audit` on the UI's production dependencies (high or critical
-  fails), through `tools/audit_gate.py`. `.github/audit-allowlist.yml` lets an advisory pass with a reason and an
-  expiry; an expired entry fails the build. Empty to start. A local `npm audit` on 2026-11-22 (production
-  dependencies) found 0 vulnerabilities.
-- **The browser tests run in CI**: an `e2e` job builds the UI, installs onloop with it, installs Playwright's
-  Chromium, and runs `npm run e2e` against onloopd's server over the demo ledger; the report and traces are kept as
-  an artifact when a test fails. Until now the specs ran nowhere.
-- **Python 3.13 and 3.14** are in CI's test matrix on Linux and Windows, beside 3.11 and 3.12, and in the package's
-  classifiers. `requires-python` stays `>=3.11`.
-- **Releases are built by CI from their tag**: on a `v*` tag, the `release` workflow checks the tag names the
-  package's version, builds the UI, the wheel and the sdist, writes `SHA256SUMS`, attests where each file was built
-  (GitHub artifact attestations), and attaches all of it to a draft release, which a person publishes.
-  [docs/release.md](docs/release.md) has the steps and how to verify a release with `gh attestation verify`. The
-  release checks its own sdist carries the UI and self-tests its own wheel before drafting, and CI's wheel job builds
-  exactly as the release does.
-
-### Fixed
-
-- **A writer no longer dies on a ledger another process holds**: every writable open is WAL with
-  `synchronous=NORMAL` and a 15 s busy timeout (it was 5 s); a write whose lock stays held is tried twice more after
-  a backoff, then fails that one write cleanly, rolled back, and the process goes on. onloopd's tick is skipped, not
-  onloopd. `GET /health` counts the retried attempts, the failed writes and the longest write transaction
-  (`receipts.locks`). The longest wait, 46.5 s, stays under the heartbeat's 60 s staleness less a tick. Measured on
-  onloop's own dogfood after the change (2026-11-22, three carried turns and onloopd's ticks): the longest write
-  transaction took 16 ms, with no retry and no failed write. (The commit's message said no long write had shown up
-  before this was measured; this is the measurement.)
-  From a carried review of it: a COMMIT that cannot take the lock is tried again the same way, then rolled back,
-  so the connection never stays inside an open transaction; the journal mode the open actually got is on `/health`
-  (`receipts.locks.journal_mode`: anything but `wal` means a filesystem where readers block the writer); a lock error
-  inside a tick ends that tick instead of each step waiting in turn, and the heartbeat is still written. With
-  `synchronous=NORMAL` a power loss can lose the last commits; a delivery survives that (at least once, deduped by
-  evidence).
-- **A carrier booting in another carrier's grant window no longer releases its lease** (R7a's round 2, moved into
-  0.6.0): a lease is granted before its run has a pid, and a second carrier's boot took it for an orphan, so two
-  turns could run on one session. Each carrier boot now registers its instance (pid and creation time), and
-  `recover` keeps a lease whose granting instance still runs, releasing it once that instance is gone; `expires_at`
-  stays the backstop for a hung carrier. `test_carrier_race` had failed on this, under load. A lease is released
-  once: a second release of it, by any path, does nothing.
-- **Rule E reads the branch's own commits** (`git log --first-parent`, in time order): a merged side branch's `Node:`
-  commit no longer takes a request made on the branch it was merged into.
-- **Rule E no longer guesses on a shared branch** (the dogfood's round 2): clause 2 places a request on the next
-  commit's node only when one role alone worked on that branch since the previous `Node:` commit. When several did,
-  the requests stay between steps, and Replay says "branch shared by N roles" (`between_shared` in
-  `GET /api/replay`). The figures are derived again from the ledger, so earlier windows read correctly at once.
-- **A carried turn's telemetry is no longer dropped** (the dogfood's round 2, 2026-11-22): Claude Code numbers its
-  records per process, and a carried turn is a new process resuming the same session, so the sequence started again
-  and onloopd took the second run's records for the first run's, dropping them as redelivered. A model request is now
-  keyed on its request id, any other record on its session, prompt id and sequence. A ledger written before keeps
-  what it has; the dropped records were never stored.
-
-### Removed
-
-- **Flow and Activity are retired** (decision 0019, section 4), now that their parts have moved to Now, Replay and the
-  map. The views, `GET /api/flow`, `GET /api/activity`, `views.flow` and the layout engine (elkjs) go. An old link
-  opens where the parts went, and its address is rewritten to that view: `#/flow` becomes `#/map`, `#/activity`
-  `#/replay`; both API routes answer 404. The navigation reads
-  Now, Replay, Map, then the rest. `derive.data_as_of` replaces `report.activity.data_as_of`.
+- **Back up the ledger file first.** It moves from schema 9 to schema 10 the first time 0.6.0 opens it to write
+  (onloopd's start, or any command that writes). Every event is kept, unchanged. After that, 0.5.x refuses the file.
+- **Old links redirect:** `#/flow` opens the map, and `#/activity` opens Replay. `GET /api/flow` and
+  `GET /api/activity` answer 404. Code that reads `report.activity.data_as_of` uses `derive.data_as_of`.
+- **A role that names `user` in `setting_sources` is refused at load:** remove it. A supervisor step that reads files
+  outside its `cwd` needs those folders declared in the role as `add_dirs`.
+- **Start your own sessions with `onloop open <role>` to see them in Replay.** Sessions onloop starts are measured
+  without your doing anything. A session started any other way sends onloopd nothing.
+- **To pin the Actions in a repository set up before 0.6.0,** run `onloop init --dir <an empty folder>` and copy the
+  `uses:` lines of its `.github/workflows/onloop-*.yml` into yours. `onloop init --force` in place would also
+  overwrite `onloop.yaml` and the ledger file.
 
 ### Added
 
-- **The map's zoom 0 opens into Replay**: "Who worked when: Replay →", over the last 24 hours (decision 0019's
-  navigation).
-- **`onloop say ROLE TEXT --step node:a1`**: a message names the step it is about, and the carried turn that delivers
-  it is recorded as that step, so its cost needs no rule (as `onloop open --step`).
-- **What came in, and the cross-check** (the onloop lead's rule: a silent drop is never invisible again). `GET /health`
-  counts every write by route and answer and every telemetry record received, of a kind onloop does not keep
-  (dropped on purpose), unplaced, kept, stored and already logged, since onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and
-  Replay says how much of it the window's telemetry brought, naming any run below 95%, and any above 102% or with
-  telemetry against a count of nothing (`GET /api/replay`'s `coverage`, `low` and `high`). A carried run's telemetry
-  is tagged with its run id (`onloop.run`), so a batch that lands after the next run started is still its own run's.
-  A tagged record from another session (a process the run started) is counted apart, as the run's `nested` cost.
-- **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
-  not a step), and `run.started` records the repository and branch the run works on, so its requests go to the next
-  commit's `Node:` trailer there, labelled "attributed by rule".
-- **The map's items carry what Flow's card panel showed** (decision 0019, section 4): at zoom 2, "Details" under an
-  item gives its owner, what it waits on (why, and for how long), its default and expiry, its source link, and the
-  command to copy when a wait is on missing evidence or a paused role.
-- **Now, after Flow and Activity** (decision 0019, section 4): the constraint links to the map's cell that holds it
-  (its goal and stage, with the holder's row selected; `constraint_map` in `GET /api/now`), and "See when the team
-  worked" opens Replay. Open items whose expiry is past or within a day (Flow's Roadmap showed them) are listed under
-  "Expires within a day" beside Stalled; `GET /api/now` answers them as `expiring`.
-- **Activity's parts, moved to Replay** (decision 0019, section 4): every turn that ended in the window, a short mark
-  at its end when its start is not known (an imported snapshot's turns, or a Stop with no SessionStart); turns per hour
-  and roles active above the lanes; "Quiet for" in the table and each role's longest quiet in "Where the time went";
-  "Data as of" when the ledger replays a team's export; and "No data before" where the window starts before the data.
-- **docs/ui.md** names the views in the bar's order, says how they link (Now to the map's cell and to Replay, one
-  "Waiting on you"), describes Replay, the map's item details and Now's "Expires within a day", and lists where each
-  part of Flow and Activity went.
-- **Now's "See when the team worked"** opens Replay over the last 7 days, a window Replay offers (it opened 48 h, which
-  Replay has no button for). docs/replay.md describes what moved into Replay (turn marks, the density rows, "No data
-  before", "Data as of", "Quiet for") and rule E's limit when two roles share a branch.
-- **A Replay link with a moment opens the window that ends at that moment** (`#/replay?hours=6&t=<epoch ms>`),
-  whenever it is opened; until now the window always ended at the time the page was opened. The link names the
-  window on screen (`to`) apart from the cursor (`t`), so moving the cursor does not change the window a copied link
-  opens.
-- **A server with no writer says it serves a copy**: the header reads "Read-only copy · data up to <time>" with a
-  grey dot, never "Live" (`GET /api/heartbeat`'s `read_only`, `frozen` and `data_up_to`). A read-only view of a
-  ledger an onloopd still writes (its heartbeat fresh beside it) is "Read-only view · Live" instead.
-- **Replay says what its figures measure**: "Most work (working time)", naming both roles when the second worked within
-  10% of the first; cost is "cost (tokens)" in the header and the table; plain hovers for Harness, the ledger's totals
-  and "attributed by rule". A step's products open under the section it was clicked in, at the click's height, not
-  above it (the glance trial's findings).
-- **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
-  products, with the API and the limits. `onloop open` is in the configuration reference.
-- **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,
-  and previous-change from the end goes to the last change before it; playback keeps the wall clock (600x is 600x,
-  even in a throttled or background tab); the figures are the window's by default, labelled "In this 6 h window, up
-  to …", with the ledger's totals on request and never a lane-sum of waits; waiting is a light tint and working full
-  colour, with lanes, table and breakdown ordered by work and the header naming who did most and its tokens.
-- **Products at the cursor** (decision 0019, a4): a node or branch step on the Replay view opens what it produced as
-  of the cursor: the files its commits changed, each at its latest commit then, read from git in a repository onloop
-  recorded. Markdown is rendered from a tree (its raw HTML stays text), images show, and HTML shows in a sandboxed
-  frame; onloopd serves a product with `Content-Security-Policy: sandbox`, so it never has onloopd's origin and no
-  script runs. `GET /api/products` and `GET /api/products/file`.
-- **Your wait made visible** (decision 0019, a7): Now says how many items wait on you (the same count as its list),
-  how long the oldest has waited, and how much of the last day anything waited on you, with a link to Replay.
-  Replay's "Where the time went" starts with the same for its window. `derive.your_wait` is the one derivation; the
-  agreement test holds Now, the map and Replay to one count.
-- **Who is working now** (decision 0019, a6): the Replay view opens live when no moment is in its link. The window
-  ends now and is read again every 15 s, the cursor stays at now, and "Working now" lists each step onloop recorded
-  that is open, with its role, how long it has run and its tokens so far. Moving the cursor leaves live; "Go live"
-  returns. `GET /api/replay` answers `working_now` for the window's end.
-- **Where the time went** (decision 0019, a2 and a3), under the Replay view's lanes: per role, its four kinds of
-  time in the window as one bar, its tokens and cache reads, and its tokens by step, each labelled "recorded" or
-  "attributed by rule", with what is left "between steps" shown with its share.
-- **Rule E's clause 2** attributes a request no recorded step covers to the `Node:` trailer of the next commit on
-  the branch its session works on. `session.opened` and `step.started` now record the session's repository path and
-  branch name; the rule reads a commit's time and trailer only. Clause 1 (the turn's opening message) is unavailable
-  by design: prompts are never logged.
-- **The Replay view** (decision 0019, a1), `#/replay`: the team's work as lanes in proportion to time, over the last
-  hour, 6 hours, a day or a week. A cursor shows each lane's state, its four kinds of time and its tokens at that
-  moment, with the step of its latest request; it plays at 1x, 10x, 60x or 600x, and jumps from one state change to
-  the next. The page indexes onloopd's window once (off its own thread past 100 000 events), so a frame is two binary
-  searches per lane; the lanes are drawn per pixel column, whatever the number of events. "Show as a table" gives
-  the same numbers. The demo ledger has a made-up telemetry story to show it.
-- **`GET /api/replay?from=&to=&lanes=`** (decision 0019): the replay's window, at most 31 days, in columns: each
-  lane at `from` and at `to` (its state, its four kinds of time so far, its tokens so far), and the state changes and
-  model requests inside, each request with its recorded step. A frame anywhere in the window needs nothing before
-  it. A model request counts as working over its own duration, so one still running at `to` shows in the window.
-- **The replay's timeline** (decision 0019, `derive.timeline`): per role, its time cut into working, harness,
-  waiting on the person and queued, each second counted once in the first kind that covers it, and its tokens
-  (input, output and cache creation, with cache reads apart) by the step recorded on the session, else "between
-  steps". Nothing is charged to the nearest step.
-- **onloopd receives Claude Code's own telemetry** (decision 0019): `POST /v1/logs` and `POST /v1/metrics`, OTLP/HTTP
-  with JSON encoding, with onloopd's token. The identity attributes Claude Code sends when signed in are dropped on
-  arrival. A model request, a prompt and a tool call become `cost.request`, `turn.prompted` and `tool.ended` events,
-  each with only its named fields: tokens, model and duration, a prompt's length but never its text, a tool's name and
-  result but never its parameters. Metrics are answered and stored nowhere.
-- **`onloop open <role>`** (decision 0019): your own interactive Claude Code session for an onloop role, measured like
-  the sessions onloop starts. It runs with `--setting-sources project,local`, so the user settings file and its OTel
-  keys are not loaded for it, and with onloop's own OTel environment, so its telemetry goes to onloopd only.
-  `--step KIND:REF` names what it works on (`task:`, `pr:`, `branch:`, `node:`); `--dry-run` prints the command.
-  Its start and end are `session.opened`, `step.started` and `step.ended` events.
-- **A carried turn is a step:** the carrier logs `step.started` and `step.ended` around each run, on the one item its
-  deliveries are about, else the run. Its turn now runs with onloop's OTel environment, and never with an OTel
-  variable inherited from onloopd's own environment.
+- **Replay** (`#/replay`, the second tab): one lane per role over the last hour, 6 hours, day or week, each second in
+  one of four kinds (working, harness, waiting on you, queued). A cursor gives each role's state, time and tokens.
+  Playback runs at 1x to 600x. "Show as a table" gives the same numbers. With no moment in its link, Replay opens
+  live, with "Working now". See [docs/replay.md](docs/replay.md).
+- **Where the time went**, under the lanes: your wait, then per role its four kinds of time, its tokens and cache
+  reads, and its tokens by step.
+- **Tokens charged to the step they were spent on:** to the step recorded on the session, else by rule E to the
+  `Node:` trailer of the next commit on the session's branch, else "between steps". Never to the nearest step.
+- **`onloop say ROLE TEXT --step node:a1`** records the step a message is about on the turn that delivers it.
+- **`onloop open <role>`** starts your own Claude Code session for a role, measured like the ones onloop starts.
+- **onloopd receives Claude Code's telemetry** on `POST /v1/logs` (OTLP/HTTP, JSON, with onloopd's token). Identity
+  attributes are dropped on arrival. A prompt's text and a tool's parameters are never kept.
+- **The cross-check:** Replay compares each carried run's own token count with the telemetry that arrived, and names
+  any run below 95% or above 102%. `GET /health` counts every record that came in, and why any was left out.
+- **What a step produced:** a node or branch step opens the files its commits changed, as of the cursor. HTML shows
+  in a sandboxed frame, where no script runs.
+- **Your wait, made visible:** Now says how many items wait on you, how long the oldest has waited, and how much of
+  the last day anything waited on you. Now, the map and Replay show one count.
+- **The map:** zoom 0 opens into Replay ("Who worked when"). At zoom 2, an item's "Details" give what Flow's card
+  panel showed. Now lists "Expires within a day" beside Stalled. See [docs/ui.md](docs/ui.md).
+- **A copy says it is one:** a server with no writer shows "Read-only copy · data up to …", never "Live".
+- **Python 3.13 and 3.14**, tested on Linux and Windows beside 3.11 and 3.12. The browser tests run in CI (`e2e`).
+
+### Changed
+
+- **The ledger is at schema 10:** events may come from `otel`, and an index on each event's time serves Replay.
+- **Supervisor steps run with `--restricted`,** as carried turns do: Claude Code ignores every settings file for the
+  step. A step's file tools stay inside its `cwd` and the role's `add_dirs`.
+- **A step's `setting_sources` defaults to `project`,** and its environment carries no inherited OTel variable.
+- **Carried turns** run with onloop's OTel environment, and record the one step or item their deliveries are about.
+  A carried turn with no named step or item is charged by rule E, else between steps, never as a step of its own.
+- **Navigation:** the bar reads Now, Replay, Map, then the rest. Now's constraint opens the map's cell that holds it.
+- **Ledger writes** use WAL with `synchronous=NORMAL` and a 15 s busy timeout (it was 5 s).
+
+### Removed
+
+- **Flow**, with `views.flow` and its layout engine (elkjs). Its parts are on Now and the map.
+- **Activity.** Its parts are on Replay.
+- **`GET /api/flow`** and **`GET /api/activity`**: both answer 404.
+
+### Fixed
+
+- **A writer no longer dies when another process holds the ledger.** A write whose lock stays held is tried again,
+  then fails alone, rolled back, and the process goes on. `GET /health` counts retries, failures and the longest write.
+- **Two turns could run on one session** when a carrier started while another was granting a lease. A lease is now
+  kept while the carrier that granted it runs, and released only once.
+
+### Security
+
+- **Every GitHub Action is pinned by its full commit SHA**, in onloop's CI and in the workflows `onloop init` writes.
+  Dependabot proposes the updates.
+- **Dependencies are audited in CI:** `pip-audit` on what the wheel installs, and `npm audit` on the UI's production
+  dependencies. An allowed advisory needs a reason and an expiry.
+- **Releases are attested.** A `v*` tag builds the wheel and the sdist in CI, checks both carry the UI, self-tests
+  the wheel, writes `SHA256SUMS`, attests each file and drafts the release. Releases up to 0.5.0 have no attestation.
+  See [docs/release.md](docs/release.md) for how to verify one.
 
 ## [0.5.0] - 2026-11-20
 

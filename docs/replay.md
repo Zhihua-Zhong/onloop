@@ -29,8 +29,8 @@ is read again every 15 s, and the cursor stays at now.
 - **Where the data begins and ends:** a window that starts before the ledger's first event is shaded "No data before
   <time>" up to it, so a stretch with no data never reads as a quiet team. On a team's export the header says "Data
   as of <time>": where the export ends.
-- **The table:** each role at the cursor: its state, "Quiet for" (since its last turn ended), its time in each kind,
-  its tokens and cache reads, and its step.
+- **"Show as a table":** the lanes as a table, each role at the cursor: its state, "Quiet for" (since its last turn
+  ended), its time in each kind, its tokens and cache reads, and its step.
 - **Where the time went:** for the whole window, a bar per role of its four kinds of time, its tokens and cache reads,
   its longest quiet stretch, and its tokens by step. Above them, **You**: the share of the window in which anything
   waited on you, how many items wait now, and how long the oldest has.
@@ -61,11 +61,12 @@ Each model request is charged to:
 1. **the step onloop recorded on its session** at that moment: the step a carried turn's message names
    (`onloop say ROLE TEXT --step node:a1`), else its item, or the step `onloop open` was given: **recorded**;
 2. else, by **rule E**, the `Node:` trailer of the next commit on the branch its session works on: **attributed by
-   rule**. onloop records the session's repository and branch when it starts the work, and reads a commit's time and
-   trailer only. It applies only when one role alone worked on that branch since the previous `Node:` commit: when
-   several did, it cannot tell whose the commit is, and their requests stay between steps, marked "branch shared by
-   N roles". The rule's other clause, the step named in the turn's opening message, is unavailable by design:
-   prompts are never logged;
+   rule**. onloop records the session's repository and branch when it starts the work. The rule reads the branch's own
+   commits (`git log --first-parent`, oldest first), and of each commit its time and trailer only. It applies only
+   when one role alone worked on that branch since the previous `Node:` commit: when several did, it cannot tell whose
+   the commit is, and their requests stay between steps, marked "branch shared by N roles". The rule's other clause,
+   the step named in the turn's opening message, is unavailable by design: prompts are never logged. `onloop say
+   --step` is not that clause: it records the step as a field of the message, so its turn is charged under 1;
 3. else **between steps**, shown with its share. A request is never charged to the nearest step.
 
 **For rule-based attribution, give each role its own branch.** Better still, name the step: a message with `--step`
@@ -116,8 +117,9 @@ attribute onloop sets in the run's environment), so Replay compares the count wi
 it landed in time (a record without the tag, from an older build, counts by the run's time on its session). It says so
 under the summary: "Telemetry brought 99% of the tokens the 6 carried runs in this window reported". A run below 95%
 is named, in red, with its share: its tokens on the page are short. A run above 102%, or with telemetry against a
-count of nothing, is named too: something was counted twice or taken from another run. A session onloop did not start has no such
-count, so it is not cross-checked.
+count of nothing, is named too: something was counted twice or taken from another run. A tagged record from another
+session (a process the run started) is counted apart, as the run's `nested` cost. A session onloop did not start has
+no such count, so it is not cross-checked.
 
 ## `onloop open <role>`: your own session, measured
 
@@ -145,12 +147,12 @@ commits changed, each at its latest commit then.
 
 | Route | Answers |
 |---|---|
-| `GET /api/replay?from=&to=&lanes=` | a window of at most 31 days, in columns: each lane at `from` and at `to`, the state changes and model requests inside, the steps, `working_now`, `your_wait` and `coverage` (the cross-check) |
+| `GET /api/replay?from=&to=&lanes=` | a window of at most 31 days, in columns: each lane at `from` and at `to` (its state, its four kinds of time so far, its tokens so far), the state changes and model requests inside (each request with its step), the steps with `step_by` (per step: recorded or rule), `between_shared` (per lane whose requests stayed between steps on a shared branch, how many roles shared it), `working_now`, `your_wait` and `coverage`: the runs, the tokens they reported and received, the share, and `low` and `high`, the runs below `low_below` (0.95) and the runs above `high_above` (1.02) or with telemetry against a count of nothing |
 | `GET /api/products?step=&at=` | a node or branch step's commits and changed files as of `at` |
 | `GET /api/products/file?repo=&sha=&path=` | one of those files, in its own sandbox |
 | `POST /v1/logs`, `POST /v1/metrics` | Claude Code's telemetry, with onloopd's token |
 | `POST /sessions/opened`, `/sessions/ended` | what `onloop open` reports |
-| `GET /health` | onloopd's state, and `receipts`: every write by route and answer, every telemetry record kept, stored or already logged |
+| `GET /health` | onloopd's state, and `receipts`: every write by route and answer, the telemetry counts above, and `locks`: write attempts retried, writes failed, and the longest write transaction (`longest_tx_s`, where it was opened: `longest_tx_at`), with `journal_mode` |
 
 ## Limits
 
@@ -158,8 +160,9 @@ commits changed, each at its latest commit then.
 - Rule E reads the branch's own commits (`git log --first-parent`): a merged side branch's `Node:` commit is not
   the branch's next commit.
 - Rule E needs the session's branch: a session onloop started outside a git repository leaves its requests between
-  steps (a session onloop did not start sends nothing at all). On a branch several roles worked on since the last `Node:` commit, the rule places
-  nothing: it reads only the branch and a commit's time, so it cannot tell whose the commit is.
+  steps (a session onloop did not start sends nothing at all). On a branch several roles worked on since the last
+  `Node:` commit, the rule places nothing: it reads only the branch and a commit's time, so it cannot tell whose the
+  commit is.
 - Products are read for node and branch steps only.
 - In a browser that blocks sandboxed frames, an HTML product shows empty in the page; "Open it on its own" still
   works.
