@@ -118,6 +118,8 @@ All notable changes to this project are recorded here. The format follows
 - **Now's "See when the team worked"** opens Replay over the last 7 days, a window Replay offers (it opened 48 h, which
   Replay has no button for). docs/replay.md describes what moved into Replay (turn marks, the density rows, "No data
   before", "Data as of", "Quiet for") and rule E's limit when two roles share a branch.
+- **A Replay link with a moment opens the window that ends at that moment** (`#/replay?hours=6&t=<epoch ms>`),
+  whenever it is opened; until now the window always ended at the time the page was opened.
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,

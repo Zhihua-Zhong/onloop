@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
+import { activityTimes, windowEnd, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -92,10 +92,13 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
   // Live (a6): with no cursor in the URL the window ends now and moves with the clock, asked again every 15 s; the
   // cursor stays at now. Any move of the cursor leaves live; the Live button returns to it.
   const [live, setLive] = useState(() => !params.get("t"));
+  // A link with a moment opens the window that ends at that moment (read once, as the link opens): a shared link to
+  // a past moment shows the same window whenever it is opened. Live drops it and ends the window now again.
+  const [anchor, setAnchor] = useState(() => windowEnd(params.get("t"), Date.now()));
   const q = useQuery({
-    queryKey: ["replay", hours],
+    queryKey: ["replay", hours, live ? null : anchor],
     queryFn: () => {
-      const end = Date.now();
+      const end = live || anchor === null ? Date.now() : anchor;
       const from = new Date(end - hours * 3_600_000).toISOString();
       const to = new Date(end).toISOString();
       return get<ReplayWindow>(`/api/replay?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
@@ -125,7 +128,10 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
       live={live}
       setLive={(on) => {
         setLive(on);
-        if (on) void q.refetch();
+        if (on) {
+          setAnchor(null);
+          void q.refetch();
+        }
       }}
     />
   );

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
+import { activityTimes, windowEnd, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/replay_window.json", import.meta.url), "utf8")) as {
   window: ReplayWindow;
@@ -172,4 +172,13 @@ test("Activity's parts: quiet at the cursor, the longest quiet, and turns and ro
     perHour(w, times).map((h) => [h.turns, h.roles]),
     [[1, 2], [2, 2], [0, 0]],
   );
+});
+
+
+test("a link with a past moment opens the window that ends at that moment, whenever it is opened", () => {
+  const t = Date.UTC(2026, 10, 22, 14, 0, 0);
+  assert.equal(windowEnd(String(t), t + 2 * 3_600_000), t); // opened two hours later: the same window
+  assert.equal(windowEnd(null, t), null); // no moment: the window ends now
+  assert.equal(windowEnd(String(t + 1000), t), null); // a moment in the future: now
+  assert.equal(windowEnd("nonsense", t), null);
 });

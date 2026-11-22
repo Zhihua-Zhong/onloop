@@ -2264,6 +2264,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a Replay link with a moment ends its window at now, so it shows another window each time it is opened",
+        "web/src/lib/replay.ts",
+        "  return Number.isFinite(v) && v > 0 && v < nowMs ? v : null;",
+        "  return null;",
+        ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

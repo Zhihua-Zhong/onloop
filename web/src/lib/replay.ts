@@ -296,6 +296,14 @@ export function breakdown(w: ReplayWindow): LaneBreakdown[] {
 /** Playback by the wall clock (the lead's finding: 600x ran at about 290x in a throttled tab). The cursor is the
  * anchor plus the elapsed wall time times the speed, clamped only at the end: a tab that gets two frames a second
  * skips frames but keeps time. */
+/** Where a link's window ends: at its moment `t` (epoch ms) when it names one in the past, so a shared link opens the
+ * same window whenever it is opened; null otherwise (the window ends now, and moves with the clock when live). */
+export function windowEnd(t: string | null, nowMs: number): number | null {
+  if (!t) return null;
+  const v = Number(t);
+  return Number.isFinite(v) && v > 0 && v < nowMs ? v : null;
+}
+
 export function playhead(anchorT: number, anchorWall: number, nowWall: number, speed: number, end: number): number {
   return Math.min(end, anchorT + Math.max(0, nowWall - anchorWall) * speed);
 }
