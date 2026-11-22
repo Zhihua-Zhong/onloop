@@ -49,3 +49,19 @@ The list is confirmed, with these answers:
 2. **Side sessions: steps are enough.** No sub-lanes for now.
 3. **Order: every move first,** each checked by hand (the onloop lead checks each in Chrome); **then the removals in
    one commit,** so that one revert restores both views.
+
+## As built (commits 12 and 13), where it differs from the list
+
+Recorded after the removal (211e547), from a check of docs/ui.md against this list:
+
+- **Expiries** sit beside Stalled, under their own heading "Expires within a day", not in the Stalled column, and
+  include items whose expiry is already past.
+- **Now's constraint links** go to the map's stage that holds the constraint, with the holder's row selected. There is
+  no "Replay at now" link from the constraint.
+- **Map zoom 0 does not open into Replay**: the map links nowhere into Replay. Replay is in the bar, second.
+- **Now's link to Replay** is on the stall card shown when the team's turns carry no outcome lines (the card that
+  linked to Activity), and opens the last 7 days, a window Replay has (Activity's 48 h is gone).
+- **The calendar's done work** is in the digest on Now and on the map, and in Replay's window.
+
+The links to Replay from map zoom 0 and from the constraint were not built; whether they are wanted is open for the
+onloop lead.

@@ -183,7 +183,7 @@ function StallCard({ s }: { s: Stall }) {
         <p className="mt-1 text-[13px] leading-snug text-muted">
           Without them onloop cannot tell what a turn decided or waits on, so it shows when each role worked instead.
         </p>
-        <a href={href("replay", { hours: "48" })} className="mt-1.5 inline-block text-[13px] font-medium text-accent hover:underline" data-testid="see-activity">
+        <a href={href("replay", { hours: "168" })} className="mt-1.5 inline-block text-[13px] font-medium text-accent hover:underline" data-testid="see-activity">
           See when the team worked
         </a>
       </Card>

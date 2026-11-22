@@ -23,11 +23,17 @@ is read again every 15 s, and the cursor stays at now.
   | Queued | a message to the role, not yet delivered | light |
 
   When two overlap, the first in that order counts, so no second is counted twice. Ticks under a lane are model
-  requests. A role with nothing in the window is listed under the lanes.
-- **The table:** each role at the cursor: its state, its time in each kind, its tokens and cache reads, and its step.
+  requests. A turn whose start is not known (an imported snapshot's turns, or a Stop with no SessionStart) is a short
+  mark at its end. A role with nothing in the window is listed under the lanes.
+- **Above the lanes:** turns per hour, and how many roles had a turn in each hour.
+- **Where the data begins and ends:** a window that starts before the ledger's first event is shaded "No data before
+  <time>" up to it, so a stretch with no data never reads as a quiet team. On a team's export the header says "Data
+  as of <time>": where the export ends.
+- **The table:** each role at the cursor: its state, "Quiet for" (since its last turn ended), its time in each kind,
+  its tokens and cache reads, and its step.
 - **Where the time went:** for the whole window, a bar per role of its four kinds of time, its tokens and cache reads,
-  and its tokens by step. Above them, **You**: the share of the window in which anything waited on you, how many items
-  wait now, and how long the oldest has.
+  its longest quiet stretch, and its tokens by step. Above them, **You**: the share of the window in which anything
+  waited on you, how many items wait now, and how long the oldest has.
 - **Working now** (live only): each step onloop recorded that is open now, with its role, how long it has run and its
   tokens so far.
 
@@ -104,9 +110,11 @@ commits changed, each at its latest commit then.
 
 ## Limits
 
-- A turn whose start was not recorded counts no working time on its lane.
+- A turn whose start was not recorded counts no working time on its lane; it shows as a mark at its end.
 - Rule E needs the session's branch: sessions onloop did not start, or that ran outside a git repository, leave
-  their requests between steps.
+  their requests between steps. Clause 2 reads only the branch and the commit's time: when two roles work on one
+  branch, the first `Node:` commit after a request takes it, whichever role made that commit. Give each role its own
+  branch, or commit each role's work before the next role's turn.
 - Products are read for node and branch steps only.
 - In a browser that blocks sandboxed frames, an HTML product shows empty in the page; "Open it on its own" still
   works.

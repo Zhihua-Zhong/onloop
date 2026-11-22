@@ -5,7 +5,7 @@ import { retiredTo } from "../src/lib/retired.ts";
 test("a retired view's link is rewritten to where its parts moved, keeping its path and query", () => {
   assert.equal(retiredTo("#/flow"), "#/map");
   assert.equal(retiredTo("#/flow?mode=you"), "#/map?mode=you");
-  assert.equal(retiredTo("#/activity?hours=48"), "#/replay?hours=48");
+  assert.equal(retiredTo("#/activity?hours=168"), "#/replay?hours=168");
   assert.equal(retiredTo("#flow"), "#/map");
 });
 

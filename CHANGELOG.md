@@ -48,6 +48,9 @@ All notable changes to this project are recorded here. The format follows
 - **docs/ui.md** names the views in the bar's order, says how they link (Now to the map's cell and to Replay, one
   "Waiting on you"), describes Replay, the map's item details and Now's "Expires within a day", and lists where each
   part of Flow and Activity went.
+- **Now's "See when the team worked"** opens Replay over the last 7 days, a window Replay offers (it opened 48 h, which
+  Replay has no button for). docs/replay.md describes what moved into Replay (turn marks, the density rows, "No data
+  before", "Data as of", "Quiet for") and rule E's limit when two roles share a branch.
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,

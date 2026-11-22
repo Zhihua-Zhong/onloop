@@ -1,7 +1,8 @@
 # The UI
 
 onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). It has eight views of the same
-ledger, in this order in the bar: Now, Replay, Map, then Outcome, Team, Conversation, Schedules and Audit. Every request it makes is a GET but one: the Conversation view's compose box, a message to a role
+ledger, in this order in the bar: Now, Replay, Map, then Outcome, Team, Conversation, Schedules and Audit. Every
+request it makes is a GET but one: the Conversation view's compose box, a message to a role
 ([decision 0011](decisions/0011-ui-write-path.md)). Where a person can act otherwise, the page shows the exact
 `onloop` command with a copy button. Approvals come later, through the approval channel.
 
@@ -16,7 +17,7 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
 | **Replay** (`#/replay`) | Who did what, how long it took, what it cost in tokens, and what each step produced? | `GET /api/replay`, `GET /api/products` |
 | **Map** (`#/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
-| **Outcome** (`#/outcome`) | Do merged changes move the goals, and what does each one cost to land? ([tasks.md](tasks.md)) | `GET /api/kpi` |
+| **Outcome** (`#/outcome`) | Do merged changes move the goals, and what does each one take to land (hours, review rounds, human touches)? ([tasks.md](tasks.md)) | `GET /api/kpi` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
 | **Schedules** (`#/schedules`) | Did every scheduled job run, and which are failing or overdue? | `/api/schedules`, `/api/alerts`, `/api/events` |
@@ -28,7 +29,7 @@ Now is the person's inbox, Replay the main view, and the map's zoom 0 the overvi
 
 - **From Now:** the constraint banner's "Map" link opens the map at the stage that holds the constraint, with the
   holder's row selected (`#/map/changes/opened?who=merge-check` on the demo). When the team's turns carry no outcome
-  lines, the stall card's "See when the team worked" opens Replay over the last 48 hours.
+  lines, the stall card's "See when the team worked" opens Replay over the last 7 days.
 - **Waiting on you** is one list, Now's; the map and the task list count it the same way, from one derivation.
 - **Jobs due** are on Schedules.
 - **An old link** to a retired view opens where its parts moved, and the address is rewritten to that view (below).
@@ -56,8 +57,9 @@ On a phone, an at-a-glance strip under the banner keeps the three counts on the 
 
 ### Map
 
-The full guide is [map.md](map.md). Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`, `#/map/<goal>`), so Back, Forward and a link
-land on the same level.
+The full guide is [map.md](map.md). Zoom 0 of one map (decision 0018). Each level has its own URL (`#/map`,
+`#/map/<goal>`, `#/map/<goal>/<stage>`, and `?who=<holder>` for that holder's row selected), so Back, Forward and a
+link land on the same level.
 
 - **The signals:**
   - "N wait on you": the same count as Now and the task list;
@@ -119,8 +121,8 @@ role's state, time and tokens at that moment. With no moment in the link it open
 cursor stays there.
 - **The window:** the last 1 h, 6 h, 24 h or 7 days. Every figure is the window's, and says so.
 - **The lanes:** working, harness, waiting on you and queued time. A turn with no recorded start is a mark at its end.
-  Above the lanes, a density row shows turns per hour and the roles active in each hour.
-- **The window starts where the data does:** before the first event the lanes are shaded "No data before".
+  Above the lanes, two density rows: turns per hour, and how many roles had a turn in each hour ("Roles active").
+- **The window starts where the data does:** before the first event the lanes are shaded "No data before <time>".
 - **On a team's export,** the header says "data as of", as the map does.
 - **Quiet:** each role's "Quiet for" is in the table at the cursor, and its longest quiet in "Where the time went".
 - **Steps:** a click on a step shows what it produced as of the cursor.
@@ -129,16 +131,24 @@ cursor stays there.
 
 Decision 0019 retired both views in 0.6.0; their parts moved first. An old link opens where they went, and the address
 is rewritten in place (no new history entry), keeping the rest of the link: `#/flow` becomes `#/map`, and `#/activity`
-becomes `#/replay`. `GET /api/flow` and `GET /api/activity` answer 404.
+becomes `#/replay`. Parameters the new view does not know (Flow's `mode`, a selected card) are ignored there.
+`GET /api/flow` and `GET /api/activity` answer 404.
 
 | Was | Now |
 |---|---|
-| Activity's lanes, quiet stretches, turn marks and "No data before" | Replay's lanes and density rows |
-| Activity's data-as-of line | Replay's "data as of" and the header's |
-| Flow's constraint overlay | Now's constraint, linked to the map's cell that holds it |
+| Activity's lanes, turn marks and "No data before" | Replay's lanes |
+| Activity's turns per hour and roles at once | Replay's two density rows |
+| Activity's quiet stretches | Replay's "Quiet for" at the cursor, and each role's longest quiet in "Where the time went" |
+| Activity's data-as-of line (where a team's export ends) | Replay's "data as of", the same `data_as_of` as the map's |
+| Activity's "Show as a table" | Replay's "Show as a table" |
+| Activity's 24 h, 48 h and 7 days | Replay's 1 h, 6 h, 24 h and 7 days; 48 h is gone |
+| Activity's side-session sub-lanes | Gone: a session shows through its steps |
+| Flow's constraint overlay, toolbar count and constraint chip | Now's constraint and its counts, linked to the map's cell that holds it |
 | Flow's card details | The map's zoom 2 item details |
 | Flow's "waiting on you" view | Now's "Waiting on you" |
-| Flow's roadmap and calendar | Now's "Expires within a day", and Replay's window |
+| Flow's roadmap | Ages on the map (zoom 2) and Now; expiries in Now's "Expires within a day" |
+| Flow's calendar | Done work: Replay's window and the digest ("since you looked") on Now and the map. Jobs due: Schedules |
+| Flow's dependency graph | Gone: "what waits on what" returns in R7b, from the plan, not as a view |
 
 ### Live updates
 
@@ -151,8 +161,8 @@ It reconnects by itself.
 - The header has a clock that ticks every second, and "data as of N s ago": how long since this page last read from
   onloopd.
 - Every relative age on every page rises with that clock between answers: the page adds the seconds since it read the
-  answer to each age the server gave (`web/src/lib/tick.ts`). Ages that Replay counts to an export's end stay put,
-  since the export's end does not move.
+  answer to each age the server gave (`web/src/lib/tick.ts`). Ages counted to an export's end stay put, since the
+  export's end does not move.
 - The page reads `GET /api/heartbeat` every 10 s: onloopd's last heartbeat, the server's clock, and its tick period
   (10 s by default). News is the newest of a stream event and a heartbeat.
 - The Live dot turns amber with "No news for N s" past two tick periods without news: onloopd answers, but its tick may
@@ -177,7 +187,7 @@ the canvas, and each has its own step in dark mode, validated against the dark s
 | `state-open` (blue) | open, in progress | moving | ▶ |
 | `state-void` (grey) | cancelled or missing | not started, or not reported (hatched) | □ |
 | `state-done` (green) | done | done | ■ |
-| `state-external` (violet) | waits on someone else | the bar of a waits row held by a role or the team | — |
+| `state-external` (violet) | — | the bar of a waits row held by a role or the team | — |
 | `state-stall` (magenta) | stalled | — | — |
 | `state-idle` (greyish red, hatched) | — | idle: an open change with no move for 7 days, never counted as jammed | none |
 
@@ -215,10 +225,13 @@ The UI has the same origin and the same rules as the API (decision 0008):
   `Origin` of this onloopd; anything else is 403. A message is evidence, not authority: it is shown as "local user,
   not verified" and never counts as an approval.
 
-Every page answer carries:
+Every page answer carries (except a step's product file, below):
 - a strict Content-Security-Policy: scripts, styles and requests from the same origin only, no inline script, no
   framing;
 - `nosniff`, `no-referrer` and `X-Frame-Options: DENY`.
+
+A step's product file (`GET /api/products/file`) carries instead `Content-Security-Policy: sandbox`, with no script
+and `frame-ancestors 'self'`, so only this page may frame it and its HTML never runs with onloopd's origin.
 
 Hashed assets under `/assets/` are cached as immutable. Everything else is `no-store`. A path that leaves the bundle,
 names a dot file or has an unknown extension is a 404.
