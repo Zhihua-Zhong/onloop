@@ -60,6 +60,7 @@ def create(
     for_turn_id: str | None = None,
     item_id: str | None = None,
     source: str = "carrier",
+    step: str | None = None,
 ) -> str | None:
     did = f"dlv-{uuid.uuid4().hex[:16]}"
     try:
@@ -83,6 +84,7 @@ def create(
                 "dedupe_key": dedupe_key,
                 "for_turn_id": for_turn_id,
                 "item_id": item_id,
+                "step": step,  # the step the message names, `kind:ref`: the turn is recorded as it
             }
             ledger.append(
                 _event("delivery.created", role, {k: v for k, v in payload.items() if v is not None}, source)

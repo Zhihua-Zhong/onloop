@@ -343,3 +343,65 @@ def test_a_carried_runs_cost_is_placed_by_the_branch_its_run_started_on(tmp_path
     assert [(s["step"], s["attributed"], s["tokens"]["total"]) for s in b["steps"]] == [
         ("step:node:c1", "rule", 7)
     ]
+
+
+def _run_on(led, clock, when, rid, role, session, repo):
+    clock.t = when
+    led.append(
+        {
+            "id": f"run-{rid}",
+            "source": "carrier",
+            "kind": "run.started",
+            "subject_ref": f"role:{role}",
+            "actor": "carrier",
+            "payload": {
+                "id": rid,
+                "role": role,
+                "session_id": session,
+                "lease_id": f"l-{rid}",
+                "deliveries": [],
+                "detail": {},
+                "repo": str(repo),
+                "branch": "work",
+            },
+        }
+    )
+
+
+def _otel_as(led, clock, when, eid, session, role, **tokens):
+    clock.t = when
+    led.append(
+        {
+            "id": eid,
+            "source": "otel",
+            "kind": "cost.request",
+            "subject_ref": f"session:{session}",
+            "actor": role,
+            "payload": {"session_id": session, "role": role, **tokens},
+        }
+    )
+
+
+def test_rule_e_places_nothing_on_a_branch_two_roles_shared_since_the_last_node_commit(tmp_path):
+    """The onloop lead's ruling (2026-11-22, the dogfood's round 2): when several roles' sessions worked on one branch
+    since the previous Node: commit, the rule cannot tell whose the next commit is; their requests stay between steps,
+    saying how many roles shared it. After that commit, a role alone on the branch is placed again."""
+    repo = git_repo(tmp_path / "repo", [("10:20", "c1"), ("10:50", "c2")])
+    clock = Clock()
+    with Ledger(tmp_path / "l.db", clock=clock) as led:
+        _run_on(led, clock, at("10:00"), "r1", "builder", "s5", repo)
+        _otel_as(led, clock, at("10:05"), "q1", "s5", "builder", input_tokens=7)
+        _run_on(led, clock, at("10:06"), "r2", "lead", "s6", repo)
+        _otel_as(led, clock, at("10:08"), "q2", "s6", "lead", input_tokens=5)
+        _otel_as(led, clock, at("10:30"), "q3", "s5", "builder", input_tokens=3)  # alone between c1 and c2
+        reqs = tl.requests(led, at("10:00"), at("11:00"))
+        t = derive.timeline(led, at("10:00"), at("11:00"), now=at("11:00"))
+    assert [(q["lane"], q["step"], q["by"], q.get("shared")) for q in reqs] == [
+        ("builder", None, "shared", 2),
+        ("lead", None, "shared", 2),
+        ("builder", "step:node:c2", "rule", None),
+    ]
+    (b,) = [L for L in t["lanes"] if L["lane"] == "builder"]
+    assert b["between_steps"]["total"] == 7 and [(s["step"], s["tokens"]["total"]) for s in b["steps"]] == [
+        ("step:node:c2", 3)
+    ]

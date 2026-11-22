@@ -2080,6 +2080,22 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a carried turn ignores the step its message names, so its cost waits for rule E",
+        "src/onloop/carrier/loop.py",
+        "        if len(named) == 1:",
+        "        if False:",
+        ["tests/test_carrier_daemon.py::test_onloop_say_with_a_step_records_the_turn_as_that_step"],
+    ),
+    (
+        "rule E places a branch several roles shared on the next commit's node, whoever made it",
+        "src/onloop/timeline.py",
+        "                    if len(roles[key]) <= 1:",
+        "                    if True:",
+        [
+            "tests/test_timeline.py::test_rule_e_places_nothing_on_a_branch_two_roles_shared_since_the_last_node_commit"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

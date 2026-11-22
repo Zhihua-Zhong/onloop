@@ -132,6 +132,8 @@ def window(
         # (its start too when the source says), the export's time when the ledger replays a team's snapshots, and
         # when the ledger's data begins
         "turns": _turns(reader, start, end, index),
+        # per lane, when some of its between-steps requests are there because its branch was shared: by how many roles
+        "between_shared": _between_shared(reqs_all, lo, index),
         # the cross-check: how much of what the window's carried runs reported their telemetry brought
         "coverage": tl.coverage(reader, start, end),
         "data_as_of": derive.data_as_of(reader),
@@ -180,6 +182,14 @@ def _turns(reader: Any, start: str, end: str, index: dict[str, int]) -> dict[str
         out["lane"].append(index[r["role"]])
         ok = r["started_at"] and r["started_at"] <= r["ended_at"]
         out["start"].append(tl.ms(r["started_at"]) if ok else -1)
+    return out
+
+
+def _between_shared(reqs_all: list[dict[str, Any]], lo: int, index: dict[str, int]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for q in reqs_all:
+        if q["t"] >= lo and q["lane"] in index and q.get("by") == "shared":
+            out[q["lane"]] = max(out.get(q["lane"], 0), int(q.get("shared") or 0))
     return out
 
 

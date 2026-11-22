@@ -945,7 +945,10 @@ def cmd_say(args) -> int:
     """A person's message to a carried role, through onloopd (decision 0011): evidence, not authority."""
     state = _ledger_path(args).resolve().parent
     text = args.text if args.text != "-" else sys.stdin.read()
-    code, out = _post_onloopd(state, f"/messages/{args.role}", {"text": text, "channel": "cli"})
+    body = {"text": text, "channel": "cli"}
+    if getattr(args, "step", None):
+        body["step"] = args.step
+    code, out = _post_onloopd(state, f"/messages/{args.role}", body)
     if code != 200:
         _err(f"onloop: the message was not taken: {out.get('error')}")
         return 2
@@ -1809,6 +1812,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(fn=cmd_say)
     sp.add_argument("role", help="the role name")
     sp.add_argument("text", help="the message, or - to read it from stdin")
+    sp.add_argument(
+        "--step",
+        help="the step the message is about, KIND:REF (task:t-12, pr:7, branch:feat/x, node:a1): the turn that "
+        "delivers it is recorded as that step",
+    )
     sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
 
     sp = sub.add_parser(

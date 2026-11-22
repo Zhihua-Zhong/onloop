@@ -52,13 +52,18 @@ cost far less. Claude Code's own dollar figure (`cost_usd`) is kept in the ledge
 API-equivalent price, not billed on a subscription, and never what the team spent.
 
 Each model request is charged to:
-1. **the step onloop recorded on its session** at that moment (a carried turn's item, or the step `onloop open` was
-   given): **recorded**;
+1. **the step onloop recorded on its session** at that moment: the step a carried turn's message names
+   (`onloop say ROLE TEXT --step node:a1`), else its item, or the step `onloop open` was given: **recorded**;
 2. else, by **rule E**, the `Node:` trailer of the next commit on the branch its session works on: **attributed by
    rule**. onloop records the session's repository and branch when it starts the work, and reads a commit's time and
-   trailer only. The rule's other clause, the step named in the turn's opening message, is unavailable by design:
+   trailer only. It applies only when one role alone worked on that branch since the previous `Node:` commit: when
+   several did, it cannot tell whose the commit is, and their requests stay between steps, marked "branch shared by
+   N roles". The rule's other clause, the step named in the turn's opening message, is unavailable by design:
    prompts are never logged;
 3. else **between steps**, shown with its share. A request is never charged to the nearest step.
+
+**For rule-based attribution, give each role its own branch.** Better still, name the step: a message with `--step`
+or `onloop open --step` records it, and needs no rule.
 
 ## Telemetry: where the figures come from
 
@@ -130,9 +135,8 @@ commits changed, each at its latest commit then.
 
 - A turn whose start was not recorded counts no working time on its lane; it shows as a mark at its end.
 - Rule E needs the session's branch: sessions onloop did not start, or that ran outside a git repository, leave
-  their requests between steps. Clause 2 reads only the branch and the commit's time: when two roles work on one
-  branch, the first `Node:` commit after a request takes it, whichever role made that commit. Give each role its own
-  branch, or commit each role's work before the next role's turn.
+  their requests between steps. On a branch several roles worked on since the last `Node:` commit, the rule places
+  nothing: it reads only the branch and a commit's time, so it cannot tell whose the commit is.
 - Products are read for node and branch steps only.
 - In a browser that blocks sandboxed frames, an HTML product shows empty in the page; "Open it on its own" still
   works.

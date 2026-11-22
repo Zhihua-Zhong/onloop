@@ -217,10 +217,20 @@ class Carrier:
         return self._places[role.name]
 
     def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str] | None:
-        """What a carried turn works on: the one item its deliveries are about. None when they name no single item: a
-        run is not a step (decision 0019: a task, a PR, a branch or a node), and with no step recorded rule E places the
-        turn's cost by the branch `run.started` records."""
+        """What a carried turn works on: the one step its deliveries name (`onloop say --step`), else the one item they
+        are about. None when they name no single one: a run is not a step (decision 0019: a task, a PR, a branch or a
+        node), and with no step recorded rule E places the turn's cost by the branch `run.started` records."""
         marks = ",".join("?" * len(claim.deliveries))
+        named = led.select(
+            "SELECT DISTINCT json_extract(payload, '$.step') AS step FROM events WHERE kind = 'delivery.created' "
+            f"AND json_extract(payload, '$.id') IN ({marks}) AND json_extract(payload, '$.step') IS NOT NULL",
+            tuple(claim.deliveries),
+        )
+        if len(named) == 1:
+            try:
+                return telemetry.parse_step(named[0]["step"])
+            except ValueError:
+                pass
         rows = led.select(
             f"SELECT DISTINCT item_id FROM deliveries WHERE id IN ({marks}) AND item_id IS NOT NULL",
             tuple(claim.deliveries),

@@ -157,3 +157,28 @@ def test_role_opt_out_takes_effect_and_opt_in_cannot_pass_the_config(tmp_path, c
     assert c.may_act(cfg.role("builder"), "corrective").startswith(
         "observe-only"
     )  # not in the config's opt_in
+
+
+def test_onloop_say_with_a_step_records_the_turn_as_that_step(tmp_path, onloopd, capsys):
+    """The onloop lead's ruling on rule E (2026-11-22): a carried turn names its step in the delivery, so its cost is
+    the step's by record and needs no rule; the step is the node the message is about, as `onloop open --step`."""
+    from onloop.carrier import lease
+    from onloop.carrier.loop import Carrier
+
+    led, _ = onloopd
+    ledger = str(tmp_path / "ledger.db")
+    assert (
+        cli.main(["say", "builder", "check the docs", "--step", "node:docs-check", "--ledger", ledger]) == 0
+    )
+    assert cli.main(["say", "builder", "and this", "--ledger", ledger]) == 0  # no step: the other names it
+    assert cli.main(["say", "builder", "x", "--step", "nonsense", "--ledger", ledger]) == 2
+    assert "a step is KIND:REF" in capsys.readouterr().err
+    ids = [r["id"] for r in led.select("SELECT id FROM deliveries ORDER BY created_at, id")]
+
+    def claim(dids):
+        return lease.Claim(run_id="r", lease_id="l", deliveries=tuple(dids))
+
+    assert Carrier._step(None, led, claim(ids)) == ("node", "docs-check")
+    assert cli.main(["say", "builder", "another", "--step", "node:other", "--ledger", ledger]) == 0
+    ids = [r["id"] for r in led.select("SELECT id FROM deliveries ORDER BY created_at, id")]
+    assert Carrier._step(None, led, claim(ids)) is None  # two steps named: a run is not a step

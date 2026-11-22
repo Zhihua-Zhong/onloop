@@ -24,7 +24,9 @@ creation, with cache reads apart since they cost far less. A request is charged 
 1. **the step recorded on its session** at its time (a `step.started` / `step.ended` span from the carrier or
    `onloop open`): `attributed: recorded`;
 2. else, by **rule E's clause 2**, to the `Node:` trailer of the next commit on the branch its session works on (the
-   repository and branch onloop recorded at `session.opened` or `step.started`): `attributed: rule`. Only the
+   repository and branch onloop recorded at `session.opened`, `step.started` or `run.started`): `attributed: rule`,
+   but only when one role alone worked on that branch since the previous `Node:` commit. When several did, the rule
+   cannot tell whose commit it is, and those requests stay between steps (`by: shared`, with how many roles). Only the
    commit's time and its trailer are read, never its content. Clause 1, the step named in the turn's opening message,
    is unavailable by design: prompts are never logged (§1);
 3. else to the lane's **between steps**: never to the nearest step (spike S2: that would about double each step's
@@ -289,6 +291,7 @@ def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
     starts = {sid: [x[0] for x in v] for sid, v in spans.items()}
     places = _places(ledger)
     commits: dict[tuple[str, str], tuple[list[int], list[str | None]]] = {}
+    roles: dict[tuple[tuple[str, str], int, int], set[str]] = {}
     out = []
     for r in ledger.select(
         "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system <= ? "
@@ -298,6 +301,7 @@ def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
         p = _payload(r)
         t = _ms(r["ts_system"])
         sid = p.get("session_id")
+        shared = 0
         step = _step_at(spans.get(sid, []), starts.get(sid, []), t) if isinstance(sid, str) else None
         by = "recorded" if step else None
         if step is None and isinstance(sid, str) and sid in places:
@@ -309,8 +313,44 @@ def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
                 ctimes, nodes = commits[where[k]]
                 j = bisect.bisect_right(ctimes, t)  # the next commit after the request
                 if j < len(ctimes) and nodes[j]:
-                    step, by = f"step:node:{nodes[j]}", "rule"
-        out.append({"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step, "by": by})
+                    prev = max((i for i in range(j) if nodes[i]), default=None)
+                    lo = ctimes[prev] if prev is not None else 0
+                    key = (where[k], lo, ctimes[j])
+                    if key not in roles:
+                        roles[key] = _roles_on(ledger, places, where[k], lo, ctimes[j])
+                    if len(roles[key]) <= 1:
+                        step, by = f"step:node:{nodes[j]}", "rule"
+                    else:
+                        by = "shared"
+                        shared = len(roles[key])
+        out.append(
+            {"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step, "by": by}
+            | ({"shared": shared} if by == "shared" else {})
+        )
+    return out
+
+
+def _roles_on(
+    ledger: Any,
+    places: dict[str, tuple[list[int], list[tuple[str, str]]]],
+    where: tuple[str, str],
+    lo: int,
+    hi: int,
+) -> set[str]:
+    """The roles whose sessions made a model request on `where` (repository, branch) after `lo` and up to `hi`: who
+    worked on that branch between two `Node:` commits."""
+    out: set[str] = set()
+    for r in ledger.select(
+        "SELECT ts_system, actor, payload FROM events WHERE kind = 'cost.request' AND ts_system > ? AND ts_system <= ?",
+        (_iso(lo), _iso(hi)),
+    ):
+        sid = _payload(r).get("session_id")
+        if not isinstance(sid, str) or sid not in places:
+            continue
+        ts, at = places[sid]
+        k = bisect.bisect_right(ts, _ms(r["ts_system"])) - 1
+        if k >= 0 and at[k] == where:
+            out.add(r["actor"] or NO_ROLE)
     return out
 
 

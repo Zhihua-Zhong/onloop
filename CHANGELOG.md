@@ -23,6 +23,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- **Rule E no longer guesses on a shared branch** (the dogfood's round 2): clause 2 places a request on the next
+  commit's node only when one role alone worked on that branch since the previous `Node:` commit. When several did,
+  the requests stay between steps, and Replay says "branch shared by N roles" (`between_shared` in
+  `GET /api/replay`). The figures are derived again from the ledger, so earlier windows read correctly at once.
 - **A carried turn's telemetry is no longer dropped** (the dogfood's round 2, 2026-11-22): Claude Code numbers its
   records per process, and a carried turn is a new process resuming the same session, so the sequence started again
   and onloopd took the second run's records for the first run's, dropping them as redelivered. A model request is now
@@ -39,6 +43,8 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **`onloop say ROLE TEXT --step node:a1`**: a message names the step it is about, and the carried turn that delivers
+  it is recorded as that step, so its cost needs no rule (as `onloop open --step`).
 - **What came in, and the cross-check** (the onloop lead's rule: a silent drop is never invisible again). `GET /health`
   counts every write by route and answer and every telemetry record received, kept, stored and already logged, since
   onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and

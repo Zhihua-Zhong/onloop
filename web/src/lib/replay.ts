@@ -37,6 +37,8 @@ export interface ReplayWindow {
   first_ms?: number | null; // when the ledger's data begins
   // the cross-check: what the window's carried runs reported (the CLI's own count) against what their telemetry brought
   coverage?: Coverage;
+  // per lane, when rule E left some of its requests between steps because several roles worked on its branch
+  between_shared?: Record<string, number>;
   your_wait?: { count: number; oldest_s: number | null; share: number; waited_s: number; by_role: Record<string, number> }; // a7
 }
 

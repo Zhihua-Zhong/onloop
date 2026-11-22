@@ -108,7 +108,7 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
   const act = useMemo(() => {
     if (!q.data) return null;
     const times = activityTimes(q.data);
-    return { times, hours: perHour(q.data, times), firstMs: q.data.first_ms ?? null, dataAsOf: q.data.data_as_of ?? null };
+    return { times, hours: perHour(q.data, times), firstMs: q.data.first_ms ?? null, dataAsOf: q.data.data_as_of ?? null, shared: q.data.between_shared ?? {} };
   }, [q.data]);
   if (q.isPending || (q.data && !ix)) return <Loading what="the replay" />;
   if (q.isError && !q.data) return <Problem error={q.error} />;
@@ -136,6 +136,7 @@ interface Act {
   hours: { at: number; turns: number; roles: number }[];
   firstMs: number | null;
   dataAsOf: string | null;
+  shared: Record<string, number>; // per lane: how many roles shared the branch that left its requests between steps
 }
 
 function Player(p: {
@@ -828,6 +829,11 @@ function WhereItWent({ bd, hours, wait, onPick, ix, act }: { bd: LaneBreakdown[]
                     {L.between.requests > 0 && (
                       <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-line px-2 py-0.5 text-[12px] text-muted" data-testid="between-steps" title="Requests no step was recorded for and no rule placed: never charged to the nearest step">
                         between steps <span className="tabular-nums text-fg">{tokens(L.between.tokens)}</span> ({share}% of the lane's tokens)
+                        {act?.shared[L.name] ? (
+                          <span data-testid="between-shared" title="Rule E places a request by the next commit on its branch only when one role alone worked there since the last Node: commit">
+                            {" "}· branch shared by {act.shared[L.name]} roles
+                          </span>
+                        ) : null}
                       </span>
                     )}
                   </div>

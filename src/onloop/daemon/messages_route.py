@@ -1,12 +1,16 @@
 """onloopd's message route: a person's message to a carried role (decision 0011).
 
-    POST /messages/<role>     body {"text": "..."}; from `onloop say` (the write token) or the compose box
+    POST /messages/<role>     body {"text": "...", "step": "node:a1"?}; from `onloop say` (the write token) or the
+                              compose box
                               (`/ui/messages`, the page's session cookie and CSRF token; server.py checks those)
 
 A message is evidence, not authority: it is a request to the role, stored as the person's (author `human`) with its
 channel (`cli` or `ui`) and shown as "local user, not verified". It becomes one delivery of kind `message`. Whether
 it is delivered or only logged as `would.deliver` is the carrier's decision: a role that has not opted in to
 `message`, or a carrier that is not started, sends nothing.
+
+A message may name the step it is about (`onloop say ROLE --step node:a1`, as `onloop open --step` does): the carried
+turn that delivers it is then recorded as that step, so its cost is the step's by record, not by rule E.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .. import telemetry
 from ..carrier import deliveries, messages
 from ..overlay.ledger import Ledger
 from .server import WriteRefused
@@ -33,6 +38,13 @@ def make(retention_s: int = DEFAULT_RETENTION_S):
         channel = body.get("channel", "cli")
         if channel not in CHANNELS:
             raise WriteRefused(422, "channel is cli or ui")
+        step = body.get("step")
+        if step is not None:
+            try:
+                kind, ref = telemetry.parse_step(step if isinstance(step, str) else "")
+            except ValueError as e:
+                raise WriteRefused(422, str(e)) from e
+            step = f"{kind}:{ref}"
         try:
             text = messages.check(body.get("text"))
         except messages.MessageRefused as e:
@@ -47,6 +59,7 @@ def make(retention_s: int = DEFAULT_RETENTION_S):
             channel=channel,
             origin="human",
             source="cli" if channel == "cli" else "ui",
+            step=step,
         )
         opted = ledger.select("SELECT opted_in FROM role_sessions WHERE id = ?", (role,))[0]["opted_in"]
         return {"delivery": did, "role": role, "opted_in": "message" in opted, "verified": False}
