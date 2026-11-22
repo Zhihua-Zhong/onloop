@@ -48,7 +48,13 @@ class Locked(sqlite3.OperationalError):
 
 
 _locks_lock = threading.Lock()
-LOCKS: dict[str, Any] = {"retried": 0, "failed": 0, "longest_tx_s": 0.0, "journal_mode": None}
+LOCKS: dict[str, Any] = {
+    "retried": 0,
+    "failed": 0,
+    "longest_tx_s": 0.0,
+    "longest_tx_at": None,  # which write it was: its thread and its first callers outside the ledger
+    "journal_mode": None,
+}
 
 
 def _set_mode(mode: str) -> None:
@@ -66,9 +72,26 @@ def locks() -> dict[str, Any]:
 def _count(key: str, value: float = 1) -> None:
     with _locks_lock:
         if key == "longest_tx_s":
-            LOCKS[key] = max(LOCKS[key], round(value, 3))
+            if round(value, 3) > LOCKS[key]:
+                LOCKS[key] = round(value, 3)
+                LOCKS["longest_tx_at"] = _caller()
         else:
             LOCKS[key] += value
+
+
+def _caller() -> str:
+    """Where the transaction being counted was opened: the first frames outside this module and the ledger's own,
+    with the thread's name, so /health says which write was slow, not only how slow."""
+    import sys
+
+    here = {__file__, getattr(sys.modules.get("onloop.overlay.ledger"), "__file__", None)}
+    f = sys._getframe(2)
+    out = []
+    while f is not None and len(out) < 3:
+        if f.f_code.co_filename not in here and not f.f_code.co_filename.endswith("contextlib.py"):
+            out.append(f"{pathlib.Path(f.f_code.co_filename).name}:{f.f_lineno} {f.f_code.co_name}")
+        f = f.f_back
+    return f"{threading.current_thread().name}: " + " < ".join(out)
 
 
 def _is_lock(e: sqlite3.OperationalError) -> bool:

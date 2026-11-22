@@ -139,6 +139,10 @@ def test_the_longest_write_is_timed_from_begin_to_after_commit():
         with led.tx():
             time.sleep(0.3)
     assert sqlitedb.locks()["longest_tx_s"] >= 0.25  # a 0.3 s body; Windows timers are coarse
+    at = sqlitedb.locks()["longest_tx_at"]
+    assert (
+        at.startswith("MainThread: ") and "test_the_longest_write_is_timed_from_begin_to_after_commit" in at
+    )
 
 
 def test_the_journal_mode_the_open_got_is_reported(tmp_path):
