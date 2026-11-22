@@ -275,11 +275,14 @@ class Carrier:
             notes.append(str(e))
         with self.w() as led:
             self.instance = f"{led.instance()}:{uuid.uuid4().hex[:8]}"
+            lease.register(led, self.instance, os.getpid())
             self._declare(led, notes)
-            still, freed = lease.recover(led)
+            still, freed, pending = lease.recover(led, instance=self.instance)
             for h in freed:
                 notes.append(f"released the orphaned lease of {h.role} (run {h.run_id})")
-            self._settle_inflight(led, {h.run_id for h in still}, notes)
+            for h in pending:
+                notes.append(f"{h.role}'s run {h.run_id} belongs to a carrier still running; left to it")
+            self._settle_inflight(led, {h.run_id for h in still + pending}, notes)
         for h in still:
             notes.append(f"{h.role}'s run {h.run_id} is still running as pid {h.pid}; waiting for it")
             threading.Thread(target=self._wait_holder, args=(h,), daemon=True).start()
@@ -292,6 +295,10 @@ class Carrier:
             time.sleep(1.0)
         how = jobs.kill_pid_tree(h.pid, h.created) if jobs.alive(h.pid, h.created) else "exited"
         with self.w() as led:
+            if not led.select(
+                "SELECT 1 FROM session_leases WHERE id = ? AND released_at IS NULL", (h.lease_id,)
+            ):
+                return  # released meanwhile (by its owner): releasing it again would count a lease that is not there
             lease.release(led, h.lease_id, h.session_id, "orphaned")
             led.append(
                 _event("run.ended", f"role:{h.role}", {"id": h.run_id, "status": "orphaned", "detail": how})

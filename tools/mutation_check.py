@@ -2191,6 +2191,22 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a carrier booting in another's grant window releases its lease as an orphan",
+        "src/onloop/carrier/lease.py",
+        "        if h.instance and h.instance != instance and not expired and is_running(h.instance):",
+        "        if False:",
+        [
+            "tests/test_lease_recover.py::test_a_carrier_booting_in_another_carriers_grant_window_leaves_its_lease_alone"
+        ],
+    ),
+    (
+        "a hung carrier's lease is never taken over, though past its expiry",
+        "src/onloop/carrier/lease.py",
+        "        expired = bool(h.expires_at) and h.expires_at < now",
+        "        expired = False",
+        ["tests/test_lease_recover.py::test_a_hung_instances_lease_is_taken_over_after_it_expires"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

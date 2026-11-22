@@ -35,6 +35,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- **A carrier booting in another carrier's grant window no longer releases its lease** (R7a's round 2, moved into
+  0.6.0): a lease is granted before its run has a pid, and a second carrier's boot took it for an orphan, so two
+  turns could run on one session. Each carrier boot now registers its instance (pid and creation time), and
+  `recover` keeps a lease whose granting instance still runs, releasing it once that instance is gone; `expires_at`
+  stays the backstop for a hung carrier. `test_carrier_race` had failed on this, under load.
 - **Rule E reads the branch's own commits** (`git log --first-parent`, in time order): a merged side branch's `Node:`
   commit no longer takes a request made on the branch it was merged into.
 - **Rule E no longer guesses on a shared branch** (the dogfood's round 2): clause 2 places a request on the next
