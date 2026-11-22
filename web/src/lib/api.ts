@@ -95,46 +95,6 @@ export interface NowModel {
 
 export type ItemState = "open" | "ready" | "blocked" | "in_review" | "done";
 
-export interface FlowCard {
-  id: string;
-  title: string;
-  kind: "task" | "decision" | "followup";
-  state: ItemState;
-  owner_role: string | null;
-  ref: string | null;
-  zone: string;
-  opened_at: string | null;
-  updated_at: string | null;
-  age_s: Seconds;
-  default: string | null;
-  expires: string | null;
-  class: string | null;
-}
-export interface FlowZone { id: string; label: string; source: "direction" | "owner" | "none"; cards: number }
-export interface FlowResource {
-  id: string;
-  kind: "human" | "lock" | "queue" | "waker";
-  state: string | null;
-  capacity: number | null;
-  holders: string[];
-  waiting: number;
-  waiting_roles: string[];
-}
-export interface FlowWait { id: string; card: string | null; waiter: string; on_kind: string; on_ref: string; reason: string; since: string; age_s: Seconds }
-export interface FlowEdge { id: string; kind: "parent" | "depends"; source: string; target: string }
-export interface FlowModel {
-  now: string;
-  zones: FlowZone[];
-  cards: FlowCard[];
-  edges: FlowEdge[];
-  resources: FlowResource[];
-  waits: FlowWait[];
-  constraint: { node: string; on_kind: string; on_ref: string; waiters: number; direct_wait_s: number; downstream_wait_s: number; cards: string[] } | null;
-  /** The one count of "waiting on you" (finding #20): the open task list, the same number as Now's. */
-  waiting_on_you: { count: number; task_ids: string[]; cards: string[] };
-  schedules: { id: string; name: string; period: string | null; last_result_at: string | null; last_success: string | null; next_due: string | null }[];
-}
-
 export interface Role { id: string; session_id: string | null; state: "idle" | "working" | "paused_by_human" | "blocked"; paused_by: string | null; budget: Record<string, unknown> }
 export interface Turn { id: string; role: string; ended_at: string; outcome: string | null; ref: string | null; owner: string | null; waker: string | null; line: string | null; parse_error: string | null }
 export interface Wait { id: string; item_id: string | null; waiter: string; on_kind: string; on_ref: string; reason: string; ref: string | null; since: string; cleared_at: string | null }
@@ -164,7 +124,6 @@ export async function get<T>(path: string): Promise<T> {
 
 export const api = {
   now: () => get<NowModel>("/api/now"),
-  flow: () => get<FlowModel>("/api/flow"),
   roles: () => get<{ roles: Role[] }>("/api/roles").then((b) => b.roles),
   turns: () => get<{ turns: Turn[] }>("/api/turns?limit=500").then((b) => b.turns),
   waits: () => get<{ waits: Wait[] }>("/api/waits").then((b) => b.waits),

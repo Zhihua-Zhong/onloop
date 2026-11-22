@@ -301,25 +301,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
-        "a card without a direction skips its owner's zone",
-        "src/onloop/report/views.py",
-        'if zone is None and item.get("owner_role"):',
-        "if zone is None and False:",
-        ["tests/test_ui_api.py::test_flow_zones_come_from_the_direction_then_the_owner_then_unassigned"],
-    ),
-    (
         "the time filter reads the wrong side",
         "src/onloop/report/views.py",
         'for name, op in (("since", ">="), ("until", "<")):',
         'for name, op in (("since", "<"), ("until", ">=")):',
         ["tests/test_ui_api.py::test_events_filter_by_kind_subject_source_actor_and_the_ledgers_own_time"],
-    ),
-    (
-        "the downstream set stops at the first wait",
-        "src/onloop/report/views.py",
-        "todo.append(n)",
-        "pass",
-        ["tests/test_ui_api.py::test_downstream_follows_waits_through_roles_and_dependencies"],
     ),
     (
         "the UI serves a file outside its directory",
@@ -1555,22 +1541,6 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     ),
     # -- phase A, the trust fixes ---------------------------------------------------------------------------------
     (
-        "Flow's You node counts its waits, not the task list (finding #20)",
-        "src/onloop/report/views.py",
-        '        nodes["human"]["waiting"] = yours["count"] if _has_tasks(ledger) else nodes["human"]["waiting"]',
-        '        nodes["human"]["waiting"] = nodes["human"]["waiting"]',
-        ["tests/test_agreement.py::test_they_agree_when_some_asks_are_not_cards_on_the_canvas"],
-    ),
-    (
-        "Flow's constraint counts the cards behind it, not what Now counts (finding #20)",
-        "src/onloop/report/views.py",
-        '            "waiters": len(con["waiters"]),',
-        '            "waiters": len(down),',
-        [
-            "tests/test_agreement.py::test_tasks_without_any_card_still_agree_and_the_constraint_counts_the_same"
-        ],
-    ),
-    (
         "onloopd's own gap counts as the team's activity (finding #14)",
         "src/onloop/tasks.py",
         "FROM events WHERE source <> 'config'\")",
@@ -1766,7 +1736,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "src/onloop/derive.py",
         '            "waiting_on_you": waiting_on_you(ledger, now)["count"],',
         '            "waiting_on_you": sum(1 for lf in leaves if lf["colour"] == "amber"),',
-        ["tests/test_agreement.py::test_now_flow_and_the_task_list_agree_on_the_generic_replay"],
+        ["tests/test_agreement.py::test_now_the_map_and_the_task_list_agree_on_the_generic_replay"],
     ),
     (
         "the map: a geometric zoom changes the level (Q23)",
@@ -1961,11 +1931,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_agreement.py::test_the_stage_by_role_grid_counts_what_zoom_1_and_zoom_2_count"],
     ),
     (
-        "Activity's window reaches back before the data, drawing empty days that read as a quiet team",
-        "src/onloop/report/activity.py",
-        "        start = _floor_hour(first)",
-        "        pass",
-        ["tests/test_contract.py::test_activity_starts_where_the_data_does_never_before_it"],
+        "Replay's window reaches back before the data, drawing empty days that read as a quiet team",
+        "src/onloop/report/replay.py",
+        '    t = reader.select("SELECT min(COALESCE(at, ts_system)) AS t FROM events")[0]["t"]',
+        '    t = reader.select("SELECT min(ts_system) AS t FROM events")[0]["t"]',
+        ["tests/test_contract.py::test_replay_knows_where_the_data_begins"],
     ),
     (
         'a wait on `team` and a change with no opener are two holders, "team" and "the team", two rows of the grid',

@@ -12,16 +12,13 @@ import { cn } from "@/lib/utils";
 import { Loading } from "@/components/kit";
 import { NowView } from "@/views/Now";
 import { OutcomeView } from "@/views/Outcome";
-import { ActivityView } from "@/views/Activity";
 import { TeamView } from "@/views/Team";
 import { SchedulesView } from "@/views/Schedules";
 import { AuditView } from "@/views/Audit";
 import { ConversationView } from "@/views/Conversation";
 import { ReplayView } from "@/views/Replay";
 
-// Flow carries the layout engine (elkjs, the largest dependency by far): it loads when Flow is first opened.
-const FlowView = lazy(retrying(() => import("@/views/Flow")));
-// The map shares React Flow with Flow, so it loads on first use too.
+// The map carries React Flow, so it loads when the map is first opened.
 const MapView = lazy(retrying(() => import("@/views/Map")));
 
 // The theme: a `?theme=` in the URL, else the person's own choice from the toggle (kept in this browser), else the
@@ -192,13 +189,8 @@ export default function App() {
           read then, and reconnects by itself.
         </div>
       )}
-      <main className={cn("min-h-0 flex-1", route.view === "flow" || route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
+      <main className={cn("min-h-0 flex-1", route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
         {route.view === "now" && <NowView />}
-        {route.view === "flow" && (
-          <Suspense fallback={<div className="p-4"><Loading what="the flow" /></div>}>
-            <FlowView params={route.params} />
-          </Suspense>
-        )}
         {route.view === "map" && (
           <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>
             <MapView params={route.params} path={route.path} />
@@ -206,7 +198,6 @@ export default function App() {
         )}
         {route.view === "replay" && <ReplayView params={route.params} />}
         {route.view === "outcome" && <OutcomeView params={route.params} />}
-        {route.view === "activity" && <ActivityView params={route.params} />}
         {route.view === "team" && <TeamView />}
         {route.view === "conversation" && <ConversationView params={route.params} />}
         {route.view === "schedules" && <SchedulesView params={route.params} />}

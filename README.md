@@ -22,8 +22,8 @@ roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
-onloopd serves this UI at `http://localhost:8790`: Now, Map, Activity, Flow, Outcome, Team, Conversation,
-Schedules and Audit, nine views of one ledger ([docs/ui.md](docs/ui.md), [docs/map.md](docs/map.md)). It writes in three narrow places: a message to a role, a
+onloopd serves this UI at `http://localhost:8790`: Now, Replay, Map, Outcome, Team, Conversation, Schedules and
+Audit, eight views of one ledger ([docs/ui.md](docs/ui.md), [docs/map.md](docs/map.md)). It writes in three narrow places: a message to a role, a
 task's Done or Decline, and the time of your visit.
 
 ## Why human-on-the-loop

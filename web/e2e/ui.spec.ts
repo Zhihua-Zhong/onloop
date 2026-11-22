@@ -24,16 +24,6 @@ test.afterEach(async ({ page }) => {
 
 const isPhone = (name: string) => name === "phone";
 
-// A card that is drawn inside the visible part of the canvas, to click as a person would.
-async function visibleCard(page: Page, selector: string) {
-  const vp = page.viewportSize()!;
-  for (const el of await page.locator(selector).all()) {
-    const b = await el.boundingBox();
-    if (b && b.x >= 0 && b.y >= 100 && b.x + b.width <= vp.width && b.y + b.height <= vp.height) return el;
-  }
-  throw new Error(`no ${selector} inside the viewport`);
-}
-
 test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
@@ -69,133 +59,6 @@ test("Now's first screen holds the banner and the first card of each question", 
   if (!isPhone(info.project.name)) {
     await expect(page.getByTestId("col-stalls").locator("article").first()).toBeInViewport();
   }
-});
-
-test("Flow draws the resources, links the waiting cards and overlays the constraint", async ({ page }, info) => {
-  test.skip(isPhone(info.project.name), "the desktop canvas");
-  await page.goto("/#/flow");
-  await expect(page.getByTestId("canvas")).toHaveAttribute("data-opening", "constraint");
-  await expect(page.getByTestId("res-merge-check")).toBeInViewport();
-  await expect(page.getByTestId("res-human")).toBeInViewport();
-  expect(await page.locator(".react-flow__viewport").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)).toBeCloseTo(0.9, 2);
-  await expect(page.getByTestId("res-merge-check")).toHaveAttribute("data-constraint", "1");
-  await expect(page.getByTestId("res-human")).toHaveAttribute("data-constraint", "0");
-  await expect(page.getByTestId("res-main")).toBeVisible();
-  // By default no line runs from a resource: each waiting card names it with a chip.
-  expect(await page.locator(".react-flow__edge.edge-wait-constraint").count()).toBe(0);
-  await expect(page.getByTestId("card-pr#101").getByTestId("wait-chip")).toHaveText("Queued → merge-check");
-  await expect(page.getByTestId("card-pr#106").getByTestId("wait-chip")).toHaveText("Blocked → main");
-  await expect(page.getByTestId("card-wg:n-date")).toContainText("Waiting on you");
-  // Selecting the queue traces its five cards; selecting the pane hides the trace again.
-  await page.getByTestId("res-merge-check").click();
-  await expect(page.locator(".react-flow__edge.edge-wait-constraint")).toHaveCount(5);
-  await page.locator(".react-flow__pane").click({ position: { x: 5, y: 5 } });
-  await page.mouse.move(1, 1);
-  await expect(page.locator(".react-flow__edge.edge-wait-constraint")).toHaveCount(0);
-  await expect(page.getByTestId("card-pr#101")).toHaveAttribute("data-dim", "0"); // held by the constraint
-  await expect(page.getByTestId("card-wg:n-notes")).toHaveAttribute("data-dim", "1");
-  await expect(page.getByTestId("card-wg:n-date")).toHaveAttribute("data-dim", "0"); // what waits on you is never dimmed
-  await page.getByTestId("overlay").click();
-  await expect(page.getByTestId("overlay")).not.toBeChecked();
-  await expect(page.getByTestId("card-wg:n-notes")).toHaveAttribute("data-dim", "0");
-  await expect(page.getByTestId("zone-unassigned").getByTestId("zone-source")).toHaveAttribute("title", /neither a direction nor an owner/);
-  await expect(page.getByTestId("zone-role:builder").getByTestId("zone-source")).toHaveAttribute("title", /role that owns/);
-  await expect(page.getByTestId("zone-wg:t-release").getByTestId("zone-source")).toHaveAttribute("title", /its direction/);
-});
-
-for (const mode of ["graph", "you"]) {
-  test(`no line in the default ${mode} view joins two zones`, async ({ page }) => {
-    await page.goto(mode === "graph" ? "/#/flow" : "/#/flow?mode=you");
-    await expect(page.getByTestId("canvas")).toHaveAttribute("data-opening", /.+/);
-    await page.mouse.move(1, 1);
-    const crossing = await page.locator(".react-flow__edge").evaluateAll(async (els) => {
-      const m = await (await fetch("/api/flow")).json();
-      const zone = new Map(m.cards.map((c: { id: string; zone: string }) => [c.id, c.zone]));
-      const ends = new Map(m.edges.map((e: { id: string; source: string; target: string }) => [e.id, e]));
-      return els
-        .map((el) => el.getAttribute("data-id") ?? "")
-        .filter((id) => {
-          if (id.startsWith("wait:")) return true; // a line from a resource is a trace, never drawn by default
-          const e = ends.get(id) as { source: string; target: string } | undefined;
-          return !e || zone.get(e.source) !== zone.get(e.target);
-        });
-    });
-    expect(crossing).toEqual([]);
-  });
-}
-
-test("a waiting card traces its line to what it waits on while it is selected", async ({ page }) => {
-  await page.goto("/#/flow");
-  await expect(page.getByTestId("canvas")).toHaveAttribute("data-opening", /.+/);
-  await (await visibleCard(page, '[data-look="human"], [data-look]:has([data-testid="wait-chip"])')).click();
-  await expect(page.getByTestId("canvas")).toHaveAttribute("data-focus", /.+/);
-  expect(await page.locator('.react-flow__edge[data-id^="wait:"]').count()).toBeGreaterThanOrEqual(1);
-});
-
-test("a card opens its details: the zone, what it waits on, and the command where there is one", async ({ page }) => {
-  await page.goto("/#/flow");
-  await expect(page.getByTestId("canvas")).toHaveAttribute("data-opening", /.+/);
-  await (await visibleCard(page, '[data-look="human"]')).click();
-  const panel = page.getByTestId("side-panel");
-  await expect(panel).toBeVisible();
-  await expect(panel).toContainText("Waits on");
-  await page.keyboard.press("Escape");
-  await expect(panel).toBeHidden();
-});
-
-test("the view switch: waiting on you, roadmap and calendar", async ({ page }) => {
-  await page.goto("/#/flow");
-  await page.getByTestId("mode-you").click();
-  await expect(page.getByTestId("view-flow")).toHaveAttribute("data-mode", "you");
-  await expect(page.getByTestId("canvas")).toHaveAttribute("data-opening", /.+/);
-  const looks = await page.locator("[data-look]").evaluateAll((els) => els.map((e) => e.getAttribute("data-look")));
-  expect(looks.length).toBe(6);
-  expect(new Set(looks)).toEqual(new Set(["human"]));
-  await page.getByTestId("mode-roadmap").click();
-  await expect(page.getByTestId("roadmap")).toBeVisible();
-  await expect(page.getByTestId("lane-wg:t-release")).toContainText("Pick the release date");
-  // No title starts under the lane names, and none runs off the screen.
-  const clash = await page.getByTestId("roadmap").evaluate((root) => {
-    const vw = window.innerWidth;
-    return [...root.querySelectorAll('[data-testid^="lane-"]')].flatMap((lane) => {
-      const names = (lane.firstElementChild as HTMLElement).getBoundingClientRect();
-      return [...lane.querySelectorAll('[data-testid="roadmap-title"]')]
-        .map((t) => t.getBoundingClientRect())
-        .filter((b) => b.left < names.right - 1 || b.left > vw - 24)
-        .map(() => lane.getAttribute("data-testid"));
-    });
-  });
-  expect(clash).toEqual([]);
-  await page.getByTestId("mode-calendar").click();
-  await expect(page.getByTestId("cal-done")).toContainText("Refresh the contributor guide");
-  await expect(page.getByTestId("cal-now")).toContainText("Add retry to the export job");
-  await expect(page.getByTestId("cal-next")).toContainText("backup-db");
-});
-
-test("on a phone, Flow opens on the first zone with a human wait, readable, with Show all", async ({ page }, info) => {
-  test.skip(!isPhone(info.project.name), "the phone opening");
-  await page.goto("/#/flow");
-  const canvas = page.getByTestId("canvas");
-  await expect(canvas).toHaveAttribute("data-opening", /^(?!all$).+/);
-  const opening = await canvas.getAttribute("data-opening");
-  const zoom = () => page.locator(".react-flow__viewport").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
-  expect(await zoom()).toBeCloseTo(0.9, 2);
-  // The zone it opened on is the first, in reading order, that holds a card waiting on the human, and it is on screen.
-  const zone = page.getByTestId(`zone-${opening}`);
-  await expect(zone).toBeInViewport();
-  await expect(zone).toContainText("for you");
-  const human = await visibleCard(page, '[data-look="human"]');
-  await expect(human).toBeInViewport();
-  const order = await page.locator('[data-testid^="zone-"][data-source]').evaluateAll((els) =>
-    els
-      .map((e) => ({ id: e.getAttribute("data-testid")!.slice(5), y: e.getBoundingClientRect().y, x: e.getBoundingClientRect().x, you: (e.textContent ?? "").includes("for you") }))
-      .sort((a, b) => a.y - b.y || a.x - b.x),
-  );
-  expect(order.find((z) => z.you && z.id !== "resources")?.id).toBe(opening);
-  await page.getByTestId("show-all").click();
-  await expect(canvas).toHaveAttribute("data-opening", "all");
-  await page.waitForTimeout(400);
-  expect(await zoom()).toBeLessThan(0.9);
 });
 
 test("Team shows one lane per role, who needs you first", async ({ page }) => {
@@ -278,14 +141,27 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
   await fresh.close();
 });
 
+test("an old Flow or Activity link opens where its parts moved", async ({ page }) => {
+  await page.goto("/#/flow");
+  await expect(page.getByTestId("nav-map")).toHaveAttribute("aria-current", "page");
+  await page.goto("/#/activity");
+  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
+});
+
 test("the theme toggles and the navigation reaches every view", async ({ page }) => {
   await page.goto("/?theme=light#/now");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("theme").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  for (const v of ["flow", "team", "schedules", "audit", "now"]) {
+  // Now, Replay and the map first, then the rest (decision 0019); Flow and Activity are gone from the bar
+  const order = await page.locator('nav[aria-label="Views"] a').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+  expect(order.slice(0, 3)).toEqual(["nav-now", "nav-replay", "nav-map"]);
+  expect(order).not.toContain("nav-flow");
+  expect(order).not.toContain("nav-activity");
+  const root: Record<string, string> = { replay: "replay", map: "map-level" };
+  for (const v of ["replay", "map", "team", "schedules", "audit", "now"]) {
     await page.getByTestId(`nav-${v}`).click();
-    await expect(page.getByTestId(`view-${v}`)).toBeVisible();
+    await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
     await expect(page.getByTestId(`nav-${v}`)).toHaveAttribute("aria-current", "page");
   }
 });

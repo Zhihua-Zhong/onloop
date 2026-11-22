@@ -274,7 +274,7 @@ shrinks, because a checker that quietly narrows is worse than one that fails.
 | Layer | Choice | Why |
 |---|---|---|
 | Workbench UI | TypeScript, React, Vite | The mainstream front-end stack |
-| Canvas and graph | React Flow (`@xyflow/react`), ELK (`elkjs`) for hierarchical layout | The standard library for node-and-edge editors; ELK does layered layouts and compound nodes |
+| Canvas and graph | React Flow (`@xyflow/react`) for the map | The standard library for node-and-edge views (ELK, the layered layout Flow used, went with Flow in 0.6.0) |
 | UI kit | Tailwind CSS, shadcn/ui, cmdk command palette, Framer Motion | Mainstream, accessible, looks current |
 | Client state | TanStack Query, Zustand | Server cache plus small local state |
 | Live updates | Server-Sent Events | One-way push, simpler than WebSockets for this |

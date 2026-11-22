@@ -118,9 +118,9 @@ elements:
     name: onloop UI
     type: container
     parent: onloop
-    technology: React 18, React Flow + ELK, built by Vite; in the browser
+    technology: React 18, React Flow, built by Vite; in the browser
     description: >-
-      Now, Flow, Team, Conversation, Schedules and Audit over the ledger API. Read-only but for one write, a message to a role (evidence, not authority); any other action is shown as the command to copy.
+      Now, Replay, Map, Outcome, Team, Conversation, Schedules and Audit over the ledger API. Read-only but for one write, a message to a role (evidence, not authority); any other action is shown as the command to copy.
       Served by onloopd (decision 0009).
     owner: onloop
     status: built

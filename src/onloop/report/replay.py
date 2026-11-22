@@ -24,7 +24,6 @@ from typing import Any
 from .. import derive
 from .. import events as ev
 from .. import timeline as tl
-from . import activity
 from .views import QueryError
 
 MAX_WINDOW_S = 31 * 86400
@@ -133,7 +132,7 @@ def window(
         # (its start too when the source says), the export's time when the ledger replays a team's snapshots, and
         # when the ledger's data begins
         "turns": _turns(reader, start, end, index),
-        "data_as_of": activity.data_as_of(reader),
+        "data_as_of": derive.data_as_of(reader),
         "first_ms": _first_ms(reader),
         # the steps open at the window's end (or now, when earlier): who is working on what, and its tokens so far
         "working_now": [

@@ -1,6 +1,6 @@
 # The UI
 
-onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). It has six views of the same
+onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). It has eight views of the same
 ledger. Every request it makes is a GET but one: the Conversation view's compose box, a message to a role
 ([decision 0011](decisions/0011-ui-write-path.md)). Where a person can act otherwise, the page shows the exact
 `onloop` command with a copy button. Approvals come later, through the approval channel.
@@ -14,8 +14,9 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | View | The question it answers | Reads |
 |---|---|---|
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
+| **Replay** (`#/replay`) | Who worked when, on what, and what did each step produce? | `GET /api/replay`, `GET /api/products` |
 | **Map** (`#/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
-| **Flow** (`#/flow`) | Where is the work, what does it wait on, and what does the constraint hold up? | `GET /api/flow` |
+| **Outcome** (`#/outcome`) | Did the work reach its outcome? | `GET /api/kpi` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
 | **Schedules** (`#/schedules`) | Did every scheduled job run, and which are failing or overdue? | `/api/schedules`, `/api/alerts`, `/api/events` |
@@ -98,38 +99,23 @@ land on the same level.
 - **Under 768 px,** the page is one column: the signals, "Most waiting work", the batches, the checklists, the changes,
   then the waits.
 
-### Activity
+### Replay
 
-One lane per role, from the data's start to its end (mock-up v2):
-- **The window starts where the data does.** A 7-day window on 3 days of data shows the 3 days, and the summary says
-  "the 3 days since the data began"; it never draws empty days, which would read as a quiet team.
-- **Roles with no turns** are one line under the lanes, never a lane each.
-- **A role's longest quiet stretch** is hatched grey when it is past, and red when it is still going at the data's
-  end, the one to read.
-- **The data's end** is a line across the lanes: "data ends" on a team's export, "now" on a live ledger.
+The team's time, one lane per role, played back like a recording; the full guide is in [replay.md](replay.md).
 
-### Flow
+### Retired: Flow and Activity
 
-The canvas (React Flow, laid out by ELK) draws:
-- **Zones.** Each is a direction (the nearest topic above an item), else the owner role, else "unassigned". The zone's
-  tooltip says which.
-- **Cards.** One per item, coloured by state: amber waits on you, red is blocked, violet waits on someone else, blue
-  is open, green is done.
-- **Resources.** The locks, queues and the human that cards wait on, in their own zone.
-- **No line crosses a zone it does not connect.** A waiting card names what it waits on in its footer pill ("Queued →
-  merge-check", "Blocked → main"). The lines between a resource and its cards, and a dependency between two zones,
-  are drawn only while that resource or one of its cards is selected (a tap) or hovered. Dependencies inside a zone
-  are always drawn; they stay in their zone.
+Decision 0019 retired both views in 0.6.0; their parts moved first. An old link opens where they went: `#/flow` opens
+the map, and `#/activity` opens Replay. `GET /api/flow` and `GET /api/activity` answer 404.
 
-What the switch and buttons do:
-- **The constraint overlay** (on by default) highlights the constraint and what it holds up downstream, and dims the
-  rest. What waits on you is never dimmed.
-- **The view switch** has four views: the graph, "Waiting on you" (only the cards that wait on you), a roadmap (time
-  left to right), and a calendar window (the last day, now, the next day).
-- **The opening view.**
-  - On a wide screen, Flow opens on the constraint, at a zoom where titles read.
-  - On a phone (under 768 px), it opens on the first zone that holds a human wait, at zoom 0.9.
-  - "Show all" fits everything. "Map" shows a minimap.
+| Was | Now |
+|---|---|
+| Activity's lanes, quiet stretches, turn marks and "No data before" | Replay's lanes and density rows |
+| Activity's data-as-of line | Replay's "data as of" and the header's |
+| Flow's constraint overlay | Now's constraint, linked to the map's cell that holds it |
+| Flow's card details | The map's zoom 2 item details |
+| Flow's "waiting on you" view | Now's "Waiting on you" |
+| Flow's roadmap and calendar | Now's "Expires within a day", and Replay's window |
 
 ### Live updates
 
@@ -142,7 +128,7 @@ It reconnects by itself.
 - The header has a clock that ticks every second, and "data as of N s ago": how long since this page last read from
   onloopd.
 - Every relative age on every page rises with that clock between answers: the page adds the seconds since it read the
-  answer to each age the server gave (`web/src/lib/tick.ts`). Ages that Activity counts to an export's end stay put,
+  answer to each age the server gave (`web/src/lib/tick.ts`). Ages that Replay counts to an export's end stay put,
   since the export's end does not move.
 - The page reads `GET /api/heartbeat` every 10 s: onloopd's last heartbeat, the server's clock, and its tick period
   (10 s by default). News is the newest of a stream event and a heartbeat.
@@ -161,7 +147,7 @@ choice is kept in this browser. `?theme=dark` or `?theme=light` in the URL overr
 `web/src/styles/tokens.css` is the only place a colour is chosen. The state colours are the only saturated colours on
 the canvas, and each has its own step in dark mode, validated against the dark surface.
 
-| Token | Means on Now, Flow and the task list | On the map | Shape on the map |
+| Token | Means on Now and the task list | On the map | Shape on the map |
 |---|---|---|---|
 | `state-blocked` (red) | blocked | jammed | ! |
 | `state-human` (amber) | waits on you | waits on you, or marked yours by the team | ◆ |

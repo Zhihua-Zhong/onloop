@@ -10,12 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from onloop import cli
+from onloop import cli, derive
+from onloop import events as ev
 from onloop.contract import reader
 from onloop.daemon import hook_receiver
 from onloop.detect import core, no_outcome
 from onloop.overlay.ledger import Ledger
-from onloop.report import activity
+from onloop.report import replay
 
 ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("contract_example", ROOT / "tools" / "contract_example.py")
@@ -190,41 +191,31 @@ def test_a_team_without_outcome_lines_gets_one_summary_not_one_stall_per_turn(ex
     assert [a["title"] for a in alerts] == ["Outcome lines not adopted: 0 of 400 turns end with one"]
 
 
-def test_activity_shows_lanes_side_sessions_silences_and_hours(exchange):
+def test_replay_shows_a_teams_export_with_its_turns_and_its_datas_time(exchange):
+    """Activity's checks, now Replay's (decision 0019, section 4): the export's time, every turn of the window (an
+    imported turn's start as the source says), and each role a lane."""
     reader.import_snapshots(exchange, _ledger(exchange))
     with Ledger(_ledger(exchange), readonly=True) as led:
-        a = activity.activity(led, NOW, 48)
-    assert (
-        a["data_as_of"] == "2026-11-17T02:00:00.000Z" and a["to"] == a["data_as_of"]
-    )  # the data's end, not now
-    assert a["data_age_s"] == pytest.approx(60 * 60)
-    assert a["roles_declared"] == 11 and a["outcome_lines"] == {"with": 0, "of": 400}
-    lanes = {lane["role"]: lane for lane in a["lanes"]}
-    assert lanes["lead"]["side_sessions"] == 2 and lanes["lead"]["sessions"][0]["main"] is True
-    assert lanes["quiet-observer"]["turns"] == 0 and lanes["quiet-observer"]["last_turn_at"] is None
-    assert sum(h["turns"] for h in a["per_hour"]) == a["turns"] == sum(lane["turns"] for lane in a["lanes"])
-    assert all(h["at"].endswith(":00:00.000Z") for h in a["per_hour"])  # whole clock hours
-    quiet = lanes["docs-writer"]["longest_silence"]
-    assert quiet["seconds"] >= 6 * 3600  # the generator's long silence for this role
-    for lane in a["lanes"]:
-        for s in lane["sessions"]:
-            assert all(m["start"] <= m["end"] for m in s["marks"])
-    assert [lane["turns"] for lane in a["lanes"]] == sorted(
-        (lane["turns"] for lane in a["lanes"]), reverse=True
-    )
+        end = derive.data_as_of(led)
+        w = replay.window(led, NOW, "2026-11-15T02:00:00.000Z", end)
+        turns = led.select(
+            "SELECT count(*) AS n FROM turns WHERE ended_at >= '2026-11-15T02:00:00.000Z' AND ended_at <= ?",
+            (end,),
+        )[0]["n"]
+        roles = {r["id"] for r in led.select("SELECT id FROM roles")}
+    assert end == "2026-11-17T02:00:00.000Z" and w["data_as_of"] == end  # the data's end, not now
+    assert len(w["turns"]["t"]) == turns > 0
+    assert roles <= set(w["lanes"]) and "quiet-observer" in w["lanes"]
 
 
-def test_activity_starts_where_the_data_does_never_before_it(exchange):
-    """Mock-up v2: a 7-day window on 2 days of data draws no empty days, which would read as a quiet team."""
+def test_replay_knows_where_the_data_begins(exchange):
+    """Mock-up v2, now Replay's: a window reaching back before the data shades that stretch "No data before", so it
+    never reads as a quiet team; the window carries when the data begins."""
     reader.import_snapshots(exchange, _ledger(exchange))
     with Ledger(_ledger(exchange), readonly=True) as led:
-        week = activity.activity(led, NOW, 168)
-        two = activity.activity(led, NOW, 48)
-        one = activity.activity(led, NOW, 24)
-        start = led.select("SELECT min(COALESCE(started_at, ended_at)) AS t FROM turns")[0]["t"]
-    assert week["from"] == start[:14] + "00:00.000Z"  # the hour the first turn began in, not 7 days back
-    assert week["from"] <= two["from"] < one["from"]  # a window inside the data starts where it says
-    assert sum(h["turns"] for h in week["per_hour"]) == week["turns"]
+        first = led.select("SELECT min(COALESCE(at, ts_system)) AS t FROM events")[0]["t"]
+        w = replay.window(led, NOW, "2026-11-10T00:00:00.000Z", "2026-11-17T00:00:00.000Z")
+    assert w["first_ms"] == int(ev.parse_ts(first).timestamp() * 1000) > w["from_ms"]
 
 
 def test_pull_requests_goal_revisions_and_feedback_import_once_each(tmp_path):

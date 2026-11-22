@@ -28,15 +28,12 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 tell a quiet onloopd from a stalled one
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
-    GET /api/activity           the Activity view: one lane per role with its turns on a time axis, side sessions under
-                                their role, the longest silence per role, turns per hour (?hours=48; 1 to 336)
     GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
     GET /api/replay             the replay's window (decision 0019): ?from=&to= (at most 31 days), ?lanes=a,b; each
                                 lane at `from` and at `to`, the state changes and model requests inside, in columns
     GET /api/products           what a step produced as of a moment (decision 0019, a4): ?step=step:node:<id> or
                                 step:branch:<name>, ?at=; its commits and changed files, from recorded repositories
     GET /api/products/file      one of those files (?repo=&sha=&path=), in its own sandbox (Content-Security-Policy)
-    GET /api/flow               the Flow view: cards by zone, resources, waits, edges, and the constraint's downstream
     GET /api/stream             SSE: each new event as `id: <seq>`, `event: <kind>`, `data: <json>`; resumes after
                                 Last-Event-ID (or ?after=N); a comment line every 15 s keeps the connection alive;
                                 ?plain=1 leaves out the `event:` line, so a browser's EventSource sees every event
@@ -500,10 +497,6 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = self._liveness()
             elif url.path == "/api/now":
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
-            elif url.path == "/api/activity":
-                from ..report import activity
-
-                body = activity.activity(reader, ev.now_ts(), _int(query.get("hours", ["48"])[0]) or 48)
             elif url.path == "/api/products":
                 from ..report import products
 
@@ -530,8 +523,6 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     return
                 self._send_product(data, ctype, head_only)
                 return
-            elif url.path == "/api/flow":
-                body = views.flow(reader, ev.now_ts())
             elif url.path == "/api/replay":
                 from ..report import replay
 

@@ -120,8 +120,8 @@ What a user may rely on, and what changes only with a changelog entry under **Ch
   and the result files of role steps.
 - **onloopd's HTTP API** on the loopback address: `/health` and the read-only `/api/items`, `/api/waits`,
   `/api/leases`, `/api/constraint`, `/api/turns`, `/api/alerts`, `/api/schedules`, `/api/roles`,
-  `/api/report/observe`, `/api/now`, `/api/flow`, `/api/events` (with its filters) and `/api/stream` (Server-Sent
-  Events). Fields may be added; a field's meaning does not change without a changelog entry. The UI's routes (`/`,
+  `/api/report/observe`, `/api/now`, `/api/replay`, `/api/products`, `/api/map`, `/api/events` (with its filters) and
+  `/api/stream` (Server-Sent Events). Fields may be added; a field's meaning does not change without a changelog entry. The UI's routes (`/`,
   `/assets/...`) are not an API.
 - **The extension points** below.
 

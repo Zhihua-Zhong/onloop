@@ -1,4 +1,4 @@
-"""The UI's read API (decision 0009): `/api/now`, `/api/flow`, the `/api/events` filters, and `heartbeat_schedule`."""
+"""The UI's read API (decision 0009): `/api/now`, the `/api/events` filters, and `heartbeat_schedule`."""
 
 import http.client
 import importlib.util
@@ -232,69 +232,6 @@ def test_without_heartbeat_schedule_the_dead_man_switch_is_not_configured(tmp_pa
 # -- Flow --------------------------------------------------------------------------------------------------------------
 
 
-def test_flow_zones_come_from_the_direction_then_the_owner_then_unassigned(led):
-    f = views.flow(led, NOW)
-    cards = {c["id"]: c for c in f["cards"]}
-    zones = {z["id"]: z for z in f["zones"]}
-    assert zones[cards["wg:n-date"]["zone"]] == {
-        "id": "wg:t-release",
-        "label": "Release 2.4",
-        "source": "direction",
-        "cards": 4,
-    }
-    assert zones[cards["pr#101"]["zone"]]["source"] == "owner" and cards["pr#101"]["zone"] == "role:builder"
-    assert cards["wg:n-loose"]["zone"] == "unassigned" and zones["unassigned"]["source"] == "none"
-    assert "wg:t-release" not in cards  # a topic is a zone, not a card
-    assert not any(c["id"].startswith("alert:") for c in f["cards"])
-    assert f["zones"][-1]["id"] == "unassigned"  # last
-
-
-def test_flow_draws_the_resources_the_cards_wait_on_and_the_edges(led):
-    f = views.flow(led, NOW)
-    res = {r["id"]: r for r in f["resources"]}
-    assert (res["merge-check"]["kind"], res["merge-check"]["waiting"], res["merge-check"]["holders"]) == (
-        "queue",
-        5,
-        ["pr#99"],
-    )
-    assert res["main"]["kind"] == "lock" and res["main"]["waiting"] == 3
-    # the lines to "You": two asks and the paused reviewer's four; its count is the task list's, as Now's (finding #20)
-    assert res["human"]["kind"] == "human" and res["human"]["lines"] == 6
-    assert (
-        res["human"]["waiting"] == f["waiting_on_you"]["count"] == len(views.now(led, NOW)["waiting_on_you"])
-    )
-    links = {(w["card"], w["on_ref"]) for w in f["waits"]}
-    assert ("pr#101", "merge-check") in links and ("wg:n-date", "human") in links
-    edges = {(e["source"], e["target"], e["kind"]) for e in f["edges"]}
-    assert ("wg:n-date", "wg:n-tag", "depends") in edges and ("wg:n-cred", "wg:n-ci", "depends") in edges
-
-
-def test_flow_highlights_the_constraint_and_what_it_holds_up_downstream(led):
-    con = views.flow(led, NOW)["constraint"]
-    assert con["node"] == "merge-check"
-    assert con["cards"] == ["pr#101", "pr#102", "pr#103", "pr#104", "pr#105"]
-
-
-def test_downstream_follows_waits_through_roles_and_dependencies():
-    waits = [
-        {"on_ref": "gate", "item_id": "a", "waiter": "a"},
-        {"on_ref": "a", "item_id": None, "waiter": "builder"},
-        {"on_ref": "builder", "item_id": "b", "waiter": "b"},
-        {"on_ref": "b", "item_id": "a", "waiter": "a"},  # a cycle is walked once
-    ]
-    assert views._downstream("gate", waits, [("c", "b"), ("d", "c")], {"a", "b", "c", "d", "e"}) == {
-        "a",
-        "b",
-        "c",
-        "d",
-    }
-
-
-def test_flow_lists_each_schedule_with_its_next_due_time(led):
-    s = {x["id"]: x for x in views.flow(led, NOW)["schedules"]}
-    assert s["backup-db"]["next_due"] == "2026-11-10T09:52:00.000Z"
-
-
 # -- Audit -------------------------------------------------------------------------------------------------------------
 
 
@@ -374,7 +311,7 @@ def get(s, path):
     return r.status, json.loads(body)
 
 
-def test_the_routes_answer_now_flow_and_filtered_events(served):
+def test_the_routes_answer_now_and_filtered_events_and_not_the_retired_views(served):
     s, beat = served
     code, body = get(s, "/api/now")
     assert code == 200 and body["constraint"]["on_ref"] == "merge-check"
@@ -383,8 +320,7 @@ def test_the_routes_answer_now_flow_and_filtered_events(served):
     assert get(s, "/api/now")[1]["health"]["onloopd"]["pid"] == 9
     beat.write_text("{half", encoding="utf-8")
     assert get(s, "/api/now")[1]["health"]["onloopd"] is None
-    code, body = get(s, "/api/flow")
-    assert code == 200 and body["constraint"]["node"] == "merge-check"
+    assert get(s, "/api/flow")[0] == 404 and get(s, "/api/activity")[0] == 404  # retired (decision 0019)
     code, body = get(s, "/api/events?kind=role.paused")
     assert code == 200 and [e["subject_ref"] for e in body["events"]] == ["role:reviewer"]
     code, body = get(s, "/api/events?source=email")

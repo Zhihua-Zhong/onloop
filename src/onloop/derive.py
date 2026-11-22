@@ -651,9 +651,8 @@ def _team_quiet(ledger: Any, now: str, hours: int = 24) -> dict[str, Any] | None
     ("nothing has stalled for more than 2 h") never depends on a threshold. It ends at the data's end (a replay's
     last export), as Activity does, and a stretch still going at the end counts."""
     from . import events as ev
-    from .report import activity
 
-    as_of = activity.data_as_of(ledger)
+    as_of = data_as_of(ledger)
     end = min(now, as_of) if as_of else now
     start = ev.shift_ts(end, -hours * 3600)
     rows = ledger.select(
@@ -695,10 +694,15 @@ def _team_quiet(ledger: Any, now: str, hours: int = 24) -> dict[str, Any] | None
     }
 
 
-def _data_as_of(ledger: Any) -> str | None:
-    from .report import activity
+def data_as_of(ledger: Any) -> str | None:
+    """The latest export time among the replayed events, when this ledger holds a team's daily snapshots; else None."""
+    row = ledger.select(
+        "SELECT max(json_extract(payload, '$.imported.exporttime')) AS t FROM events WHERE source = 'import'"
+    )
+    return row[0]["t"] if row and row[0]["t"] else None
 
-    return activity.data_as_of(ledger)
+
+_data_as_of = data_as_of
 
 
 def zoom0(ledger: Any, now: str, stuck: dict[str, int] | None = None) -> dict[str, Any]:

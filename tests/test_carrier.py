@@ -590,9 +590,7 @@ def test_message_text_is_not_in_the_reports(tmp_path):
     h.say(c, "a distinctive sentence about the parser")
     c.tick()
     now = views.now(c.led, c.led.now(), None)
-    assert "distinctive sentence" not in json.dumps(now) and "distinctive sentence" not in json.dumps(
-        views.flow(c.led, c.led.now())
-    )
+    assert "distinctive sentence" not in json.dumps(now)
 
 
 def test_a_message_over_8_kb_or_empty_is_refused(tmp_path):

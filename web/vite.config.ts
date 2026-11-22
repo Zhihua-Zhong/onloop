@@ -19,7 +19,6 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "../src/onloop/ui"),
     emptyOutDir: true,
     sourcemap: false,
-    // elkjs, the layout engine, is large; it is split into its own chunk and loaded by the Flow view only.
     chunkSizeWarningLimit: 1600,
   },
 });

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 
-// The views are hash routes (#/now, #/flow, #/audit?kind=pr.merged), so a reload or a shared link opens the same view
+// The views are hash routes (#/now, #/replay, #/audit?kind=pr.merged), so a reload or a shared link opens the same view
 // and onloopd serves one index.html for all of them.
-export const VIEWS = ["now", "replay", "map", "activity", "flow", "outcome", "team", "conversation", "schedules", "audit"] as const;
+export const VIEWS = ["now", "replay", "map", "outcome", "team", "conversation", "schedules", "audit"] as const;
+// The views decision 0019 retired: an old link opens where their parts moved, not Now
+export const RETIRED: Record<string, View> = { flow: "map", activity: "replay" };
 export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", replay: "Replay", map: "Map", activity: "Activity", flow: "Flow", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
+export const VIEW_LABEL: Record<View, string> = { now: "Now", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
 
 // `path` is what follows the view: the map's levels, `#/map/<goal>/<stage>` (decision 0018).
 export interface Route { view: View; params: URLSearchParams; path: string[] }
@@ -12,7 +14,8 @@ export interface Route { view: View; params: URLSearchParams; path: string[] }
 function parse(hash: string): Route {
   const raw = hash.replace(/^#\/?/, "");
   const [where, query = ""] = raw.split("?");
-  const [first, ...rest] = where.split("/");
+  const [given, ...rest] = where.split("/");
+  const first = RETIRED[given] ?? given;
   const known = (VIEWS as readonly string[]).includes(first);
   const view = known ? (first as View) : "now";
   const path = known ? rest.filter(Boolean).map((s) => decodeURIComponent(s)) : [];

@@ -21,6 +21,13 @@ All notable changes to this project are recorded here. The format follows
   it, so a repository's `.claude/settings.json` cannot widen the role's tools. Its file tools stay inside `cwd`; a
   folder a step must read beyond it is declared in the role as `add_dirs` and passed as `--add-dir`.
 
+### Removed
+
+- **Flow and Activity are retired** (decision 0019, section 4), now that their parts have moved to Now, Replay and the
+  map. The views, `GET /api/flow`, `GET /api/activity`, `views.flow` and the layout engine (elkjs) go. An old link
+  opens where the parts went: `#/flow` the map, `#/activity` Replay; both API routes answer 404. The navigation reads
+  Now, Replay, Map, then the rest. `derive.data_as_of` replaces `report.activity.data_as_of`.
+
 ### Added
 
 - **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
