@@ -3,7 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { HEARTBEAT_POLL_MS } from "@/lib/tick";
 
-export interface Beat { now: string; at: string | null; age_s: number | null; period_s: number; last_seq: number | null }
+export interface Beat {
+  now: string;
+  at: string | null;
+  age_s: number | null;
+  period_s: number;
+  last_seq: number | null;
+  read_only?: boolean; // a server with no writer serves a copy: nothing new can arrive
+  data_up_to?: string | null;
+}
 
 export function useHeartbeat() {
   return useQuery({

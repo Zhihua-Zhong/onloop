@@ -85,6 +85,22 @@ function LiveBadge({ live }: { live: Live }) {
       refreshes: q.observers.some((o) => Boolean(o.options.refetchInterval)),
     }));
   const dataAge = dataAgeS(answers, nowMs);
+  if (hb.data?.read_only) {
+    // a copy served read-only (no writer): nothing new can arrive, so it is never "Live" or "No news"
+    const upTo = hb.data.data_up_to ? new Date(hb.data.data_up_to).toLocaleString(undefined, { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+    return (
+      <span className="inline-flex items-center gap-3 text-xs text-muted">
+        <span data-testid="clock" className="font-mono tabular-nums text-fg" title="This page's clock: it ticks every second">
+          {new Date(nowMs).toLocaleTimeString(undefined, { hour12: false })}
+        </span>
+        <span data-testid="live" data-state="read-only" role="status" className="inline-flex items-center gap-1.5" title="This server has no writer: it serves a copy of a ledger, and nothing new arrives">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-state-void" aria-hidden />
+          <span className="max-md:sr-only">Read-only copy{upTo ? ` · data up to ${upTo}` : ""}</span>
+          <span className="md:hidden" aria-hidden>read-only</span>
+        </span>
+      </span>
+    );
+  }
   const words: Record<LiveState, string> = {
     connecting: "Connecting",
     live: "Live",

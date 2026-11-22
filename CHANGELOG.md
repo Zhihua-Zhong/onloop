@@ -120,6 +120,8 @@ All notable changes to this project are recorded here. The format follows
   before", "Data as of", "Quiet for") and rule E's limit when two roles share a branch.
 - **A Replay link with a moment opens the window that ends at that moment** (`#/replay?hours=6&t=<epoch ms>`),
   whenever it is opened; until now the window always ended at the time the page was opened.
+- **A server with no writer says it serves a copy**: the header reads "Read-only copy · data up to <time>" with a
+  grey dot, never "Live" (`GET /api/heartbeat`'s `read_only` and `data_up_to`).
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,

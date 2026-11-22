@@ -676,7 +676,18 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "age_s": age,
             "period_s": self.server.tick_s,
             "last_seq": beat.get("last_seq") if beat else None,
+            # a server with no writer serves a copy (a frozen ledger, a replay): nothing new can arrive, so the page
+            # says so instead of "Live"; with when its data ends
+            "read_only": self.server.writer is None,
+            "data_up_to": self._data_up_to() if self.server.writer is None else None,
         }
+
+    def _data_up_to(self) -> str | None:
+        try:
+            row = self.server.reader.select("SELECT max(ts_system) AS t FROM events")
+        except Exception:  # noqa: BLE001 - a reader without SQL (a test's) has no end to give
+            return None
+        return row[0]["t"] if row and row[0]["t"] else None
 
     def _heartbeat(self) -> dict[str, Any] | None:
         path = self.server.heartbeat

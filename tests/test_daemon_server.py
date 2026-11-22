@@ -135,3 +135,45 @@ def test_the_plain_stream_leaves_out_the_event_name_for_a_browser(server):
         lines.append(r.fp.readline().decode("utf-8").rstrip("\n"))
     c.close()
     assert "id: 2" in lines and not any(x.startswith("event:") for x in lines)
+
+
+def test_a_server_with_no_writer_says_it_serves_a_read_only_copy_and_when_its_data_ends(tmp_path):
+    """The glance trial's run 2 (2026-11-22): a frozen copy served with no writer read "Live", then "No news", though
+    nothing new could ever arrive. /api/heartbeat now says it is a read-only copy, and until when its data goes."""
+    import json as _json
+
+    from onloop.overlay.ledger import Ledger
+
+    path = tmp_path / "l.db"
+    with Ledger(path, clock=lambda: "2026-11-22T13:59:00.000Z") as led:
+        led.append(
+            {"id": "e", "source": "otel", "kind": "cost.request", "subject_ref": "session:s", "payload": {}}
+        )
+    reader = Ledger(path, readonly=True)
+    s = srv.make_server(reader, port=0)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        code, _h, body = request(s, "/api/heartbeat")
+        beat = _json.loads(body)
+        assert code == 200 and beat["read_only"] is True and beat["data_up_to"] == "2026-11-22T13:59:00.000Z"
+    finally:
+        s.shutdown()
+        s.server_close()
+        reader.close()
+
+
+def test_onloopd_with_a_writer_is_not_a_read_only_copy(tmp_path):
+    import json as _json
+
+    from onloop.daemon.routes import Routes
+    from onloop.overlay.ledger import Ledger
+
+    with Ledger(tmp_path / "l.db") as led:
+        s = srv.make_server(FakeReader(), port=0, writer=Routes(led, threading.Lock()), token="t0ken")
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+        try:
+            beat = _json.loads(request(s, "/api/heartbeat")[2])
+            assert beat["read_only"] is False and beat["data_up_to"] is None
+        finally:
+            s.shutdown()
+            s.server_close()
