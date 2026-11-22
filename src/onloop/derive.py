@@ -1049,6 +1049,24 @@ def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, An
     }
 
 
+def where_held(ledger: Any, now: str, holder: str) -> dict[str, Any] | None:
+    """The map's cell that holds `holder` (a resource such as merge-check, a role, or "you"): the first goal and stage
+    whose zoom 2 has a row for it, as {"path": [goal, stage], "who": holder}. Now's constraint links here (decision 0019,
+    section 4: Flow's trace moves to the map). None when no stage holds it."""
+    for b in zoom0(ledger, now)["blocks"]:
+        try:
+            z1 = zoom1(ledger, now, b["id"])
+        except MapPathError:
+            continue
+        for st in z1["stages"]:
+            if not st.get("leaves"):
+                continue
+            z2 = zoom2(ledger, now, b["id"], st["stage"])
+            if any(h["holder"] == holder for h in z2["holders"]):
+                return {"path": [b["id"], st["stage"]], "who": holder}
+    return None
+
+
 def item_detail(ledger: Any, now: str, item_id: str) -> dict[str, Any] | None:
     """What Flow's card panel showed, for the map's zoom 2 (decision 0019, section 4): the item's owner, its source
     link, its default and expiry, what it waits on (and why, and for how long), and the command to copy when one moves

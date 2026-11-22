@@ -2003,6 +2003,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "Now's constraint links to the map's top, not the cell that holds it",
+        "src/onloop/report/views.py",
+        '        "constraint_map": derive.where_held(ledger, now_ts, top["on_ref"])\n        if top and top.get("on_ref")\n        else None,\n',
+        '        "constraint_map": None,\n',
+        ["tests/test_replay_api.py::test_nows_constraint_links_to_the_maps_cell_that_holds_it"],
+    ),
+    (
         "the map's zoom 2 drops what Flow's card panel showed",
         "src/onloop/derive.py",
         '                "detail": item_detail(ledger, now, lf["id"]),\n',

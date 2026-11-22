@@ -78,6 +78,8 @@ export interface NowModel {
   stalls: Stall[];
   /** The person's wait over the last day (decision 0019, a7): the one count, the oldest item, the share of the day. */
   your_wait?: YourWait;
+  /** The map's cell that holds the constraint: Now's "Map" links open it. */
+  constraint_map?: { path: string[]; who: string } | null;
   /** Open items whose expiry is past or within a day (moved from Flow's Roadmap). */
   expiring?: { id: string; title: string; ref: string | null; expires: string; in_s: number }[];
   health: {

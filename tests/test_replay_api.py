@@ -238,3 +238,14 @@ def test_the_maps_zoom_2_item_carries_what_flows_card_panel_showed(demo):
     assert d99["owner_role"] == "lead" and d99["url"].endswith("/pull/99") and d99["expires"]
     assert d99["default"] and [w["on"] for w in d99["waits"]] == ["you"]
     assert [(w["on"], w["reason"]) for w in items["pr#106"]["detail"]["waits"]] == [("main", "conflict")]
+
+
+def test_nows_constraint_links_to_the_maps_cell_that_holds_it(demo):
+    """The lead's finding: "Map" on Now's constraint opened the map's top. It opens the cell: the goal and stage whose
+    zoom 2 has the constraint's holder, with that row selected."""
+    from onloop.report import views
+
+    with Ledger(demo, readonly=True) as reader:
+        n = views.now(reader, NOW)
+    assert n["constraint"]["on_ref"] == "merge-check"
+    assert n["constraint_map"] == {"path": ["changes", "opened"], "who": "merge-check"}

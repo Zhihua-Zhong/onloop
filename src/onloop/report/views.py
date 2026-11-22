@@ -493,6 +493,10 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
     return {
         "now": now_ts,
         "constraint": top,
+        # where the map shows the constraint's holder: Now's "Map" links go to that cell (decision 0019, section 4)
+        "constraint_map": derive.where_held(ledger, now_ts, top["on_ref"])
+        if top and top.get("on_ref")
+        else None,
         "related": related,
         "next": _first_task_move(ledger, top, now_ts) or _next_move(top, items, waits, ledger.leases()),
         "waiting_on_you": _tasks_or_waits(ledger, waits, items, now_ts),

@@ -82,7 +82,7 @@ function Banner({ m }: { m: NowModel }) {
                   Open it <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                 </a>
               )}
-              <a href={href("map")} className="inline-flex items-center gap-1 text-accent hover:underline" data-testid="see-on-map">
+              <a href={constraintHref(m)} className="inline-flex items-center gap-1 text-accent hover:underline" data-testid="see-on-map">
                 See it on the map <ArrowRight className="h-3.5 w-3.5" aria-hidden />
               </a>
             </p>
@@ -120,7 +120,7 @@ function CompactBanner({ m }: { m: NowModel }) {
           )}
         </span>
       )}
-      <a href={href("map")} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline max-sm:hidden" data-testid="banner-map">
+      <a href={constraintHref(m)} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline max-sm:hidden" data-testid="banner-map">
         Map <ArrowRight className="h-3 w-3" aria-hidden />
       </a>
     </section>
@@ -461,4 +461,10 @@ function Expiring({ m }: { m: NowModel }) {
       ))}
     </div>
   );
+}
+
+// Now's constraint opens the map's cell that holds it (the stage, with the holder's row selected), not the map's top
+function constraintHref(m: NowModel): string {
+  const c = m.constraint_map;
+  return c ? href("map", { who: c.who }, c.path) : href("map");
 }

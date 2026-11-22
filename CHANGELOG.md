@@ -29,7 +29,8 @@ All notable changes to this project are recorded here. The format follows
 - **The map's items carry what Flow's card panel showed** (decision 0019, section 4): at zoom 2, "Details" under an
   item gives its owner, what it waits on (why, and for how long), its default and expiry, its source link, and the
   command to copy when a wait is on missing evidence or a paused role.
-- **Now, after Flow and Activity** (decision 0019, section 4): the constraint links to the map, and "See when the team
+- **Now, after Flow and Activity** (decision 0019, section 4): the constraint links to the map's cell that holds it
+  (its goal and stage, with the holder's row selected; `constraint_map` in `GET /api/now`), and "See when the team
   worked" opens Replay. Open items whose expiry is past or within a day (Flow's Roadmap showed them) are listed under
   "Expires within a day" beside Stalled; `GET /api/now` answers them as `expiring`.
 - **Activity's parts, moved to Replay** (decision 0019, section 4): every turn that ended in the window, a short mark
