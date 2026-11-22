@@ -67,3 +67,18 @@ def test_the_wheel_job_audits_the_wheels_dependencies_and_the_uis_production_one
     assert "npm audit --json --omit=dev" in runs and "audit_gate.py npm" in runs
     assert "pip-audit --path" in runs and "audit_gate.py pip-ignores" in runs
     assert runs.index("python -m build --wheel") < runs.index("pip-audit --path")  # it audits the built wheel
+
+
+def test_the_e2e_job_builds_the_ui_before_installing_onloop_and_keeps_the_report_on_failure():
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    steps = doc["jobs"]["e2e"]["steps"]
+    runs = [s.get("run", "") for s in steps]
+    build = next(i for i, r in enumerate(runs) if "npm run build" in r)
+    install = next(i for i, r in enumerate(runs) if "pip install" in r and "." in r)
+    browser = next(i for i, r in enumerate(runs) if "playwright install" in r)
+    e2e = next(i for i, r in enumerate(runs) if r.strip() == "npm run e2e")
+    assert build < install < e2e and browser < e2e
+    assert "chromium" in runs[browser] and steps[e2e]["env"]["PW_CHANNEL"] == ""
+    keep = steps[-1]
+    assert keep["if"] == "failure()" and keep["uses"].startswith("actions/upload-artifact@")
+    assert "web/playwright-report" in keep["with"]["path"]

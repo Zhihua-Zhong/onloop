@@ -32,6 +32,9 @@ All notable changes to this project are recorded here. The format follows
   fails), through `tools/audit_gate.py`. `.github/audit-allowlist.yml` lets an advisory pass with a reason and an
   expiry; an expired entry fails the build. Empty to start. A local `npm audit` on 2026-11-22 (production
   dependencies) found 0 vulnerabilities.
+- **The browser tests run in CI**: an `e2e` job builds the UI, installs onloop with it, installs Playwright's
+  Chromium, and runs `npm run e2e` against onloopd's server over the demo ledger; the report and traces are kept as
+  an artifact when a test fails. Until now the specs ran nowhere.
 
 ### Fixed
 

@@ -2207,6 +2207,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_lease_recover.py::test_a_hung_instances_lease_is_taken_over_after_it_expires"],
     ),
     (
+        "the e2e job installs onloop before the UI is built, so the server serves no page",
+        ".github/workflows/ci.yml",
+        "      - name: Install onloop with the built UI\n        run: python -m pip install --no-cache-dir .   # after the build: the installed package serves that UI\n",
+        "",
+        [
+            "tests/test_workflows.py::test_the_e2e_job_builds_the_ui_before_installing_onloop_and_keeps_the_report_on_failure"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",
