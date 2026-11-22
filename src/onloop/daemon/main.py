@@ -153,6 +153,8 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
     for source in sources:
         try:
             got = source(ledger)
+        except sqlitedb.Locked:
+            raise  # one write that waited out every attempt ends the tick: its other writes would wait too
         except Exception as e:  # noqa: BLE001 - as above
             res.errors.append(f"{source!r}: {type(e).__name__}: {e}"[:300])
             continue
@@ -165,6 +167,8 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
         probes = {**wakers.default_probes(dict(cfg.watch.monitors)), "event": EventProbe()}
     try:
         res.detected["probed"] = wakers.probe(ledger, probes, now)
+    except sqlitedb.Locked:
+        raise
     except Exception as e:  # noqa: BLE001 - the probes failing must not stop the detectors
         res.errors.append(f"waker probes: {type(e).__name__}: {e}"[:300])
     for step, fn in (
@@ -176,6 +180,8 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
             got = fn()
             if got:
                 res.detected[step.replace(" ", "_")] = got
+        except sqlitedb.Locked:
+            raise
         except Exception as e:  # noqa: BLE001 - one step failing must not stop the detectors
             res.errors.append(f"{step}: {type(e).__name__}: {e}"[:300])
     rep = detect.run(ledger, cfg.detectors if cfg.detectors is not None else DETECTORS, now)
@@ -186,6 +192,8 @@ def tick(ledger: Ledger, cfg: DaemonConfig, sources: tuple[Callable[[Ledger], An
         turned = blocks.turn(ledger, now)
         if turned:
             res.detected["block_turned"] = turned
+    except sqlitedb.Locked:
+        raise
     except Exception as e:  # noqa: BLE001 - the map's colours failing must not stop the tick
         res.errors.append(f"block.turned: {type(e).__name__}: {e}"[:300])
     res.detected.update({k: v for k, v in rep.as_dict().items() if k != "errors"})
@@ -374,8 +382,14 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
                     _write_heartbeat(cfg, port, ledger, res)
             except sqlitedb.Locked as e:
                 # another process held the ledger's write lock through every attempt: this tick is skipped, not
-                # onloopd (counted in /health's receipts as a failed write)
+                # onloopd (counted in /health's receipts as a failed write). The heartbeat is still written, so a
+                # blocked tick never reads as a dead onloopd.
                 say(f"onloopd: tick skipped: {e}")
+                try:
+                    with write_lock:
+                        _write_heartbeat(cfg, port, ledger, TickResult(errors=[f"tick skipped: {e}"[:300]]))
+                except Exception as e2:  # noqa: BLE001 - the heartbeat is a file; its own failure is reported
+                    say(f"onloopd: heartbeat: {type(e2).__name__}: {e2}"[:300])
             ticks += 1
             if cfg.max_ticks is not None and ticks >= cfg.max_ticks:
                 break

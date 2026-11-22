@@ -6,7 +6,10 @@ migration script splits into statements, its error class and the words of its re
 
 - a file is opened in WAL mode (`synchronous=NORMAL`, so readers never block the writer and a commit does not wait
   for a full sync) with a busy timeout of `BUSY_TIMEOUT_S`, and migrated forward to `len(migrations())` (index + 1 is
-  the version, kept in `PRAGMA user_version`), each migration in its own transaction;
+  the version, kept in `PRAGMA user_version`), each migration in its own transaction. The mode actually set is kept
+  for `/health` (`journal_mode`): a filesystem that cannot do WAL gets another, where readers block the writer.
+  `synchronous=NORMAL` survives a crash of the process; a power loss can lose the last commits, which a delivery
+  survives (it is at least once, with dedupe by evidence);
 - a database from a newer onloop is refused untouched;
 - a read-only open (`mode=ro`) never migrates, and refuses a database at another version;
 - `now()` is SQLite's own clock in the one stored format unless a test passes `clock`;
@@ -45,10 +48,17 @@ class Locked(sqlite3.OperationalError):
 
 
 _locks_lock = threading.Lock()
-LOCKS: dict[str, float] = {"retried": 0, "failed": 0, "longest_tx_s": 0.0}
+LOCKS: dict[str, Any] = {"retried": 0, "failed": 0, "longest_tx_s": 0.0, "journal_mode": None}
 
 
-def locks() -> dict[str, float]:
+def _set_mode(mode: str) -> None:
+    """The journal mode the last writable open got: `wal`, or another where the filesystem cannot do WAL (a network
+    drive), where readers block the writer. /health shows it."""
+    with _locks_lock:
+        LOCKS["journal_mode"] = mode
+
+
+def locks() -> dict[str, Any]:
     with _locks_lock:
         return dict(LOCKS)
 
@@ -62,8 +72,27 @@ def _count(key: str, value: float = 1) -> None:
 
 
 def _is_lock(e: sqlite3.OperationalError) -> bool:
+    """Another connection holds the lock (SQLITE_BUSY), the one error a wait and a retry can help. Not SQLITE_LOCKED
+    ("database table is locked"), a conflict inside one connection."""
+    code = getattr(e, "sqlite_errorcode", None)
+    if code is not None:
+        return code & 0xFF == sqlite3.SQLITE_BUSY
     msg = str(e).lower()
-    return "locked" in msg or "busy" in msg
+    return "database is locked" in msg or "busy" in msg
+
+
+def _retry(step: Callable[[], Any], what: str) -> Any:
+    for attempt in range(LOCK_RETRIES + 1):
+        try:
+            return step()
+        except sqlite3.OperationalError as e:
+            if not _is_lock(e):
+                raise
+            if attempt == LOCK_RETRIES:
+                _count("failed")
+                raise Locked(f"{what} through {attempt + 1} attempts") from e
+            _count("retried")
+            time.sleep(LOCK_BACKOFF_S[min(attempt, len(LOCK_BACKOFF_S) - 1)])
 
 
 class SQLiteDB:
@@ -116,7 +145,11 @@ class SQLiteDB:
         if self.FOREIGN_KEYS:
             self.conn.execute("PRAGMA foreign_keys=ON")
         if not readonly:
-            self.conn.execute("PRAGMA journal_mode=WAL")
+            mode = _retry(
+                lambda: self.conn.execute("PRAGMA journal_mode=WAL").fetchone()[0],
+                "switching the ledger to WAL",
+            )
+            _set_mode(str(mode).lower() if mode else "unknown")
             self.conn.execute(
                 "PRAGMA synchronous=NORMAL"
             )  # with WAL: durable at each checkpoint, safe against corruption
@@ -172,27 +205,26 @@ class SQLiteDB:
             yield
         except BaseException:
             self._depth = 0
-            self.conn.execute("ROLLBACK")
-            raise
-        finally:
+            if self.conn.in_transaction:  # SQLite may have ended it already (a full disk, an I/O error)
+                self.conn.execute("ROLLBACK")
             _count("longest_tx_s", time.monotonic() - started)
+            raise
         self._depth = 0
-        self.conn.execute("COMMIT")
+        self._commit()
+        _count("longest_tx_s", time.monotonic() - started)  # from BEGIN to after COMMIT
 
     def _begin(self) -> None:
         """BEGIN IMMEDIATE, tried again after a backoff while another process holds the write lock; `Locked` when it
         held it through every attempt."""
-        for attempt in range(LOCK_RETRIES + 1):
-            try:
-                self.conn.execute("BEGIN IMMEDIATE")
-                return
-            except sqlite3.OperationalError as e:
-                if not _is_lock(e):
-                    raise
-                if attempt == LOCK_RETRIES:
-                    _count("failed")
-                    raise Locked(
-                        f"the write lock was held by another process through {attempt + 1} attempts"
-                    ) from e
-                _count("retried")
-                time.sleep(LOCK_BACKOFF_S[min(attempt, len(LOCK_BACKOFF_S) - 1)])
+        _retry(lambda: self.conn.execute("BEGIN IMMEDIATE"), "the write lock was held by another process")
+
+    def _commit(self) -> None:
+        """COMMIT, tried again the same way. In WAL a commit rarely waits; in another journal mode it waits for readers.
+        A busy COMMIT leaves the transaction open, so after the last attempt it is rolled back: the write is not made,
+        `Locked` says so, and the connection is free for the next one."""
+        try:
+            _retry(lambda: self.conn.execute("COMMIT"), "the commit could not take the lock")
+        except BaseException:
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK")
+            raise

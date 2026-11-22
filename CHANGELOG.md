@@ -54,6 +54,12 @@ All notable changes to this project are recorded here. The format follows
   onloop's own dogfood after the change (2026-11-22, three carried turns and onloopd's ticks): the longest write
   transaction took 16 ms, with no retry and no failed write. (The commit's message said no long write had shown up
   before this was measured; this is the measurement.)
+  From a carried review of it: a COMMIT that cannot take the lock is tried again the same way, then rolled back,
+  so the connection never stays inside an open transaction; the journal mode the open actually got is on `/health`
+  (`receipts.locks.journal_mode`: anything but `wal` means a filesystem where readers block the writer); a lock error
+  inside a tick ends that tick instead of each step waiting in turn, and the heartbeat is still written. With
+  `synchronous=NORMAL` a power loss can lose the last commits; a delivery survives that (at least once, deduped by
+  evidence).
 - **A carrier booting in another carrier's grant window no longer releases its lease** (R7a's round 2, moved into
   0.6.0): a lease is granted before its run has a pid, and a second carrier's boot took it for an orphan, so two
   turns could run on one session. Each carrier boot now registers its instance (pid and creation time), and

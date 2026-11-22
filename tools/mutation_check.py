@@ -66,8 +66,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a failed transaction is committed",
         "src/onloop/sqlitedb.py",
-        'self.conn.execute("ROLLBACK")',
-        'self.conn.execute("COMMIT")',
+        '# SQLite may have ended it already (a full disk, an I/O error)\n                self.conn.execute("ROLLBACK")',
+        '# SQLite may have ended it already (a full disk, an I/O error)\n                self.conn.execute("COMMIT")',
         ["tests/test_legacy_poll_store.py::test_a_failed_transaction_leaves_nothing"],
     ),
     (
@@ -2218,8 +2218,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a write gives up at the first busy timeout, so a lock held a moment longer loses it",
         "src/onloop/sqlitedb.py",
-        "                if attempt == LOCK_RETRIES:",
-        "                if True:",
+        "            if attempt == LOCK_RETRIES:",
+        "            if True:",
         [
             "tests/test_ledger_locks.py::test_a_write_waits_out_a_lock_held_longer_than_one_attempt_and_is_made"
         ],
@@ -2227,8 +2227,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a failed write is not counted, so /health hides it",
         "src/onloop/sqlitedb.py",
-        '                    _count("failed")',
-        "                    pass",
+        '                _count("failed")',
+        "                pass",
         [
             "tests/test_ledger_locks.py::test_a_write_the_lock_outlasts_fails_cleanly_counted_and_the_next_one_is_made"
         ],
@@ -2253,6 +2253,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "            return False\n        ledger.append(",
         "            pass\n        ledger.append(",
         ["tests/test_lease_recover.py::test_a_lease_is_released_once_whoever_releases_it_second"],
+    ),
+    (
+        "a busy COMMIT is not retried and escapes as a plain error",
+        "src/onloop/sqlitedb.py",
+        '            _retry(lambda: self.conn.execute("COMMIT"), "the commit could not take the lock")',
+        '            self.conn.execute("COMMIT")',
+        [
+            "tests/test_ledger_locks.py::test_a_commit_that_cannot_take_the_lock_is_rolled_back_and_the_connection_goes_on"
+        ],
     ),
     (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
