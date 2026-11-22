@@ -2148,7 +2148,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "records of a kind onloop does not keep are not counted, so received minus kept reads as a loss",
         "src/onloop/daemon/otlp.py",
-        "                    not_kept += 1",
+        "                    why[event] += 1",
         "                    pass",
         [
             "tests/test_otlp_receiver.py::test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged"
@@ -2157,8 +2157,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a record of a kept kind with no session is not counted as unplaced",
         "src/onloop/daemon/otlp.py",
-        "                    unplaced += 1",
-        "                    pass",
+        '        return "unplaced"',
+        '        return "not_kept_kind"',
         [
             "tests/test_otlp_receiver.py::test_a_record_of_a_kept_kind_without_a_session_is_counted_as_unplaced"
         ],

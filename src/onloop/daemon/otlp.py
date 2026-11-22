@@ -156,12 +156,19 @@ def _list(node: Any, key: str) -> list[Any]:
 
 def events_for(signal: str, body: dict[str, Any]) -> list[dict[str, Any]]:
     """The ledger events one OTLP export request carries. Pure: scrubs `body` in place first. Raises WriteRefused."""
+    return read(signal, body)[0]
+
+
+def read(signal: str, body: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """The events one export request carries, and how many records it held and why each one left out was left out
+    (`not_kept_kind`, `unplaced`): counted where the decision is made, so the receipts' sums hold by construction."""
+    why = {"received": 0, "not_kept_kind": 0, "unplaced": 0}
     if signal == "metrics":
         if "resourceMetrics" not in body:
             raise WriteRefused(400, "not an OTLP metrics export request: no `resourceMetrics`")
         _list(body, "resourceMetrics")
         scrub(body)
-        return []
+        return [], why
     if signal != "logs":
         raise WriteRefused(404, f"no OTLP signal {signal!r}; onloopd takes /v1/logs and /v1/metrics")
     if "resourceLogs" not in body:
@@ -177,26 +184,33 @@ def events_for(signal: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         run = run if isinstance(run, str) and telemetry.RUN_ID.match(run) else None
         for sl in _list(rl, "scopeLogs"):
             for rec in _list(sl, "logRecords"):
+                why["received"] += 1
                 event = _event(rec, role, run)
-                if event is not None:
+                if isinstance(event, dict):
                     out.append(event)
-    return out
+                else:
+                    why[event] += 1
+    return out, why
 
 
-def _event(rec: Any, role: str | None, run: str | None = None) -> dict[str, Any] | None:
+def _event(rec: Any, role: str | None, run: str | None = None) -> dict[str, Any] | str:
+    """The ledger event a log record becomes, or why it is left out: `not_kept_kind` (a kind onloop does not keep, or
+    no name) or `unplaced` (a kept kind with no session id)."""
     if not isinstance(rec, dict):
-        return None
+        return "not_kept_kind"
     a = _attrs(rec)
     name = a.get("event.name")
     if not isinstance(name, str):
         body = rec.get("body")
         name = body.get("stringValue") if isinstance(body, dict) else None
     if not isinstance(name, str):
-        return None
+        return "not_kept_kind"
     kind = KIND_OF.get(name.removeprefix("claude_code."))
     session = a.get("session.id")
-    if kind is None or not isinstance(session, str) or not _SESSION.match(session):
-        return None
+    if kind is None:
+        return "not_kept_kind"
+    if not isinstance(session, str) or not _SESSION.match(session):
+        return "unplaced"
     payload: dict[str, Any] = {"session_id": session, "role": role}
     if run:
         payload["run_id"] = run
@@ -235,38 +249,14 @@ def _event_id(kind: str, session: str, payload: dict[str, Any], seq: int | None)
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
-def _records(signal: str, body: dict[str, Any]) -> tuple[int, int, int]:
-    """How many log records the body holds; of them, how many are of a kind onloop does not keep (dropped on purpose:
-    only `KIND_OF`'s three are kept), and how many are of a kept kind but carry no session id to place them."""
-    if signal != "logs":
-        return 0, 0, 0
-    received = not_kept = unplaced = 0
-    for rl in _list(body, "resourceLogs"):
-        for sl in _list(rl, "scopeLogs"):
-            for rec in _list(sl, "logRecords"):
-                received += 1
-                a = _attrs(rec) if isinstance(rec, dict) else {}
-                name = a.get("event.name")
-                if not isinstance(name, str) and isinstance(rec, dict) and isinstance(rec.get("body"), dict):
-                    name = rec["body"].get("stringValue")
-                if not isinstance(name, str) or KIND_OF.get(name.removeprefix("claude_code.")) is None:
-                    not_kept += 1
-                elif not (isinstance(a.get("session.id"), str) and _SESSION.match(a["session.id"])):
-                    unplaced += 1
-    return received, not_kept, unplaced
-
-
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
     """The `/v1/` write route: `rest` is `logs` or `metrics`. Logs every event of the request in one transaction, and
     reports how many records came, were kept, were stored, and were already logged (`receipts`)."""
     signal = rest.strip("/")
-    events = events_for(signal, body)
+    events, why = read(signal, body)
     stored = len(ledger.append_batch(events)) if events else 0
-    received, not_kept, unplaced = _records(signal, body)
     counts = {
-        "received": received,
-        "not_kept_kind": not_kept,
-        "unplaced": unplaced,
+        **why,
         "kept": len(events),
         "stored": stored,
         "duplicate": len(events) - stored,

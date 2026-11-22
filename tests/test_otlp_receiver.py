@@ -347,3 +347,21 @@ def test_a_record_of_a_kept_kind_without_a_session_is_counted_as_unplaced(live):
     r = _health(s)["receipts"]["records"]["v1"]
     assert (r["received"], r["not_kept_kind"], r["unplaced"], r["kept"]) == (2, 0, 1, 1)
     assert r["received"] == r["not_kept_kind"] + r["unplaced"] + r["kept"]
+
+
+def test_the_receipts_sums_hold_on_any_mix_of_records():
+    """A carried review of the receipts (node r2-receipts-review): the reasons a record is left out are counted where
+    it is left out, so received = not_kept_kind + unplaced + kept for any body."""
+    import random
+
+    rnd = random.Random(7)
+    names = ["api_request", "user_prompt", "tool_result", "some_other_event", "claude_code.api_request"]
+    for _ in range(50):
+        recs = []
+        for i in range(rnd.randint(0, 12)):
+            r = record(rnd.choice(names), i, session=rnd.choice(["s-1", "", "s-2"]))
+            if rnd.random() < 0.1:
+                r = {"body": {}}  # a record with no name at all
+            recs.append(r)
+        events, why = otlp.read("logs", logs(*recs))
+        assert why["received"] == len(recs) == why["not_kept_kind"] + why["unplaced"] + len(events)
