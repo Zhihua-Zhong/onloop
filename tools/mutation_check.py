@@ -2046,8 +2046,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a run's coverage counts another session's telemetry as its own",
         "src/onloop/timeline.py",
-        '            if qp.get("session_id") == sid:',
-        "            if True:",
+        '            if qp.get("session_id") == sid:\n                # untagged',
+        "            if True:\n                # untagged",
         [
             "tests/test_coverage.py::test_a_run_whose_telemetry_brought_what_it_reported_is_covered_and_a_short_one_is_flagged"
         ],
@@ -2269,6 +2269,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         "  return Number.isFinite(v) && v > 0 && v < nowMs ? v : null;",
         "  return null;",
         ["tests/test_web_units.py::test_the_replays_index_gives_the_ledgers_own_frames_in_the_page"],
+    ),
+    (
+        "a nested process's tokens are counted as the run's coverage, so it reads as counted twice",
+        "src/onloop/timeline.py",
+        '            if qp.get("session_id") == sid:\n                got += tokens_of(qp)[0]  # the run\'s own telemetry',
+        "            if True:\n                got += tokens_of(qp)[0]  # the run's own telemetry",
+        [
+            "tests/test_coverage.py::test_a_tagged_record_from_another_session_is_the_runs_nested_cost_not_its_coverage"
+        ],
     ),
     (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",

@@ -188,3 +188,15 @@ def test_more_than_was_reported_or_telemetry_against_nothing_is_flagged_high_and
         cov = tl.coverage(led, at("08:00"), at("10:00"))
     assert [(x["run"], x["share"]) for x in cov["high"]] == [("r1", 1.1), ("r2", None)]
     assert [(x["run"], x["share"]) for x in cov["low"]] == [("r3", 0.95)]
+
+
+def test_a_tagged_record_from_another_session_is_the_runs_nested_cost_not_its_coverage(tmp_path):
+    """A carried recheck (node r2-coverage-recheck, its A): a claude the run starts inherits the run id with a session
+    of its own; its tokens are not in the run's CLI count, so they are shown apart, never as over-coverage."""
+    c = Clock()
+    with Ledger(tmp_path / "l.db", clock=c) as led:
+        tagged(led, c, at("09:01"), "own", "s1", "r1", 1000)
+        tagged(led, c, at("09:01"), "child", "s-child", "r1", 300)
+        run(led, c, "r1", "s1", at("09:00"), at("09:02"), usage(1000))
+        cov = tl.coverage(led, at("08:00"), at("10:00"))
+    assert cov["high"] == [] and cov["low"] == [] and cov["received"] == 1000

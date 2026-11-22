@@ -98,6 +98,7 @@ All notable changes to this project are recorded here. The format follows
   Replay says how much of it the window's telemetry brought, naming any run below 95%, and any above 102% or with
   telemetry against a count of nothing (`GET /api/replay`'s `coverage`, `low` and `high`). A carried run's telemetry
   is tagged with its run id (`onloop.run`), so a batch that lands after the next run started is still its own run's.
+  A tagged record from another session (a process the run started) is counted apart, as the run's `nested` cost.
 - **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
   not a step), and `run.started` records the repository and branch the run works on, so its requests go to the next
   commit's `Node:` trailer there, labelled "attributed by rule".

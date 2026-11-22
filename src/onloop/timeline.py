@@ -390,12 +390,18 @@ def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
         later = [t for t in by_session[sid] if t > t0]
         if later:
             t1 = min(t1, later[0])
-        got = 0
+        got = nested = 0
         for q in ledger.select(
             "SELECT payload FROM events WHERE kind = 'cost.request' AND json_extract(payload, '$.run_id') = ?",
             (p["id"],),
         ):
-            got += tokens_of(_payload(q))[0]  # the run's own telemetry, wherever it landed in time
+            qp = _payload(q)
+            if qp.get("session_id") == sid:
+                got += tokens_of(qp)[0]  # the run's own telemetry, wherever it landed in time
+            else:
+                # a process the run started inherits its environment, run id included, but has a session of its
+                # own: its tokens are the run's real cost, and not in the run's own CLI count, so apart
+                nested += tokens_of(qp)[0]
         for q in ledger.select(
             "SELECT payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system < ? "
             "AND json_extract(payload, '$.run_id') IS NULL",
@@ -403,9 +409,8 @@ def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
         ):
             qp = _payload(q)
             if qp.get("session_id") == sid:
-                got += tokens_of(qp)[
-                    0
-                ]  # untagged (a build before onloop.run): by the run's time on its session
+                # untagged (a build before onloop.run): by the run's time on its session
+                got += tokens_of(qp)[0]
         share = got / u["total"] if u["total"] else (1.0 if got == 0 else None)
         runs.append(
             {
@@ -414,6 +419,7 @@ def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
                 "ended_ms": ms(r["ts_system"]),
                 "reported": u["total"],
                 "received": got,
+                "nested": nested,
                 "share": None if share is None else round(share, 4),
                 "_share": share,
             }
