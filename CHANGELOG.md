@@ -37,6 +37,10 @@ All notable changes to this project are recorded here. The format follows
   an artifact when a test fails. Until now the specs ran nowhere.
 - **Python 3.13 and 3.14** are in CI's test matrix on Linux and Windows, beside 3.11 and 3.12, and in the package's
   classifiers. `requires-python` stays `>=3.11`.
+- **Releases are built by CI from their tag**: on a `v*` tag, the `release` workflow checks the tag names the
+  package's version, builds the UI, the wheel and the sdist, writes `SHA256SUMS`, attests where each file was built
+  (GitHub artifact attestations), and attaches all of it to a draft release, which a person publishes.
+  [docs/release.md](docs/release.md) has the steps and how to verify a release with `gh attestation verify`.
 
 ### Fixed
 

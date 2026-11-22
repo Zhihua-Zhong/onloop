@@ -2241,6 +2241,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_ledger_locks.py::test_every_writable_open_is_wal_with_normal_sync_and_the_busy_timeout"],
     ),
     (
+        "the release workflow publishes the release itself instead of drafting it for a person",
+        ".github/workflows/release.yml",
+        "            --draft --verify-tag --title",
+        "            --verify-tag --title",
+        ["tests/test_workflows.py::test_the_release_workflow_builds_from_the_tag_attests_and_only_drafts"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

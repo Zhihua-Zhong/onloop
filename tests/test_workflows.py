@@ -91,3 +91,42 @@ def test_the_test_matrix_covers_every_python_the_package_says_it_supports():
     matrix = doc["jobs"]["test"]["strategy"]["matrix"]["python"]
     listed = re.findall(r"Programming Language :: Python :: (3\.\d+)", (ROOT / "pyproject.toml").read_text())
     assert matrix == listed == ["3.11", "3.12", "3.13", "3.14"]
+
+
+def test_the_release_workflow_builds_from_the_tag_attests_and_only_drafts():
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    assert doc[True]["push"]["tags"] == ["v*"] and set(doc[True]) == {"push"}  # YAML reads `on:` as True
+    assert doc["permissions"] == {"contents": "read"}
+    job = doc["jobs"]["draft"]
+    assert job["permissions"] == {"contents": "write", "id-token": "write", "attestations": "write"}
+    steps = job["steps"]
+    runs = [s.get("run", "") for s in steps]
+    at = {
+        name: next(i for i, r in enumerate(runs) if key in r)
+        for name, key in (
+            ("version", 'test "$tag" = "$version"'),
+            ("ui", "npm run build"),
+            ("build", "python -m build"),
+            ("sums", "sha256sum"),
+            ("draft", "gh release create"),
+        )
+    }
+    attest = next(
+        i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/attest-build-provenance@")
+    )
+    assert at["version"] < at["ui"] < at["build"] < at["sums"] < attest < at["draft"]
+    assert (
+        "dist/*.whl" in steps[attest]["with"]["subject-path"]
+        and "dist/*.tar.gz" in steps[attest]["with"]["subject-path"]
+    )
+    draft = runs[at["draft"]]
+    assert "--draft" in draft and "--verify-tag" in draft and "SHA256SUMS" in draft
+    assert "publish" not in draft and "--draft=false" not in draft
+
+
+def test_the_release_doc_says_how_to_verify_with_gh_attestation():
+    text = (ROOT / "docs" / "release.md").read_text(encoding="utf-8")
+    assert (
+        "gh attestation verify onloop-X.Y.Z-py3-none-any.whl" in text
+        and "sha256sum --check SHA256SUMS" in text
+    )

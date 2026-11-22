@@ -92,7 +92,8 @@ module must be given a layer there.
 - A release is an annotated tag `vX.Y.Z` (for example `v0.3.0`, `v0.3.0rc1`), made after the changelog section for
   it is written. A minor release is cut on a branch `release/X.Y` from `main`, and its patch releases (`X.Y.Z`) are
   tagged on that branch. CI runs on `main`, on every `release/**` branch and on every `v*` tag. A release commit is
-  published only after CI is green on that exact commit. Tags are never moved.
+  published only after CI is green on that exact commit. Tags are never moved. From 0.6.0 CI builds, attests and
+  drafts the release from its tag, and a person publishes the draft: [docs/release.md](docs/release.md).
 
 ## Branches
 

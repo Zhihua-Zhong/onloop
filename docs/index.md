@@ -4,6 +4,8 @@
 - [Concepts](concepts.md): policy, reserved classes, classification, the gate, the audit, agent identity, the
   ledger and the watchdog
 - [Architecture](architecture.md): the package's layers, the supported surface, the extension points and where state lives
+- [Releasing](release.md): how a release is built and attested by CI from its tag, published by a person, and
+  verified with `gh attestation verify`
 - [Configuration reference](configuration.md): every field of `onloop.yaml` and `ledger.yaml` (the people's work queue), and every command
 - [Slots, pre-flight and the KPIs](automation.md): events, slot, preflight, kpi, and the `slots:` and
   `automation:` policy blocks
