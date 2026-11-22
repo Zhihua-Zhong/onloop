@@ -83,13 +83,16 @@ def target(state: pathlib.Path) -> tuple[int, str] | None:
     return (port, token) if token else None
 
 
-def for_session(base: Mapping[str, str], state: pathlib.Path | None, role: str) -> dict[str, str]:
+def for_session(
+    base: Mapping[str, str], state: pathlib.Path | None, role: str, run: str | None = None
+) -> dict[str, str]:
     """A started session's environment: onloop's OTel environment toward the onloopd at `state`, or, when none runs
-    there (or `state` is None), `base` with no OTel variable at all, so the session exports nothing."""
+    there (or `state` is None), `base` with no OTel variable at all, so the session exports nothing. `run`, a carried
+    run's id, tags every record the run sends, so the cross-check counts a run's own telemetry, not a time window."""
     to = target(state) if state is not None else None
     if to is None or not _ROLE.match(role):
         return without(base)
-    return env(base, port=to[0], token=to[1], role=role)
+    return env(base, port=to[0], token=to[1], role=role, run=run)
 
 
 def without(base: Mapping[str, str]) -> dict[str, str]:
@@ -98,10 +101,15 @@ def without(base: Mapping[str, str]) -> dict[str, str]:
     return {k: v for k, v in base.items() if not k.upper().startswith("OTEL_") and k.upper() not in _CLEARED}
 
 
-def env(base: Mapping[str, str], *, port: int, token: str, role: str) -> dict[str, str]:
+def env(
+    base: Mapping[str, str], *, port: int, token: str, role: str, run: str | None = None
+) -> dict[str, str]:
     """`base`, less every OTel variable, plus onloop's own: logs to onloopd only, metrics and traces off."""
     if not _ROLE.match(role):
         raise ValueError(f"not a role name: {role!r}")
+    if run is not None and not RUN_ID.match(run):
+        raise ValueError(f"not a run id: {run!r}")
+    resource = f"onloop.role={role}" + (f",onloop.run={run}" if run else "")
     out = without(base)
     out.update(
         {
@@ -112,7 +120,7 @@ def env(base: Mapping[str, str], *, port: int, token: str, role: str) -> dict[st
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"http://{HOST}:{int(port)}",
             "OTEL_EXPORTER_OTLP_HEADERS": f"Authorization=Bearer {token}",
-            "OTEL_RESOURCE_ATTRIBUTES": f"onloop.role={role}",
+            "OTEL_RESOURCE_ATTRIBUTES": resource,
             "OTEL_LOGS_EXPORT_INTERVAL": "5000",
             "OTEL_LOG_USER_PROMPTS": "0",
             "OTEL_LOG_TOOL_DETAILS": "0",
@@ -120,6 +128,9 @@ def env(base: Mapping[str, str], *, port: int, token: str, role: str) -> dict[st
         }
     )
     return out
+
+
+RUN_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")  # a carried run's id, as `onloop.run` on its telemetry
 
 
 def parse_step(text: str) -> tuple[str, str]:

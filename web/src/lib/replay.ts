@@ -13,8 +13,8 @@ export interface LaneAt {
   requests: number;
 }
 
-export interface CoverageRun { run: string; lane: string; ended_ms: number; reported: number; received: number; share: number }
-export interface Coverage { runs: number; reported: number; received: number; share: number | null; low: CoverageRun[]; low_below: number }
+export interface CoverageRun { run: string; lane: string; ended_ms: number; reported: number; received: number; share: number | null }
+export interface Coverage { runs: number; reported: number; received: number; share: number | null; low: CoverageRun[]; high?: CoverageRun[]; low_below: number; high_above?: number }
 
 export interface ReplayWindow {
   from: string;

@@ -308,3 +308,31 @@ def test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_alr
     assert r["since"] and r["requests"] == {"v1": {"200": 2, "400": 1, "401": 1, "415": 1}}
     assert r["records"] == {"v1": {"received": 8, "kept": 6, "stored": 3, "duplicate": 3}}
     assert "SECRET" not in json.dumps(r) and "claude-test" not in json.dumps(r)
+
+
+def test_a_carried_runs_id_tags_its_records_and_keys_those_with_no_prompt_or_request_id(live):
+    """A carried run's environment sets `onloop.run` (telemetry.env); the receiver keeps it, and a record with neither a
+    prompt id nor a request id is keyed on its run as well, so two runs' sequence 7 are two records."""
+    s, led = live
+
+    def body(run):
+        b = logs(record("tool_result", 7, tool_name="Read", success="true"))
+        b["resourceLogs"][0]["resource"]["attributes"] += attrs({"onloop.run": run})
+        return json.dumps(b).encode()
+
+    for raw in (body("run-a"), body("run-b"), body("run-b")):
+        assert post(s, "/v1/logs", raw)[0] == 200
+    assert [json.loads(r["payload"]).get("run_id") for r in otel_rows(led)] == ["run-a", "run-b"]
+
+
+def test_the_carried_runs_environment_names_its_run():
+    from onloop import telemetry
+
+    e = telemetry.env({}, port=1, token="t", role="builder", run="run-0123")
+    assert e["OTEL_RESOURCE_ATTRIBUTES"] == "onloop.role=builder,onloop.run=run-0123"
+    assert (
+        telemetry.env({}, port=1, token="t", role="builder")["OTEL_RESOURCE_ATTRIBUTES"]
+        == "onloop.role=builder"
+    )
+    with pytest.raises(ValueError):
+        telemetry.env({}, port=1, token="t", role="builder", run="a,b=c")  # never a second attribute

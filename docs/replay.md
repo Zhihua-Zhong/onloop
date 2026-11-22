@@ -82,7 +82,7 @@ variable removed, and no user settings file (whose `env` would win). A session o
 from onloop's own folders. Metrics (`POST /v1/metrics`) are answered and stored nowhere.
 
 **Each record once.** A batch the exporter sends twice is logged once: a model request is keyed on its request id,
-any other record on its session, its prompt id and its sequence number. Claude Code numbers records per process, and a
+any other record on its session, its prompt id (else the carried run's id) and its sequence number. Claude Code numbers records per process, and a
 carried turn is a new process resuming the same session, so the sequence starts again at each run; before 0.6.0 a
 resumed run's records were taken for the earlier run's and dropped.
 
@@ -92,10 +92,12 @@ only, never a body: a refused or dropped batch is never invisible.
 
 **The cross-check.** At the end of a carried run the carrier records the CLI's own count of the run's tokens (each
 turn's usage, per model, summed over the run; never the session's running total, which on a resumed session includes
-earlier runs) on `run.ended`. Replay compares it with what the run's telemetry
-brought (its session's requests from the run's start to its end, and a few seconds after for the last export) and says
-so under the summary: "Telemetry brought 99% of the tokens the 6 carried runs in this window reported". A run below
-95% is named, in red, with its share: its tokens on the page are short. A session onloop did not start has no such
+earlier runs) on `run.ended`. Every record a carried run sends is tagged with its run id (`onloop.run`, a resource
+attribute onloop sets in the run's environment), so Replay compares the count with that run's own telemetry, wherever
+it landed in time (a record without the tag, from an older build, counts by the run's time on its session). It says so
+under the summary: "Telemetry brought 99% of the tokens the 6 carried runs in this window reported". A run below 95%
+is named, in red, with its share: its tokens on the page are short. A run above 102%, or with telemetry against a
+count of nothing, is named too: something was counted twice or taken from another run. A session onloop did not start has no such
 count, so it is not cross-checked.
 
 ## `onloop open <role>`: your own session, measured
@@ -134,6 +136,8 @@ commits changed, each at its latest commit then.
 ## Limits
 
 - A turn whose start was not recorded counts no working time on its lane; it shows as a mark at its end.
+- Rule E reads the branch's own commits (`git log --first-parent`): a merged side branch's `Node:` commit is not
+  the branch's next commit.
 - Rule E needs the session's branch: sessions onloop did not start, or that ran outside a git repository, leave
   their requests between steps. On a branch several roles worked on since the last `Node:` commit, the rule places
   nothing: it reads only the branch and a commit's time, so it cannot tell whose the commit is.

@@ -23,6 +23,8 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 
+- **Rule E reads the branch's own commits** (`git log --first-parent`, in time order): a merged side branch's `Node:`
+  commit no longer takes a request made on the branch it was merged into.
 - **Rule E no longer guesses on a shared branch** (the dogfood's round 2): clause 2 places a request on the next
   commit's node only when one role alone worked on that branch since the previous `Node:` commit. When several did,
   the requests stay between steps, and Replay says "branch shared by N roles" (`between_shared` in
@@ -48,8 +50,9 @@ All notable changes to this project are recorded here. The format follows
 - **What came in, and the cross-check** (the onloop lead's rule: a silent drop is never invisible again). `GET /health`
   counts every write by route and answer and every telemetry record received, kept, stored and already logged, since
   onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and
-  Replay says how much of it the window's telemetry brought, naming any run below 95%
-  (`GET /api/replay`'s `coverage`).
+  Replay says how much of it the window's telemetry brought, naming any run below 95%, and any above 102% or with
+  telemetry against a count of nothing (`GET /api/replay`'s `coverage`, `low` and `high`). A carried run's telemetry
+  is tagged with its run id (`onloop.run`), so a batch that lands after the next run started is still its own run's.
 - **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
   not a step), and `run.started` records the repository and branch the run works on, so its requests go to the next
   commit's `Node:` trailer there, labelled "attributed by rule".

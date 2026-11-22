@@ -203,12 +203,12 @@ class Carrier:
             path.write_text(text, encoding="utf-8", newline="\n")
         return path
 
-    def child_env(self, role: CarriedRole) -> dict[str, str]:
+    def child_env(self, role: CarriedRole, run_id: str | None = None) -> dict[str, str]:
         """A carried turn's environment (decision 0019): onloopd's own, less the CLAUDE*, ANTHROPIC* and OTEL_*
         variables, plus onloop's OTel environment, so the turn's telemetry goes to this onloopd only. Without onloopd's
         port and token it has no OTel variable at all, and with `--setting-sources project` no OTel key loads: the turn
-        exports nothing."""
-        return telemetry.for_session(guards.child_env(self.environ), self.state, role.name)
+        exports nothing. The run's id tags its telemetry (`onloop.run`), for the cross-check."""
+        return telemetry.for_session(guards.child_env(self.environ), self.state, role.name, run=run_id)
 
     def _place(self, role: CarriedRole) -> dict[str, str | None]:
         """The role's repository and branch, for rule E (decision 0019); read once per role, git is not free."""
@@ -759,7 +759,7 @@ class Carrier:
         spec = runner.RunSpec(
             argv=argv,
             cwd=role.cwd,
-            env=self.child_env(role),
+            env=self.child_env(role, claim.run_id),
             message=text,
             wall_s=role.wall_s,
             silence_s=role.silence_s,

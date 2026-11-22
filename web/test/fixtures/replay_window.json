@@ -633,6 +633,8 @@
    ]
   },
   "coverage": {
+   "high": [],
+   "high_above": 1.02,
    "low": [],
    "low_below": 0.95,
    "received": 0,

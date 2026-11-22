@@ -32,10 +32,12 @@ creation, with cache reads apart since they cost far less. A request is charged 
 3. else to the lane's **between steps**: never to the nearest step (spike S2: that would about double each step's
    cost).
 
-**Coverage.** A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`, from its stream's last
-result). Its telemetry is every `cost.request` of its session from `run.started` until `run.ended`, plus a short
+**Coverage.** A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`: each turn's own, summed
+over the run's results). Its telemetry is every `cost.request` tagged with its run id (`onloop.run`, set in the run's
+environment), and, for records without a run id, its session's from `run.started` until `run.ended` plus a short
 grace for the last export (never past the session's next run). A run whose telemetry brought less than
-`COVERAGE_LOW` of what it reported is flagged: the page's figures for it are short, and say so.
+`COVERAGE_LOW` of what it reported is flagged low: the page's figures for it are short. One above `COVERAGE_HIGH`, or
+with telemetry against a count of nothing, is flagged high: something was counted twice or taken from another run.
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_tokens", "cache
 NO_ROLE = "(no role)"
 MAX_REQUEST_S = 3600  # the longest a model request is taken to run
 COVERAGE_LOW = 0.95  # a run whose telemetry brought less than this share of its reported tokens is flagged
+COVERAGE_HIGH = 1.02  # and one whose telemetry brought more than this share
 COVERAGE_GRACE_S = 30  # the last export can land just after run.ended
 
 
@@ -256,6 +259,7 @@ def node_commits(repo: str, branch: str) -> tuple[list[int], list[str | None]]:
                 "-C",
                 repo,
                 "log",
+                "--first-parent",  # the branch's own commits, not a merged side branch's
                 "--reverse",
                 "--format=%ct%x1f%(trailers:key=Node,valueonly,separator=%x1e)",
                 f"refs/heads/{branch}",
@@ -280,7 +284,10 @@ def node_commits(repo: str, branch: str) -> tuple[list[int], list[str | None]]:
         node = trailer.split("\x1e")[0].strip()
         times.append(int(ct) * 1000)
         nodes.append(node if _NODE.match(node) else None)
-    return times, nodes
+    order = sorted(
+        range(len(times)), key=lambda i: times[i]
+    )  # committer times need not rise (an amend, a skewed clock)
+    return [times[i] for i in order], [nodes[i] for i in order]
 
 
 def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
@@ -356,7 +363,8 @@ def _roles_on(
 
 def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
     """Every carried run that ended in [start, end] and reported its tokens: what it reported, what its telemetry brought,
-    and the runs below `COVERAGE_LOW`. Runs from before the CLI's count was recorded are not counted."""
+    the runs below `COVERAGE_LOW` and those above `COVERAGE_HIGH` (or with telemetry against a count of nothing). Runs
+    from before the CLI's count was recorded are not counted."""
     started = {}
     for r in ledger.select("SELECT ts_system, payload FROM events WHERE kind = 'run.started' ORDER BY seq"):
         p = _payload(r)
@@ -384,13 +392,21 @@ def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
             t1 = min(t1, later[0])
         got = 0
         for q in ledger.select(
-            "SELECT payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system < ?",
+            "SELECT payload FROM events WHERE kind = 'cost.request' AND json_extract(payload, '$.run_id') = ?",
+            (p["id"],),
+        ):
+            got += tokens_of(_payload(q))[0]  # the run's own telemetry, wherever it landed in time
+        for q in ledger.select(
+            "SELECT payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system < ? "
+            "AND json_extract(payload, '$.run_id') IS NULL",
             (_iso(t0), _iso(t1)),
         ):
             qp = _payload(q)
             if qp.get("session_id") == sid:
-                got += tokens_of(qp)[0]
-        share = got / u["total"] if u["total"] else 1.0
+                got += tokens_of(qp)[
+                    0
+                ]  # untagged (a build before onloop.run): by the run's time on its session
+        share = got / u["total"] if u["total"] else (1.0 if got == 0 else None)
         runs.append(
             {
                 "run": p["id"],
@@ -398,18 +414,26 @@ def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
                 "ended_ms": ms(r["ts_system"]),
                 "reported": u["total"],
                 "received": got,
-                "share": round(share, 4),
+                "share": None if share is None else round(share, 4),
+                "_share": share,
             }
         )
         reported += u["total"]
         received += got
+
+    def flag(x: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in x.items() if k != "_share"}
+
     return {
         "runs": len(runs),
         "reported": reported,
         "received": received,
         "share": round(received / reported, 4) if reported else None,
-        "low": [x for x in runs if x["share"] < COVERAGE_LOW],
+        # flagged on the share itself, not its rounding: 0.94996 is below 0.95
+        "low": [flag(x) for x in runs if x["_share"] is not None and x["_share"] < COVERAGE_LOW],
+        "high": [flag(x) for x in runs if x["_share"] is None or x["_share"] > COVERAGE_HIGH],
         "low_below": COVERAGE_LOW,
+        "high_above": COVERAGE_HIGH,
     }
 
 

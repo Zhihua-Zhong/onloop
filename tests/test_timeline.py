@@ -405,3 +405,37 @@ def test_rule_e_places_nothing_on_a_branch_two_roles_shared_since_the_last_node_
     assert b["between_steps"]["total"] == 7 and [(s["step"], s["tokens"]["total"]) for s in b["steps"]] == [
         ("step:node:c2", 3)
     ]
+
+
+def test_rule_e_reads_the_branchs_own_commits_not_a_merged_side_branchs(tmp_path):
+    """The carried review's case (round 4): a side branch's Node: commit, merged later, is not the next commit on the
+    branch the session works on (git log --first-parent)."""
+    import os
+    import subprocess
+
+    repo = git_repo(tmp_path / "repo", [("10:00", None)])
+
+    def git(*a, when):
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t",
+            "GIT_COMMITTER_DATE": when,
+            "GIT_AUTHOR_DATE": when,
+        }
+        subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, env=env)
+
+    git("checkout", "-q", "-b", "side", when="2026-11-02T10:01:00+00:00")
+    (repo / "s.txt").write_text("s", encoding="utf-8")
+    git("add", "s.txt", when="2026-11-02T10:01:00+00:00")
+    git("commit", "-q", "-m", "side\n\nNode: x", when="2026-11-02T10:05:00+00:00")
+    git("checkout", "-q", "work", when="2026-11-02T10:06:00+00:00")
+    git("merge", "-q", "--no-ff", "side", "-m", "merge\n\nNode: mine", when="2026-11-02T10:20:00+00:00")
+    clock = Clock()
+    with Ledger(tmp_path / "l.db", clock=clock) as led:
+        _run_on(led, clock, at("10:00"), "r1", "builder", "s5", repo)
+        _otel_as(led, clock, at("10:02"), "q1", "s5", "builder", input_tokens=7)
+        reqs = tl.requests(led, at("10:00"), at("11:00"))
+    assert [(q["step"], q["by"]) for q in reqs] == [("step:node:mine", "rule")]

@@ -75,7 +75,16 @@ def test_a_run_from_before_the_cli_count_was_recorded_is_not_counted(tmp_path):
     with Ledger(tmp_path / "l.db", clock=c) as led:
         run(led, c, "r0", "s1", at("09:00"), at("09:02"), None)
         cov = tl.coverage(led, at("08:00"), at("10:00"))
-    assert cov == {"runs": 0, "reported": 0, "received": 0, "share": None, "low": [], "low_below": 0.95}
+    assert cov == {
+        "runs": 0,
+        "reported": 0,
+        "received": 0,
+        "share": None,
+        "low": [],
+        "high": [],
+        "low_below": 0.95,
+        "high_above": 1.02,
+    }
 
 
 def result(usage=None, since_last=None, model_usage=None):
@@ -134,3 +143,48 @@ def test_without_the_per_turn_model_usage_each_turns_usage_is_summed_and_without
     b = result(snake(4, 5, 2, 0))
     assert feed(a, b).reported_usage()["total"] == 26
     assert feed(result()).reported_usage() is None and Stream().reported_usage() is None
+
+
+def tagged(led, clock, when, eid, session, run_id, total):
+    clock.t = when
+    led.append(
+        {
+            "id": eid,
+            "source": "otel",
+            "kind": "cost.request",
+            "subject_ref": f"session:{session}",
+            "actor": "builder",
+            "payload": {"session_id": session, "role": "builder", "run_id": run_id, "input_tokens": total},
+        }
+    )
+
+
+def test_a_runs_own_telemetry_counts_for_it_though_it_lands_after_the_next_run_started(tmp_path):
+    """The carried review's case (round 4): the carrier starts the next run at once, and the first run's last batch
+    lands after it. Tagged with its run id (onloop.run), it is the first run's; by time alone it was the next run's,
+    flagging the wrong one and hiding the right one."""
+    c = Clock()
+    with Ledger(tmp_path / "l.db", clock=c) as led:
+        tagged(led, c, at("09:01"), "a", "s1", "r1", 600)
+        run(led, c, "r1", "s1", at("09:00"), at("09:02"), usage(1000))
+        run(led, c, "r2", "s1", "2026-11-02T09:02:01.000Z", at("09:05"), usage(500))
+        tagged(led, c, "2026-11-02T09:02:04.000Z", "late", "s1", "r1", 400)  # r1's last batch
+        tagged(led, c, at("09:03"), "b", "s1", "r2", 100)  # r2 lost 400 of its 500
+        cov = tl.coverage(led, at("08:00"), at("10:00"))
+    assert [(x["run"], x["received"]) for x in cov["low"]] == [("r2", 100)] and cov["high"] == []
+
+
+def test_more_than_was_reported_or_telemetry_against_nothing_is_flagged_high_and_a_share_just_under_is_low(
+    tmp_path,
+):
+    c = Clock()
+    with Ledger(tmp_path / "l.db", clock=c) as led:
+        tagged(led, c, at("09:01"), "a", "s1", "r1", 1100)  # counted twice somewhere: 110%
+        run(led, c, "r1", "s1", at("09:00"), at("09:02"), usage(1000))
+        tagged(led, c, at("09:11"), "b", "s2", "r2", 50)  # telemetry against a count of nothing
+        run(led, c, "r2", "s2", at("09:10"), at("09:12"), usage(0))
+        tagged(led, c, at("09:21"), "c", "s3", "r3", 94996)  # 94.996%: rounds to 95%, still below
+        run(led, c, "r3", "s3", at("09:20"), at("09:22"), usage(100000))
+        cov = tl.coverage(led, at("08:00"), at("10:00"))
+    assert [(x["run"], x["share"]) for x in cov["high"]] == [("r1", 1.1), ("r2", None)]
+    assert [(x["run"], x["share"]) for x in cov["low"]] == [("r3", 0.95)]

@@ -2064,7 +2064,7 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a run below the line is not flagged, so its short tokens pass for true ones",
         "src/onloop/timeline.py",
-        '        "low": [x for x in runs if x["share"] < COVERAGE_LOW],',
+        '        "low": [flag(x) for x in runs if x["_share"] is not None and x["_share"] < COVERAGE_LOW],',
         '        "low": [],',
         [
             "tests/test_coverage.py::test_a_run_whose_telemetry_brought_what_it_reported_is_covered_and_a_short_one_is_flagged"
@@ -2094,6 +2094,56 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         [
             "tests/test_timeline.py::test_rule_e_places_nothing_on_a_branch_two_roles_shared_since_the_last_node_commit"
         ],
+    ),
+    (
+        "rule E reads a merged side branch's Node: commit as the branch's own",
+        "src/onloop/timeline.py",
+        "                \"--first-parent\",  # the branch's own commits, not a merged side branch's",
+        '                "--date-order",',
+        ["tests/test_timeline.py::test_rule_e_reads_the_branchs_own_commits_not_a_merged_side_branchs"],
+    ),
+    (
+        "a run's own telemetry is counted by time, so a late batch is the next run's",
+        "src/onloop/timeline.py",
+        "            \"SELECT payload FROM events WHERE kind = 'cost.request' AND json_extract(payload, '$.run_id') = ?\",",
+        "            \"SELECT payload FROM events WHERE kind = 'cost.request' AND json_extract(payload, '$.run_id') = ? AND 0\",",
+        [
+            "tests/test_coverage.py::test_a_runs_own_telemetry_counts_for_it_though_it_lands_after_the_next_run_started"
+        ],
+    ),
+    (
+        "a run whose telemetry brought more than it reported passes as covered",
+        "src/onloop/timeline.py",
+        '        "high": [flag(x) for x in runs if x["_share"] is None or x["_share"] > COVERAGE_HIGH],',
+        '        "high": [],',
+        [
+            "tests/test_coverage.py::test_more_than_was_reported_or_telemetry_against_nothing_is_flagged_high_and_a_share_just_under_is_low"
+        ],
+    ),
+    (
+        "the low flag compares the rounded share, so 94.996% passes",
+        "src/onloop/timeline.py",
+        '        "low": [flag(x) for x in runs if x["_share"] is not None and x["_share"] < COVERAGE_LOW],',
+        '        "low": [flag(x) for x in runs if x["share"] is not None and x["share"] < COVERAGE_LOW],',
+        [
+            "tests/test_coverage.py::test_more_than_was_reported_or_telemetry_against_nothing_is_flagged_high_and_a_share_just_under_is_low"
+        ],
+    ),
+    (
+        "a record with no prompt or request id is keyed without its run, so two runs' sequence collide",
+        "src/onloop/daemon/otlp.py",
+        '    elif seq is not None and payload.get("run_id"):',
+        "    elif False:",
+        [
+            "tests/test_otlp_receiver.py::test_a_carried_runs_id_tags_its_records_and_keys_those_with_no_prompt_or_request_id"
+        ],
+    ),
+    (
+        "a carried run's environment does not name its run",
+        "src/onloop/telemetry.py",
+        '            "OTEL_RESOURCE_ATTRIBUTES": resource,',
+        '            "OTEL_RESOURCE_ATTRIBUTES": f"onloop.role={role}",',
+        ["tests/test_otlp_receiver.py::test_the_carried_runs_environment_names_its_run"],
     ),
     (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",

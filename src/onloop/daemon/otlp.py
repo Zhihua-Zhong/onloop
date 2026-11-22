@@ -24,7 +24,7 @@ session); otherwise none. A record without a session id cannot be placed and is 
 
 **Redelivery.** An exporter retries a batch it thinks failed, so each event's id is derived from what is unique to it,
 and a batch delivered twice is logged once. A model request is keyed on its `request_id`. Any other record is keyed
-on its session, its `prompt.id` and `event.sequence`: Claude Code numbers events per process, and a carried turn is a
+on its session, its `prompt.id` (else the carried run's id, `onloop.run`) and `event.sequence`: Claude Code numbers events per process, and a carried turn is a
 new process resuming the same session (`claude -p --resume`), so the sequence starts again at each run; without the
 prompt id a resumed run's events took an earlier run's ids and were dropped as redelivered (the dogfood's round 2,
 2026-11-22). With neither, the session and sequence are the key, as before.
@@ -37,6 +37,7 @@ import re
 import uuid
 from typing import Any
 
+from .. import telemetry
 from ..overlay.ledger import Ledger
 from . import receipts
 from .server import WriteRefused
@@ -172,15 +173,17 @@ def events_for(signal: str, body: dict[str, Any]) -> list[dict[str, Any]]:
         res = _attrs(rl.get("resource") if isinstance(rl, dict) else None)
         role = res.get("onloop.role")
         role = role if isinstance(role, str) and _ROLE.match(role) else None
+        run = res.get("onloop.run")  # a carried run's id, set by onloop in the run's environment
+        run = run if isinstance(run, str) and telemetry.RUN_ID.match(run) else None
         for sl in _list(rl, "scopeLogs"):
             for rec in _list(sl, "logRecords"):
-                event = _event(rec, role)
+                event = _event(rec, role, run)
                 if event is not None:
                     out.append(event)
     return out
 
 
-def _event(rec: Any, role: str | None) -> dict[str, Any] | None:
+def _event(rec: Any, role: str | None, run: str | None = None) -> dict[str, Any] | None:
     if not isinstance(rec, dict):
         return None
     a = _attrs(rec)
@@ -195,6 +198,8 @@ def _event(rec: Any, role: str | None) -> dict[str, Any] | None:
     if kind is None or not isinstance(session, str) or not _SESSION.match(session):
         return None
     payload: dict[str, Any] = {"session_id": session, "role": role}
+    if run:
+        payload["run_id"] = run
     for field, attr, typ in FIELDS[kind]:
         payload[field] = _typed(a.get(attr), typ)
     claimed = _typed(a.get("event.timestamp"), "str")
@@ -221,6 +226,8 @@ def _event_id(kind: str, session: str, payload: dict[str, Any], seq: int | None)
         parts: tuple[str, ...] = ("otel", kind, "request", str(payload["request_id"]))
     elif seq is not None and payload.get("prompt_id"):
         parts = ("otel", kind, session, "prompt", str(payload["prompt_id"]), str(seq))
+    elif seq is not None and payload.get("run_id"):
+        parts = ("otel", kind, session, "run", str(payload["run_id"]), str(seq))
     elif seq is not None:
         parts = ("otel", kind, session, str(seq))
     else:

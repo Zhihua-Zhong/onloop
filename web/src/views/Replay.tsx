@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage } from "@/lib/replay";
+import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -408,25 +408,34 @@ function Controls(p: {
 // The cross-check of every token figure on the page: what the window's carried runs reported (the CLI's own count)
 // against what their telemetry brought. A run below the line is named, so a short figure never passes for a true one.
 function CoverageLine({ c }: { c: Coverage }) {
-  const pct = (x: number) => `${Math.floor(x * 100)}%`;
+  const pct = (x: number | null) => (x === null ? "telemetry against a count of nothing" : `${Math.floor(x * 100)}%`);
   const low = c.low;
+  const high = c.high ?? [];
+  const runs = (list: CoverageRun[], testid: string) => (
+    <>
+      {list.slice(0, 3).map((r, i) => (
+        <span key={r.run} data-testid={testid}>
+          {i ? ", " : ""}
+          {r.lane} at {stamp(r.ended_ms, true)} ({pct(r.share)})
+        </span>
+      ))}
+      {list.length > 3 ? `, and ${list.length - 3} more` : ""}
+    </>
+  );
   return (
-    <p className={cn("mt-2 text-[13px] leading-snug", low.length ? "text-state-blocked" : "text-muted")} data-testid="coverage">
+    <p className={cn("mt-2 text-[13px] leading-snug", low.length || high.length ? "text-state-blocked" : "text-muted")} data-testid="coverage">
       Telemetry brought {c.share === null ? "—" : pct(c.share)} of the tokens the {plural(c.runs, "carried run")} in this window reported
       {low.length ? (
         <>
-          ; below {pct(c.low_below)}:{" "}
-          {low.slice(0, 3).map((r, i) => (
-            <span key={r.run} data-testid="coverage-low">
-              {i ? ", " : ""}
-              {r.lane} at {stamp(r.ended_ms, true)} ({pct(r.share)})
-            </span>
-          ))}
-          {low.length > 3 ? `, and ${low.length - 3} more` : ""}. Their tokens on this page are short.
+          ; below {pct(c.low_below)}: {runs(low, "coverage-low")}, whose tokens on this page are short
         </>
-      ) : (
-        "."
-      )}
+      ) : null}
+      {high.length ? (
+        <>
+          ; above {pct(c.high_above ?? 1.02)}: {runs(high, "coverage-high")}, counted twice or taken from another run
+        </>
+      ) : null}
+      .
     </p>
   );
 }
