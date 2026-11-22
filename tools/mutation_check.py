@@ -2003,6 +2003,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the replay leaves out a turn whose start is not known, so a lane of such turns looks empty",
+        "src/onloop/report/replay.py",
+        '"SELECT role, started_at, ended_at FROM turns WHERE ended_at >= ? AND ended_at <= ? ORDER BY ended_at, id",',
+        '"SELECT role, started_at, ended_at FROM turns WHERE ended_at >= ? AND ended_at <= ? AND started_at IS NOT NULL ORDER BY ended_at, id",',
+        [
+            "tests/test_replay_api.py::test_a_window_carries_every_turn_that_ended_in_it_and_when_its_data_begins"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

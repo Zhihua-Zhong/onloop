@@ -41,10 +41,11 @@ home before the old one is removed; the commit that builds it is named.
 Now, the map, Outcome, Team, Conversation, Schedules and Audit stay. The navigation becomes Now, Replay, Map, then the
 rest; Map zoom 0 opens into Replay (commit 12).
 
-## Questions for the project lead
+## The project lead's answers (2026-11-22, confirmed through the onloop lead)
 
-1. **Flow's dependency graph.** Is "what waits on what" between items needed somewhere after Flow goes? If yes, it
-   could come back as a small graph on the map's zoom 2 for one stage, not a view of its own.
-2. **Side sessions.** Should Replay show a role's forks as sub-lanes, as Activity does, or are steps enough?
-3. **Order.** The moves first, each checked by hand, then the removals in one commit; or each view removed as soon
-   as its moves land?
+The list is confirmed, with these answers:
+
+1. **Flow's dependency graph goes now.** "What waits on what" returns in R7b, from the plan (b2 and b3), not as a view.
+2. **Side sessions: steps are enough.** No sub-lanes for now.
+3. **Order: every move first,** each checked by hand (the onloop lead checks each in Chrome); **then the removals in
+   one commit,** so that one revert restores both views.

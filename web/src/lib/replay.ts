@@ -28,6 +28,10 @@ export interface ReplayWindow {
   steps: string[];
   step_by?: string[]; // per step: "recorded", or "rule" (rule E's clause 2: the next commit's Node: trailer)
   working_now?: WorkingNow[]; // the recorded steps open at the window's end (decision 0019, a6)
+  // Activity's parts, moved to Replay (decision 0019, section 4)
+  turns?: { t: number[]; lane: number[]; start: number[] }; // each turn's end, lane, and start (-1: not known)
+  data_as_of?: string | null; // the export's time, when the ledger replays a team's daily snapshots
+  first_ms?: number | null; // when the ledger's data begins
   your_wait?: { count: number; oldest_s: number | null; share: number; waited_s: number; by_role: Record<string, number> }; // a7
 }
 
@@ -50,6 +54,8 @@ export interface LaneIndex {
   csum: Float64Array; // cache reads so far after each request
   rstep: Int32Array; // each request's step, -1 between steps
   base: LaneAt;
+  tt: Float64Array; // ends of turns whose start is not known: drawn as marks, since no working time shows them
+  turns: number; // turns that ended in the window
 }
 
 export interface ReplayIndex {
@@ -92,6 +98,13 @@ export function buildIndex(w: ReplayWindow): ReplayIndex {
   const nl = w.lanes.length;
   const changes: { t: number; s: number }[][] = Array.from({ length: nl }, () => []);
   for (let i = 0; i < w.changes.t.length; i++) changes[w.changes.lane[i]].push({ t: w.changes.t[i], s: w.changes.state[i] });
+  const tEnds: number[][] = Array.from({ length: nl }, () => []);
+  const tCount = new Array(nl).fill(0);
+  const T = w.turns ?? { t: [], lane: [], start: [] };
+  for (let i = 0; i < T.t.length; i++) {
+    tCount[T.lane[i]] += 1;
+    if (T.start[i] < 0) tEnds[T.lane[i]].push(T.t[i]);
+  }
   const reqs: number[][] = Array.from({ length: nl }, () => []);
   for (let i = 0; i < w.requests.t.length; i++) reqs[w.requests.lane[i]].push(i);
   const all: number[] = [];
@@ -126,7 +139,7 @@ export function buildIndex(w: ReplayWindow): ReplayIndex {
       csum[j] = cache;
       rstep[j] = w.requests.step[r];
     });
-    return { name, ct, cs, cum, rt, rsum, csum, rstep, base };
+    return { name, ct, cs, cum, rt, rsum, csum, rstep, base, tt: Float64Array.from(tEnds[li].sort((a, b) => a - b)), turns: tCount[li] };
   });
   all.sort((a, b) => a - b);
   return { from: w.from_ms, to: w.to_ms, known: Math.min(Date.parse(w.now), w.to_ms), lanes, steps: w.steps, marks: Float64Array.from(new Set(all)) };
@@ -306,4 +319,65 @@ export function inWindow(ix: ReplayIndex, frame: LaneFrame[]): LaneFrame[] {
     for (const k of KINDS) time[k] = Math.max(0, f.time_s[k] - (b.time_s[k] ?? 0));
     return { ...f, time_s: time, tokens: f.tokens - b.tokens, cache_read: f.cache_read - b.cache_read, requests: f.requests - b.requests };
   });
+}
+
+// -- Activity's parts, moved to Replay (decision 0019, section 4) ----------------------------------------------------
+
+/** Per lane, every moment it showed a sign of life in the window, sorted: a turn's start and end, a model request, a
+ * move into working. What "quiet" is measured between. */
+export function activityTimes(w: ReplayWindow): Float64Array[] {
+  const out: number[][] = w.lanes.map(() => []);
+  const T = w.turns ?? { t: [], lane: [], start: [] };
+  for (let i = 0; i < T.t.length; i++) {
+    out[T.lane[i]].push(T.t[i]);
+    if (T.start[i] >= 0) out[T.lane[i]].push(Math.max(T.start[i], w.from_ms));
+  }
+  for (let i = 0; i < w.requests.t.length; i++) out[w.requests.lane[i]].push(w.requests.t[i]);
+  for (let i = 0; i < w.changes.t.length; i++) if (w.changes.state[i] === 0) out[w.changes.lane[i]].push(w.changes.t[i]);
+  w.at_from.forEach((a, i) => {
+    if (a.state === 0) out[i].push(w.from_ms); // working when the window opens
+  });
+  return out.map((v) => Float64Array.from(v.sort((a, b) => a - b)));
+}
+
+/** How long a lane has been quiet at t: since its last sign of life at or before t; null when none in the window. */
+export function quietAt(times: Float64Array, t: number): number | null {
+  const i = lastAtOrBefore(times, t);
+  return i < 0 ? null : (t - times[i]) / 1000;
+}
+
+/** A lane's longest quiet stretch in [from, to]: between two signs of life, or from the last one to `to` (ongoing).
+ * Before its first sign of life in the window nothing is known of it, so that stretch is not counted. */
+export function longestQuiet(times: Float64Array, from: number, to: number): { from: number; to: number; seconds: number; ongoing: boolean } | null {
+  let best: { from: number; to: number; seconds: number; ongoing: boolean } | null = null;
+  let prev: number | null = null;
+  for (const t of times) {
+    if (t < from || t > to) continue;
+    if (prev !== null && t - prev > (best ? best.seconds * 1000 : 0)) best = { from: prev, to: t, seconds: (t - prev) / 1000, ongoing: false };
+    prev = t;
+  }
+  if (prev !== null && to - prev > (best ? best.seconds * 1000 : 0)) best = { from: prev, to, seconds: (to - prev) / 1000, ongoing: true };
+  return best;
+}
+
+/** Per clock hour of the window: how many turns ended, and how many lanes showed a sign of life (roles at once). */
+export function perHour(w: ReplayWindow, times: Float64Array[]): { at: number; turns: number; roles: number }[] {
+  const H = 3_600_000;
+  const out: { at: number; turns: number; roles: number }[] = [];
+  for (let at = Math.floor(w.from_ms / H) * H; at < w.to_ms; at += H) out.push({ at, turns: 0, roles: 0 });
+  const T = w.turns ?? { t: [], lane: [], start: [] };
+  const first = out.length ? out[0].at : 0;
+  for (const t of T.t) {
+    const k = Math.floor((t - first) / H);
+    if (k >= 0 && k < out.length) out[k].turns += 1;
+  }
+  for (const lane of times) {
+    const seen = new Set<number>();
+    for (const t of lane) {
+      const k = Math.floor((t - first) / H);
+      if (k >= 0 && k < out.length) seen.add(k);
+    }
+    for (const k of seen) out[k].roles += 1;
+  }
+  return out;
 }

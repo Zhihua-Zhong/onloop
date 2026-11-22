@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { breakdown, buildIndex, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
+import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, naiveFrame, playFrom, playhead, previous, type ReplayWindow } from "../src/lib/replay.ts";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/replay_window.json", import.meta.url), "utf8")) as {
   window: ReplayWindow;
@@ -146,4 +146,30 @@ test("in the window's terms, no lane has more time than has elapsed since the wi
       assert.ok(sum <= (t - ix.from) / 1000 + 0.01, `${L.name} at ${t}: ${sum}`);
     }
   }
+});
+
+test("Activity's parts: quiet at the cursor, the longest quiet, and turns and roles per hour", () => {
+  const H = 3_600_000;
+  const from = Date.UTC(2026, 10, 2, 10);
+  const w = {
+    ...fixture.window,
+    from_ms: from,
+    to_ms: from + 3 * H,
+    lanes: ["a", "b"],
+    at_from: [fixture.window.at_from[0], fixture.window.at_from[0]].map((x) => ({ ...x, state: -1 })),
+    changes: { t: [], lane: [], state: [] },
+    requests: { t: [from + 10 * 60_000], lane: [1], total: [5], cache_read: [0], step: [-1] },
+    turns: { t: [from + 30 * 60_000, from + 90 * 60_000, from + 100 * 60_000], lane: [0, 0, 1], start: [-1, from + 80 * 60_000, -1] },
+  } as ReplayWindow;
+  const times = activityTimes(w);
+  assert.deepEqual([...times[0]], [from + 30 * 60_000, from + 80 * 60_000, from + 90 * 60_000]);
+  assert.equal(quietAt(times[0], from + 120 * 60_000), 30 * 60);
+  assert.equal(quietAt(times[0], from + 20 * 60_000), null, "nothing yet in the window");
+  const q = longestQuiet(times[0], w.from_ms, w.to_ms)!;
+  assert.equal(q.seconds, 90 * 60, "from its last turn's end (90 min) to the window's end (180 min)");
+  assert.ok(q.ongoing);
+  assert.deepEqual(
+    perHour(w, times).map((h) => [h.turns, h.roles]),
+    [[1, 2], [2, 2], [0, 0]],
+  );
 });

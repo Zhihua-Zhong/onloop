@@ -24,6 +24,7 @@ from typing import Any
 from .. import derive
 from .. import events as ev
 from .. import timeline as tl
+from . import activity
 from .views import QueryError
 
 MAX_WINDOW_S = 31 * 86400
@@ -128,6 +129,12 @@ def window(
         "steps": steps,
         "step_by": step_by,  # per step: recorded, or rule (attributed by rule E's clause 2)
         "your_wait": derive.your_wait(reader, start, end, now),  # the person's wait in the window (a7)
+        # Activity's parts, moved here (decision 0019 §4): every turn that ended in the window, as a mark at its end
+        # (its start too when the source says), the export's time when the ledger replays a team's snapshots, and
+        # when the ledger's data begins
+        "turns": _turns(reader, start, end, index),
+        "data_as_of": activity.data_as_of(reader),
+        "first_ms": _first_ms(reader),
         # the steps open at the window's end (or now, when earlier): who is working on what, and its tokens so far
         "working_now": [
             {
@@ -156,3 +163,25 @@ def _so_far(time_s: dict[str, float], reqs: list[dict[str, Any]], state: int) ->
         "requests": len(reqs),
         "state": state,
     }
+
+
+def _turns(reader: Any, start: str, end: str, index: dict[str, int]) -> dict[str, list[int]]:
+    """Every turn that ended in [start, end], in columns: its end (ms), its lane, and its start (ms, or -1 when the
+    source does not say: an imported snapshot's turn, or a Stop with no SessionStart)."""
+    out: dict[str, list[int]] = {"t": [], "lane": [], "start": []}
+    for r in reader.select(
+        "SELECT role, started_at, ended_at FROM turns WHERE ended_at >= ? AND ended_at <= ? ORDER BY ended_at, id",
+        (start, end),
+    ):
+        if r["role"] not in index:
+            continue
+        out["t"].append(tl.ms(r["ended_at"]))
+        out["lane"].append(index[r["role"]])
+        ok = r["started_at"] and r["started_at"] <= r["ended_at"]
+        out["start"].append(tl.ms(r["started_at"]) if ok else -1)
+    return out
+
+
+def _first_ms(reader: Any) -> int | None:
+    t = reader.select("SELECT min(COALESCE(at, ts_system)) AS t FROM events")[0]["t"]
+    return tl.ms(t) if t else None

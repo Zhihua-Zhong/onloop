@@ -23,6 +23,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Activity's parts, moved to Replay** (decision 0019, section 4): every turn that ended in the window, a short mark
+  at its end when its start is not known (an imported snapshot's turns, or a Stop with no SessionStart); turns per hour
+  and roles active above the lanes; "Quiet for" in the table and each role's longest quiet in "Where the time went";
+  "Data as of" when the ledger replays a team's export; and "No data before" where the window starts before the data.
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,

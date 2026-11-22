@@ -198,3 +198,19 @@ def test_the_pages_fixture_is_the_window_onloopd_serves_with_the_ledgers_own_fra
         FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         FIXTURE.write_text(text, encoding="utf-8", newline="\n")
     assert FIXTURE.read_text(encoding="utf-8") == text
+
+
+def test_a_window_carries_every_turn_that_ended_in_it_and_when_its_data_begins(demo):
+    """Activity's parts, moved to Replay (decision 0019, section 4): a turn with no recorded start is still a mark at
+    its end, so a lane that only has such turns is not empty."""
+    with Ledger(demo, readonly=True) as reader:
+        w = replay.window(reader, NOW, "2026-11-09T00:00:00.000Z", NOW)
+        rows = reader.select(
+            "SELECT role, started_at FROM turns WHERE ended_at >= '2026-11-09T00:00:00.000Z' AND ended_at <= ?",
+            (NOW,),
+        )
+        first = reader.select("SELECT min(COALESCE(at, ts_system)) AS t FROM events")[0]["t"]
+    assert len(w["turns"]["t"]) == len(rows) > 0
+    assert sum(1 for s in w["turns"]["start"] if s == -1) == sum(1 for r in rows if not r["started_at"])
+    assert {w["lanes"][i] for i in w["turns"]["lane"]} == {r["role"] for r in rows}
+    assert w["first_ms"] == int(ev.parse_ts(first).timestamp() * 1000) and w["data_as_of"] is None

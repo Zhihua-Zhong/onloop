@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { breakdown, buildIndex, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
+import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -105,12 +105,18 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
   });
   const ix = useIndex(q.data);
   const bd = useMemo(() => (q.data ? breakdown(q.data) : []), [q.data]);
+  const act = useMemo(() => {
+    if (!q.data) return null;
+    const times = activityTimes(q.data);
+    return { times, hours: perHour(q.data, times), firstMs: q.data.first_ms ?? null, dataAsOf: q.data.data_as_of ?? null };
+  }, [q.data]);
   if (q.isPending || (q.data && !ix)) return <Loading what="the replay" />;
   if (q.isError && !q.data) return <Problem error={q.error} />;
   return (
     <Player
       ix={ix!}
       bd={bd}
+      act={act}
       working={q.data?.working_now ?? []}
       wait={q.data?.your_wait ?? null}
       hours={hours}
@@ -124,9 +130,17 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
   );
 }
 
+interface Act {
+  times: Float64Array[];
+  hours: { at: number; turns: number; roles: number }[];
+  firstMs: number | null;
+  dataAsOf: string | null;
+}
+
 function Player(p: {
   ix: ReplayIndex;
   bd: LaneBreakdown[];
+  act: Act | null;
   working: WorkingNow[];
   wait: ReplayWindow["your_wait"] | null;
   hours: number;
@@ -288,18 +302,24 @@ function Player(p: {
         }}
       />
       {live && <Working working={p.working} />}
+      {p.act?.dataAsOf && (
+        <p className="mt-2 text-[13px]" data-testid="data-as-of">
+          <span className="font-medium">Data as of {stamp(Date.parse(p.act.dataAsOf), true)}</span>
+          <span className="text-muted"> · replayed from the team's daily export</span>
+        </p>
+      )}
       <Summary frame={frame} shown={shown} active={active.length} lanes={frame.length} scope={scope} wait={p.wait} span={span} />
       {picked && <Products step={picked} at={t} onClose={() => setPicked(null)} />}
-      {table ? <AtCursor frame={shown} ix={ix} onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} onScrub={(at) => { setPlaying(false); setT(at); }} />}
-      {!table && <AtCursor frame={shown} ix={ix} compact onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
-      <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={setPicked} />
+      {table ? <AtCursor frame={shown} ix={ix} t={t} act={p.act} onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} act={p.act} onScrub={(at) => { setPlaying(false); setT(at); }} />}
+      {!table && <AtCursor frame={shown} ix={ix} t={t} act={p.act} compact onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
+      <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={setPicked} ix={ix} act={p.act} />
     </div>
   );
 }
 
 function isActive(ix: ReplayIndex, i: number): boolean {
   const L = ix.lanes[i];
-  return L.ct.length > 1 || L.cs[0] >= 0 || L.rt.length > 0;
+  return L.ct.length > 1 || L.cs[0] >= 0 || L.rt.length > 0 || L.turns > 0;
 }
 
 function Controls(p: {
@@ -427,7 +447,7 @@ function Summary(p: {
   );
 }
 
-function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: LaneFrame[]; t: number; spanDays: boolean; onScrub: (t: number) => void }) {
+function Lanes({ ix, frame, t, spanDays, act, onScrub }: { ix: ReplayIndex; frame: LaneFrame[]; t: number; spanDays: boolean; act: Act | null; onScrub: (t: number) => void }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const narrow = width > 0 && width < 640;
   const gutter = narrow ? 92 : 150;
@@ -454,7 +474,11 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
     [ix, order, plot],
   );
   const x = (ms: number) => gutter + ((ms - ix.from) / (ix.to - ix.from)) * plot;
-  const AXIS = 22;
+  // Activity's density rows (decision 0019, section 4): turns per hour, and roles with a sign of life in each hour
+  const DENS = act && act.hours.length > 1 ? 30 : 0;
+  const AXIS = 22 + DENS;
+  const maxTurns = Math.max(1, ...(act?.hours ?? []).map((h) => h.turns));
+  const maxRoles = Math.max(1, ...(act?.hours ?? []).map((h) => h.roles));
   const ROW = narrow ? 34 : 30;
   const height = AXIS + order.length * ROW + (idle.length ? 44 : 0) + 8;
   const tickMs = (() => {
@@ -494,10 +518,40 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
             <g key={m}>
               <line x1={x(m)} x2={x(m)} y1={AXIS - 4} y2={height - 6} className="stroke-line" strokeWidth={1} />
               <text x={x(m) > width - 48 ? x(m) - 3 : x(m) + 3} y={AXIS - 8} textAnchor={x(m) > width - 48 ? "end" : "start"} className="fill-muted text-[11px]">
-                {stamp(m, spanDays && new Date(m).getHours() === 0)}
+                {stamp(m, spanDays && (new Date(m).getHours() === 0 || tickMs >= 43_200_000))}
               </text>
             </g>
           ))}
+          {DENS > 0 &&
+            act!.hours.map((h) => {
+              const x0 = Math.max(gutter, x(h.at));
+              const w = Math.max(1, Math.min(gutter + plot, x(h.at + 3_600_000)) - x0 - 1);
+              const bh = (h.turns / maxTurns) * 14;
+              const when = stamp(h.at, spanDays);
+              return (
+                <g key={`h${h.at}`} data-testid="hour">
+                  <title>{`${when}: ${plural(h.turns, "turn")} ended, ${plural(h.roles, "role")} active`}</title>
+                  <rect x={x0} y={16 - bh} width={w} height={Math.max(h.turns ? 1.5 : 0, bh)} rx={1} className="fill-accent" fillOpacity={0.7} />
+                  <rect x={x0} y={19} width={w} height={7} rx={1} className={h.roles ? "fill-accent" : "fill-raised"} fillOpacity={h.roles ? 0.15 + 0.7 * (h.roles / maxRoles) : 1} />
+                </g>
+              );
+            })}
+          {DENS > 0 && !narrow && (
+            <>
+              <text x={12} y={13} className="fill-muted text-[11px]">Turns per hour</text>
+              <text x={12} y={26} className="fill-muted text-[11px]">Roles active</text>
+            </>
+          )}
+          {act?.firstMs != null && act.firstMs > ix.from && (
+            <g data-testid="no-data">
+              <rect x={gutter} y={AXIS - 4} width={Math.max(0, Math.min(gutter + plot, x(act.firstMs)) - gutter)} height={height - AXIS} className="fill-raised" fillOpacity={0.55} />
+              {x(act.firstMs) - gutter > 150 && (
+                <text x={gutter + (x(act.firstMs) - gutter) / 2} y={AXIS + 14} textAnchor="middle" className="fill-muted text-[12px]">
+                  No data before {stamp(act.firstMs, true)}
+                </text>
+              )}
+            </g>
+          )}
           {ix.known < ix.to && (
             <rect x={x(ix.known)} y={AXIS - 4} width={x(ix.to) - x(ix.known)} height={height - AXIS} className="fill-raised" fillOpacity={0.6} data-testid="after-now" />
           )}
@@ -523,6 +577,11 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
                 <line x1={gutter} x2={gutter + plot} y1={mid} y2={mid} className="stroke-line" strokeWidth={1} />
                 {runs.map((r, i) => (
                   <rect key={i} x={gutter + r.x0} y={mid - 6} width={r.x1 - r.x0} height={12} className={KIND_FILL[KINDS[r.k]]} fillOpacity={KIND_WEIGHT[KINDS[r.k]]} data-kind={KINDS[r.k]} />
+                ))}
+                {Array.from(L.tt).map((te, i) => (
+                  <rect key={`t${i}`} x={x(te) - 1.5} y={mid - 7} width={3} height={14} rx={1} className="fill-state-done" data-testid="turn-mark">
+                    <title>{`${L.name}: a turn ended ${stamp(te, true)} (its start is not known)`}</title>
+                  </rect>
                 ))}
                 {(cols[row] ?? []).map((c, cx) =>
                   c.requests ? (
@@ -552,7 +611,7 @@ function Lanes({ ix, frame, t, spanDays, onScrub }: { ix: ReplayIndex; frame: La
             </span>
           </span>
         ))}
-        <span>Ticks under a lane are model requests. Drag on the lanes to move the cursor.</span>
+        <span>Ticks under a lane are model requests; a short green mark is a turn's end, where its start is not known. Drag on the lanes to move the cursor.</span>
       </p>
     </div>
   );
@@ -563,6 +622,8 @@ function AtCursor(p: {
   ix: ReplayIndex;
   compact?: boolean;
   onPick: (s: string) => void;
+  t: number;
+  act: Act | null;
   scope: string;
   scopeHref: string;
   ledgerScope: boolean;
@@ -585,6 +646,9 @@ function AtCursor(p: {
           <tr className="border-b border-line">
             <th className="px-3 py-2 font-medium">Lane</th>
             <th className="px-3 py-2 font-medium">At the cursor</th>
+            <th className="px-3 py-2 text-right font-medium" title="Since its last turn, model request or move into working, in this window">
+              Quiet for
+            </th>
             {KINDS.map((k) => (
               <th key={k} className="px-3 py-2 text-right font-medium" title={KIND_HELP[k]}>
                 {KIND_LABEL[k]}
@@ -600,7 +664,7 @@ function AtCursor(p: {
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ f }) => (
+          {rows.map(({ f, i }) => (
             <tr key={f.name} className="border-b border-line last:border-0" data-testid="cursor-row" data-lane={f.name}>
               <td className="px-3 py-1.5 font-medium">{f.name}</td>
               <td className="px-3 py-1.5">
@@ -612,6 +676,12 @@ function AtCursor(p: {
                 ) : (
                   <span className="text-muted">idle</span>
                 )}
+              </td>
+              <td className="px-3 py-1.5 text-right tabular-nums" data-testid="quiet-for">
+                {(() => {
+                  const q = p.act ? quietAt(p.act.times[i], Math.min(p.t, ix.known)) : null;
+                  return q == null ? <span className="text-muted">—</span> : q < 60 ? "active" : duration(q);
+                })()}
               </td>
               {KINDS.map((k) => (
                 <td key={k} className="px-3 py-1.5 text-right tabular-nums">
@@ -639,7 +709,7 @@ function AtCursor(p: {
   );
 }
 
-function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null; onPick: (s: string) => void }) {
+function WhereItWent({ bd, hours, wait, onPick, ix, act }: { bd: LaneBreakdown[]; hours: number; wait: ReplayWindow["your_wait"] | null; onPick: (s: string) => void; ix: ReplayIndex; act: Act | null }) {
   const lanes = bd
     .filter((L) => L.tokens > 0 || KINDS.some((k) => L.time_s[k] >= 1))
     .sort((a, b) => b.time_s.working - a.time_s.working || b.tokens - a.tokens || a.name.localeCompare(b.name));
@@ -690,6 +760,17 @@ function WhereItWent({ bd, hours, wait, onPick }: { bd: LaneBreakdown[]; hours: 
                     {KINDS.filter((k) => L.time_s[k] >= 1)
                       .map((k) => `${KIND_LABEL[k].toLowerCase()} ${duration(L.time_s[k])}`)
                       .join(" · ") || "no time in a state"}
+                    {(() => {
+                      const li = ix.lanes.findIndex((x) => x.name === L.name);
+                      const q = act && li >= 0 ? longestQuiet(act.times[li], ix.from, ix.known) : null;
+                      return q && q.seconds >= 60 ? (
+                        <span data-testid="longest-quiet">
+                          {" "}
+                          · longest quiet {duration(q.seconds)}
+                          {q.ongoing ? ", still quiet" : ""}
+                        </span>
+                      ) : null;
+                    })()}
                   </span>
                   <span className="ml-auto text-[12.5px] tabular-nums">
                     {L.tokens ? (
