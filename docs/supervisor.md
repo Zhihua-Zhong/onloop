@@ -266,6 +266,7 @@ from GitHub's sub-issues first, then from a body pattern. Pull requests are skip
 - Nothing in onloop writes `steps.jsonl`, `snapshot.json` or `heartbeat.json` any more (see [Records](#records)).
 - It reads no liveness records of interactive sessions (see [design/liveness-and-authority.md](design/liveness-and-authority.md)).
 - A `max_turns` outcome counts as a failure.
-- `cost_usd` is what the CLI reports. On a subscription it is notional.
+- `cost_usd` is what the CLI reports, kept in the result record as `cost_usd_notional`: an API-equivalent price, not
+  billed on a subscription, and never what the team spent.
 - Item titles reach the prompt as data, cut to one line. A hostile title is still text the model reads, so roles that
   read public repositories should keep their tools narrow.

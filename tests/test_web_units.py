@@ -41,6 +41,13 @@ def test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so():
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved():
+    """The onloop lead's ask on 211e547: `#/flow` reads `#/map` in the address, as `#/activity` reads `#/replay`."""
+    r = _node_test("route.test.ts")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_view_recovers_when_onloopd_comes_back():
     """The lead's finding on 28edd47: a query in error is tried again every few seconds, the last data stays on
     screen while a refresh fails, and "Failed to fetch" is said in plain words."""

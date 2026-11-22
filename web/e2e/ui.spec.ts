@@ -144,8 +144,10 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
 test("an old Flow or Activity link opens where its parts moved", async ({ page }) => {
   await page.goto("/#/flow");
   await expect(page.getByTestId("nav-map")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#\/map$/); // the address names the view on screen
   await page.goto("/#/activity");
   await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#\/replay/);
 });
 
 test("the theme toggles and the navigation reaches every view", async ({ page }) => {

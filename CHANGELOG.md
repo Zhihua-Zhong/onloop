@@ -25,7 +25,8 @@ All notable changes to this project are recorded here. The format follows
 
 - **Flow and Activity are retired** (decision 0019, section 4), now that their parts have moved to Now, Replay and the
   map. The views, `GET /api/flow`, `GET /api/activity`, `views.flow` and the layout engine (elkjs) go. An old link
-  opens where the parts went: `#/flow` the map, `#/activity` Replay; both API routes answer 404. The navigation reads
+  opens where the parts went, and its address is rewritten to that view: `#/flow` becomes `#/map`, `#/activity`
+  `#/replay`; both API routes answer 404. The navigation reads
   Now, Replay, Map, then the rest. `derive.data_as_of` replaces `report.activity.data_as_of`.
 
 ### Added
@@ -44,6 +45,9 @@ All notable changes to this project are recorded here. The format follows
   at its end when its start is not known (an imported snapshot's turns, or a Stop with no SessionStart); turns per hour
   and roles active above the lanes; "Quiet for" in the table and each role's longest quiet in "Where the time went";
   "Data as of" when the ledger replays a team's export; and "No data before" where the window starts before the data.
+- **docs/ui.md** names the views in the bar's order, says how they link (Now to the map's cell and to Replay, one
+  "Waiting on you"), describes Replay, the map's item details and Now's "Expires within a day", and lists where each
+  part of Flow and Activity went.
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,

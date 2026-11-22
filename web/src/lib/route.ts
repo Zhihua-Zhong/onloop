@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
+import { RETIRED, retiredTo } from "./retired";
 
 // The views are hash routes (#/now, #/replay, #/audit?kind=pr.merged), so a reload or a shared link opens the same view
 // and onloopd serves one index.html for all of them.
 export const VIEWS = ["now", "replay", "map", "outcome", "team", "conversation", "schedules", "audit"] as const;
-// The views decision 0019 retired: an old link opens where their parts moved, not Now
-export const RETIRED: Record<string, View> = { flow: "map", activity: "replay" };
 export type View = (typeof VIEWS)[number];
 export const VIEW_LABEL: Record<View, string> = { now: "Now", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
 
@@ -22,10 +21,21 @@ function parse(hash: string): Route {
   return { view, params: new URLSearchParams(query), path };
 }
 
+function canonical(): void {
+  const to = retiredTo(window.location.hash);
+  if (to) window.history.replaceState(window.history.state, "", to); // no new history entry: Back skips the old link
+}
+
 export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parse(window.location.hash));
+  const [route, setRoute] = useState(() => {
+    canonical();
+    return parse(window.location.hash);
+  });
   useEffect(() => {
-    const on = () => setRoute(parse(window.location.hash));
+    const on = () => {
+      canonical();
+      setRoute(parse(window.location.hash));
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);

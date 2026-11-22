@@ -2003,6 +2003,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "an old #/flow link keeps its address while the map shows, so a copied link names a retired view",
+        "web/src/lib/retired.ts",
+        "  return to ? `#/${to}${m![2]}` : null;",
+        "  return null;",
+        ["tests/test_web_units.py::test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

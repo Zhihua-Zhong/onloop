@@ -1,7 +1,7 @@
 # The UI
 
 onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). It has eight views of the same
-ledger. Every request it makes is a GET but one: the Conversation view's compose box, a message to a role
+ledger, in this order in the bar: Now, Replay, Map, then Outcome, Team, Conversation, Schedules and Audit. Every request it makes is a GET but one: the Conversation view's compose box, a message to a role
 ([decision 0011](decisions/0011-ui-write-path.md)). Where a person can act otherwise, the page shows the exact
 `onloop` command with a copy button. Approvals come later, through the approval channel.
 
@@ -14,13 +14,24 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
 | View | The question it answers | Reads |
 |---|---|---|
 | **Now** (`#/now`, the first screen) | What is the biggest constraint, what waits on me, and where has work stalled? | `GET /api/now` |
-| **Replay** (`#/replay`) | Who worked when, on what, and what did each step produce? | `GET /api/replay`, `GET /api/products` |
+| **Replay** (`#/replay`) | Who did what, how long it took, what it cost in tokens, and what each step produced? | `GET /api/replay`, `GET /api/products` |
 | **Map** (`#/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
-| **Outcome** (`#/outcome`) | Did the work reach its outcome? | `GET /api/kpi` |
+| **Outcome** (`#/outcome`) | Do merged changes move the goals, and what does each one cost to land? ([tasks.md](tasks.md)) | `GET /api/kpi` |
 | **Team** (`#/team`) | Who is working, idle, paused or stalled, on what, and what happens next? | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Conversation** (`#/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
 | **Schedules** (`#/schedules`) | Did every scheduled job run, and which are failing or overdue? | `/api/schedules`, `/api/alerts`, `/api/events` |
 | **Audit** (`#/audit`) | What happened, who did it, and from what source? | `GET /api/events` with filters |
+
+Now is the person's inbox, Replay the main view, and the map's zoom 0 the overview (decision 0019).
+
+### How the views link
+
+- **From Now:** the constraint banner's "Map" link opens the map at the stage that holds the constraint, with the
+  holder's row selected (`#/map/changes/opened?who=merge-check` on the demo). When the team's turns carry no outcome
+  lines, the stall card's "See when the team worked" opens Replay over the last 48 hours.
+- **Waiting on you** is one list, Now's; the map and the task list count it the same way, from one derivation.
+- **Jobs due** are on Schedules.
+- **An old link** to a retired view opens where its parts moved, and the address is rewritten to that view (below).
 
 ### Now
 
@@ -34,6 +45,7 @@ onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8
   never general advice.
 - **Waiting on you:** each card shows the default if nobody answers and the time left. A role you paused is one card,
   with the items queued behind it and `onloop role resume <role>`.
+- **Expires within a day,** beside Stalled: open items whose expiry is past or within a day.
 - **Stalled:** each card shows its age and "would wake (observe only)", because onloop observes and does not wake yet.
   "Acknowledged" means a later turn by that role.
 - **Health:** failing and overdue schedules, onloopd's own heartbeat (the file it rewrites every tick; stale after 60
@@ -89,7 +101,8 @@ land on the same level.
   - The stage you opened is outlined, and the bottleneck is marked.
   - A cell opens its stage at that holder.
   - Below the table, that holder's items in the stage each say what they wait on and since when, with a link to your
-    task or the change's history.
+    task or the change's history. "Details" under an item gives its owner, its wait (why, and for how long), its default
+    and expiry, its source link, and the command to copy when the wait is on missing evidence or a paused role.
   - On a phone only the non-empty columns show. The full guide is in [map.md](map.md).
 - **Zoom 3 and 4** (a role's turns, a turn's tool calls) are reserved in the URLs and say they come with the tool
   events.
@@ -101,12 +114,22 @@ land on the same level.
 
 ### Replay
 
-The team's time, one lane per role, played back like a recording; the full guide is in [replay.md](replay.md).
+The full guide is [replay.md](replay.md). One lane per role, in proportion to time, with a cursor that gives every
+role's state, time and tokens at that moment. With no moment in the link it opens live: the window ends now and the
+cursor stays there.
+- **The window:** the last 1 h, 6 h, 24 h or 7 days. Every figure is the window's, and says so.
+- **The lanes:** working, harness, waiting on you and queued time. A turn with no recorded start is a mark at its end.
+  Above the lanes, a density row shows turns per hour and the roles active in each hour.
+- **The window starts where the data does:** before the first event the lanes are shaded "No data before".
+- **On a team's export,** the header says "data as of", as the map does.
+- **Quiet:** each role's "Quiet for" is in the table at the cursor, and its longest quiet in "Where the time went".
+- **Steps:** a click on a step shows what it produced as of the cursor.
 
 ### Retired: Flow and Activity
 
-Decision 0019 retired both views in 0.6.0; their parts moved first. An old link opens where they went: `#/flow` opens
-the map, and `#/activity` opens Replay. `GET /api/flow` and `GET /api/activity` answer 404.
+Decision 0019 retired both views in 0.6.0; their parts moved first. An old link opens where they went, and the address
+is rewritten in place (no new history entry), keeping the rest of the link: `#/flow` becomes `#/map`, and `#/activity`
+becomes `#/replay`. `GET /api/flow` and `GET /api/activity` answer 404.
 
 | Was | Now |
 |---|---|

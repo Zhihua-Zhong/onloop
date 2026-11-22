@@ -42,8 +42,8 @@ working, 60k tokens", and "Where the time went" shows the lead's tokens on `bran
 ## Cost: tokens, and how they reach a step
 
 **Tokens are the measure.** Input, output and cache creation are counted; cache reads are shown apart, since they
-cost far less. Claude Code's own estimate in dollars is kept in the ledger and labelled as one: on a subscription it
-is not billing.
+cost far less. Claude Code's own dollar figure (`cost_usd`) is kept in the ledger and shown nowhere: it is an
+API-equivalent price, not billed on a subscription, and never what the team spent.
 
 Each model request is charged to:
 1. **the step onloop recorded on its session** at that moment (a carried turn's item, or the step `onloop open` was
