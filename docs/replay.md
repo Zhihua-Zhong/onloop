@@ -47,9 +47,13 @@ working, 60k tokens", and "Where the time went" shows the lead's tokens on `bran
 
 ## Cost: tokens, and how they reach a step
 
-**Tokens are the measure.** Input, output and cache creation are counted; cache reads are shown apart, since they
-cost far less. Claude Code's own dollar figure (`cost_usd`) is kept in the ledger and shown nowhere: it is an
-API-equivalent price, not billed on a subscription, and never what the team spent.
+**Tokens are the measure.** Every token figure on the page is a sum, over model requests, of their input, output
+and cache-creation tokens. Cache reads are shown apart, as "cache reads", and never added in, since they cost far
+less. Claude Code's own dollar figure (`cost_usd`) is kept in the ledger and shown nowhere: it is an API-equivalent
+price, not billed on a subscription, so on one it is never what the team spent.
+
+A request belongs to the role of the session that made it (the carried role, or the role given to `onloop open`), and
+to the moment onloopd received it.
 
 Each model request is charged to:
 1. **the step onloop recorded on its session** at that moment: the step a carried turn's message names
@@ -78,17 +82,30 @@ anything reads them, and keeps three events, each with only its named fields:
 | `tool_result` | `tool.ended` | the tool's name, success and duration, never its parameters |
 
 Every session onloop starts sends here and nowhere else: its own OTel environment, with every inherited `OTEL_*`
-variable removed, and no user settings file (whose `env` would win). A session onloop did not start exports nothing
-from onloop's own folders. Metrics (`POST /v1/metrics`) are answered and stored nowhere.
+variable removed, and no user settings file (whose `env` would win). A Claude Code session you start yourself, not
+through onloop, sends onloopd nothing: its tokens are not in Replay. Metrics (`POST /v1/metrics`) are answered and
+stored nowhere.
 
-**Each record once.** A batch the exporter sends twice is logged once: a model request is keyed on its request id,
-any other record on its session, its prompt id (else the carried run's id) and its sequence number. Claude Code numbers records per process, and a
-carried turn is a new process resuming the same session, so the sequence starts again at each run; before 0.6.0 a
-resumed run's records were taken for the earlier run's and dropped.
+**Each record once.** A record that arrives twice (the exporter retrying a batch) is stored once: a model request
+is keyed on its request id, any other record on its session, its prompt id (else the carried run's id) and its
+sequence number. Claude Code numbers records per process, and a carried turn is a new process resuming the same
+session, so the sequence starts again at each run; before 0.6.0 a resumed run's records were taken for the earlier
+run's and dropped, and a ledger written then still lacks them.
 
 **What came in.** `GET /health` counts, since onloopd started, every write by route and answer (200, and each refusal
-by its status: 401, 403, 413, 415, 400) and every telemetry record received, kept, stored and already logged. Counts
-only, never a body: a refused or dropped batch is never invisible.
+by its status: 401, 403, 413, 415, 400), and every telemetry record:
+
+| Count | Means |
+|---|---|
+| `received` | every record in the bodies that were taken |
+| `not_kept_kind` | of a kind onloop does not keep, dropped on purpose: only model requests, prompts and tool results are kept |
+| `unplaced` | of a kept kind, but with no session id to place it |
+| `kept` | the rest: `received` = `not_kept_kind` + `unplaced` + `kept` |
+| `stored` | of the kept, the ones logged |
+| `duplicate` | of the kept, the ones already in the ledger (a retried batch): `kept` = `stored` + `duplicate` |
+
+So "received 26, kept 9" is not a loss: the other 17 are kinds onloop never reads. Counts only, never a body: a
+refused or dropped record is never invisible.
 
 **The cross-check.** At the end of a carried run the carrier records the CLI's own count of the run's tokens (each
 turn's usage, per model, summed over the run; never the session's running total, which on a resumed session includes
@@ -138,8 +155,8 @@ commits changed, each at its latest commit then.
 - A turn whose start was not recorded counts no working time on its lane; it shows as a mark at its end.
 - Rule E reads the branch's own commits (`git log --first-parent`): a merged side branch's `Node:` commit is not
   the branch's next commit.
-- Rule E needs the session's branch: sessions onloop did not start, or that ran outside a git repository, leave
-  their requests between steps. On a branch several roles worked on since the last `Node:` commit, the rule places
+- Rule E needs the session's branch: a session onloop started outside a git repository leaves its requests between
+  steps (a session onloop did not start sends nothing at all). On a branch several roles worked on since the last `Node:` commit, the rule places
   nothing: it reads only the branch and a commit's time, so it cannot tell whose the commit is.
 - Products are read for node and branch steps only.
 - In a browser that blocks sandboxed frames, an HTML product shows empty in the page; "Open it on its own" still

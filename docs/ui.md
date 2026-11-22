@@ -30,6 +30,7 @@ Now is the person's inbox, Replay the main view, and the map's zoom 0 the overvi
 - **From Now:** the constraint banner's "Map" link opens the map at the stage that holds the constraint, with the
   holder's row selected (`#/map/changes/opened?who=merge-check` on the demo). When the team's turns carry no outcome
   lines, the stall card's "See when the team worked" opens Replay over the last 7 days.
+- **From the map:** zoom 0's "Who worked when: Replay →" opens Replay over the last 24 hours.
 - **Waiting on you** is one list, Now's; the map and the task list count it the same way, from one derivation.
 - **Jobs due** are on Schedules.
 - **An old link** to a retired view opens where its parts moved, and the address is rewritten to that view (below).

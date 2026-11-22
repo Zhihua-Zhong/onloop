@@ -235,13 +235,25 @@ def _event_id(kind: str, session: str, payload: dict[str, Any], seq: int | None)
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
-def _records(signal: str, body: dict[str, Any]) -> int:
-    """How many log records the body holds, kept or not."""
+def _records(signal: str, body: dict[str, Any]) -> tuple[int, int, int]:
+    """How many log records the body holds; of them, how many are of a kind onloop does not keep (dropped on purpose:
+    only `KIND_OF`'s three are kept), and how many are of a kept kind but carry no session id to place them."""
     if signal != "logs":
-        return 0
-    return sum(
-        len(_list(sl, "logRecords")) for rl in _list(body, "resourceLogs") for sl in _list(rl, "scopeLogs")
-    )
+        return 0, 0, 0
+    received = not_kept = unplaced = 0
+    for rl in _list(body, "resourceLogs"):
+        for sl in _list(rl, "scopeLogs"):
+            for rec in _list(sl, "logRecords"):
+                received += 1
+                a = _attrs(rec) if isinstance(rec, dict) else {}
+                name = a.get("event.name")
+                if not isinstance(name, str) and isinstance(rec, dict) and isinstance(rec.get("body"), dict):
+                    name = rec["body"].get("stringValue")
+                if not isinstance(name, str) or KIND_OF.get(name.removeprefix("claude_code.")) is None:
+                    not_kept += 1
+                elif not (isinstance(a.get("session.id"), str) and _SESSION.match(a["session.id"])):
+                    unplaced += 1
+    return received, not_kept, unplaced
 
 
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -250,6 +262,13 @@ def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
     signal = rest.strip("/")
     events = events_for(signal, body)
     stored = len(ledger.append_batch(events)) if events else 0
-    counts = {"received": _records(signal, body), "kept": len(events), "stored": stored}
-    counts["duplicate"] = len(events) - stored
+    received, not_kept, unplaced = _records(signal, body)
+    counts = {
+        "received": received,
+        "not_kept_kind": not_kept,
+        "unplaced": unplaced,
+        "kept": len(events),
+        "stored": stored,
+        "duplicate": len(events) - stored,
+    }
     return {"partialSuccess": {}, receipts.RECEIPT: counts}

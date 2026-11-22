@@ -4,9 +4,15 @@ silent drop must never be invisible again). Counts only, in memory, never a body
 
     requests  {route: {status: n}}       route is the path's first segment (`hooks`, `v1`, `ui`, ...); a refused write
                                          counts under its status (401, 403, 413, 415, ...), as does each 200
-    records   {source: {received, kept,  for the routes that report them (OTLP logs): every record in the bodies, the
-               stored, duplicate}}       ones of a kind onloop keeps, the ones logged, and the ones whose id was
-                                         already in the ledger (a redelivery, or two records taken for one)
+    records   {source: {...}}            for the routes that report them (OTLP logs), per record:
+                received                   every record in the bodies
+                not_kept_kind              of a kind onloop does not keep, dropped on purpose (only model requests,
+                                           prompts and tool results are kept; the rest is never read)
+                unplaced                   of a kept kind but with no session id, so it cannot be placed
+                kept                       received less those two: what onloop takes
+                stored                     of those, the ones logged
+                duplicate                  of those, the ones whose id was already in the ledger (a redelivery)
+    So received = not_kept_kind + unplaced + kept, and kept = stored + duplicate: nothing is lost unseen.
 """
 
 from __future__ import annotations
@@ -17,7 +23,7 @@ from typing import Any
 RECEIPT = (
     "_receipt"  # the key a write route's answer carries its record counts under; taken off before the answer
 )
-RECORD_FIELDS = ("received", "kept", "stored", "duplicate")
+RECORD_FIELDS = ("received", "not_kept_kind", "unplaced", "kept", "stored", "duplicate")
 
 
 class Receipts:

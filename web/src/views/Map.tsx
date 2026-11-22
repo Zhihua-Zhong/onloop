@@ -610,10 +610,14 @@ function Zoom0({ m, table }: { m: MapModel; table: boolean }) {
     <div className="flex h-full min-h-0 flex-col gap-3 p-4 max-[420px]:p-3" data-testid="map-level" data-level={0}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
         <Breadcrumb path={[]} names={[]} table={table} />
+        {/* zoom 0 opens into Replay (decision 0019, the approved navigation): from where it is jammed to who worked when */}
+        <a href={href("replay", { hours: "24" })} data-testid="map-to-replay" className="ml-auto text-[13px] font-medium text-accent hover:underline">
+          Who worked when: Replay →
+        </a>
         <a
           href={href("map", { table: table ? undefined : "1" })}
           data-testid="table-toggle"
-          className="ml-auto rounded-md border border-line px-2.5 py-1 text-[13px] font-medium text-muted hover:bg-raised hover:text-fg"
+          className="rounded-md border border-line px-2.5 py-1 text-[13px] font-medium text-muted hover:bg-raised hover:text-fg"
         >
           {table ? "Show the map" : "Show as a list"}
         </a>

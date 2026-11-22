@@ -141,6 +141,14 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
   await fresh.close();
 });
 
+test("the map's zoom 0 opens into Replay", async ({ page }) => {
+  await page.goto("/#/map");
+  await page.getByTestId("map-to-replay").click();
+  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#\/replay\?hours=24/);
+  await expect(page.getByTestId("replay")).toBeVisible();
+});
+
 test("an old Flow or Activity link opens where its parts moved", async ({ page }) => {
   await page.goto("/#/flow");
   await expect(page.getByTestId("nav-map")).toHaveAttribute("aria-current", "page");

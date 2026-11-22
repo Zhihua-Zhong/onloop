@@ -306,7 +306,9 @@ def test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_alr
     assert post(s, "/v1/logs", b'{"hello": "world"}')[0] == 400
     r = _health(s)["receipts"]
     assert r["since"] and r["requests"] == {"v1": {"200": 2, "400": 1, "401": 1, "415": 1}}
-    assert r["records"] == {"v1": {"received": 8, "kept": 6, "stored": 3, "duplicate": 3}}
+    assert r["records"] == {
+        "v1": {"received": 8, "not_kept_kind": 2, "unplaced": 0, "kept": 6, "stored": 3, "duplicate": 3}
+    }
     assert "SECRET" not in json.dumps(r) and "claude-test" not in json.dumps(r)
 
 
@@ -336,3 +338,12 @@ def test_the_carried_runs_environment_names_its_run():
     )
     with pytest.raises(ValueError):
         telemetry.env({}, port=1, token="t", role="builder", run="a,b=c")  # never a second attribute
+
+
+def test_a_record_of_a_kept_kind_without_a_session_is_counted_as_unplaced(live):
+    s, led = live
+    nosession = record("api_request", 5, session="", request_id="req-x", input_tokens=1)
+    assert post(s, "/v1/logs", json.dumps(logs(nosession, API)).encode())[0] == 200
+    r = _health(s)["receipts"]["records"]["v1"]
+    assert (r["received"], r["not_kept_kind"], r["unplaced"], r["kept"]) == (2, 0, 1, 1)
+    assert r["received"] == r["not_kept_kind"] + r["unplaced"] + r["kept"]

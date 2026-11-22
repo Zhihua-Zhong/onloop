@@ -2028,8 +2028,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "records already logged are not counted, so a drop is silent again",
         "src/onloop/daemon/otlp.py",
-        '    counts["duplicate"] = len(events) - stored',
-        '    counts["duplicate"] = 0',
+        '        "duplicate": len(events) - stored,',
+        '        "duplicate": 0,',
         [
             "tests/test_otlp_receiver.py::test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged"
         ],
@@ -2144,6 +2144,24 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         '            "OTEL_RESOURCE_ATTRIBUTES": resource,',
         '            "OTEL_RESOURCE_ATTRIBUTES": f"onloop.role={role}",',
         ["tests/test_otlp_receiver.py::test_the_carried_runs_environment_names_its_run"],
+    ),
+    (
+        "records of a kind onloop does not keep are not counted, so received minus kept reads as a loss",
+        "src/onloop/daemon/otlp.py",
+        "                    not_kept += 1",
+        "                    pass",
+        [
+            "tests/test_otlp_receiver.py::test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged"
+        ],
+    ),
+    (
+        "a record of a kept kind with no session is not counted as unplaced",
+        "src/onloop/daemon/otlp.py",
+        "                    unplaced += 1",
+        "                    pass",
+        [
+            "tests/test_otlp_receiver.py::test_a_record_of_a_kept_kind_without_a_session_is_counted_as_unplaced"
+        ],
     ),
     (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",

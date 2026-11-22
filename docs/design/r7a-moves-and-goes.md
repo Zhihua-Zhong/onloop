@@ -58,10 +58,10 @@ Recorded after the removal (211e547), from a check of docs/ui.md against this li
   include items whose expiry is already past.
 - **Now's constraint links** go to the map's stage that holds the constraint, with the holder's row selected. There is
   no "Replay at now" link from the constraint.
-- **Map zoom 0 does not open into Replay**: the map links nowhere into Replay. Replay is in the bar, second.
+- **Map zoom 0 opens into Replay** with "Who worked when: Replay →" (24 h), built after the removal on the onloop
+  lead's ruling.
 - **Now's link to Replay** is on the stall card shown when the team's turns carry no outcome lines (the card that
   linked to Activity), and opens the last 7 days, a window Replay has (Activity's 48 h is gone).
 - **The calendar's done work** is in the digest on Now and on the map, and in Replay's window.
 
-The links to Replay from map zoom 0 and from the constraint were not built; whether they are wanted is open for the
-onloop lead.
+The constraint's link to Replay is not built: the onloop lead ruled that Now already covers it.

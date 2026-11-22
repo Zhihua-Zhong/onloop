@@ -45,11 +45,13 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **The map's zoom 0 opens into Replay**: "Who worked when: Replay →", over the last 24 hours (decision 0019's
+  navigation).
 - **`onloop say ROLE TEXT --step node:a1`**: a message names the step it is about, and the carried turn that delivers
   it is recorded as that step, so its cost needs no rule (as `onloop open --step`).
 - **What came in, and the cross-check** (the onloop lead's rule: a silent drop is never invisible again). `GET /health`
-  counts every write by route and answer and every telemetry record received, kept, stored and already logged, since
-  onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and
+  counts every write by route and answer and every telemetry record received, of a kind onloop does not keep
+  (dropped on purpose), unplaced, kept, stored and already logged, since onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and
   Replay says how much of it the window's telemetry brought, naming any run below 95%, and any above 102% or with
   telemetry against a count of nothing (`GET /api/replay`'s `coverage`, `low` and `high`). A carried run's telemetry
   is tagged with its run id (`onloop.run`), so a batch that lands after the next run started is still its own run's.
