@@ -21,6 +21,13 @@ All notable changes to this project are recorded here. The format follows
   it, so a repository's `.claude/settings.json` cannot widen the role's tools. Its file tools stay inside `cwd`; a
   folder a step must read beyond it is declared in the role as `add_dirs` and passed as `--add-dir`.
 
+### Security
+
+- **Every GitHub Action is pinned by its full commit SHA**, with the version in a comment, in onloop's own CI and in
+  the workflows `onloop init` writes (checkout v4.4.0, setup-python v5.6.0, setup-node v4.4.0). A test keeps every
+  `uses:` pinned, one SHA per action. `.github/dependabot.yml` proposes grouped weekly updates for the Actions, pip
+  and npm.
+
 ### Fixed
 
 - **Rule E reads the branch's own commits** (`git log --first-parent`, in time order): a merged side branch's `Node:`

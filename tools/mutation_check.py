@@ -2164,6 +2164,15 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a workflow onloop init writes uses an action by its movable tag",
+        "src/onloop/templates/dot_github/workflows/onloop-gate.yml",
+        "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0",
+        "      - uses: actions/checkout@v4",
+        [
+            "tests/test_workflows.py::test_every_action_is_pinned_by_its_full_commit_sha_with_the_version_beside_it"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",
