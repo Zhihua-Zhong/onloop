@@ -61,7 +61,7 @@ def places(reader: Any) -> list[tuple[str, str]]:
     """Every (repository, branch) onloop recorded a session working on, in a stable order."""
     seen: set[tuple[str, str]] = set()
     for r in reader.select(
-        "SELECT payload FROM events WHERE kind IN ('session.opened', 'step.started') ORDER BY seq"
+        "SELECT payload FROM events WHERE kind IN ('session.opened', 'step.started', 'run.started') ORDER BY seq"
     ):
         p = _payload(r)
         if isinstance(p.get("repo"), str) and isinstance(p.get("branch"), str) and p["repo"] and p["branch"]:

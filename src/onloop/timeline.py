@@ -224,7 +224,7 @@ def _places(ledger: Any) -> dict[str, tuple[list[int], list[tuple[str, str]]]]:
     """Per session, where it worked over time: (times, [(repo, branch)]), from session.opened and step.started."""
     out: dict[str, tuple[list[int], list[tuple[str, str]]]] = {}
     for r in ledger.select(
-        "SELECT ts_system, payload FROM events WHERE kind IN ('session.opened', 'step.started') ORDER BY seq"
+        "SELECT ts_system, payload FROM events WHERE kind IN ('session.opened', 'step.started', 'run.started') ORDER BY seq"
     ):
         p = _payload(r)
         sid, repo, branch = p.get("session_id"), p.get("repo"), p.get("branch")

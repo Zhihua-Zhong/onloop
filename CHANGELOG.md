@@ -23,6 +23,9 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
+  not a step), and `run.started` records the repository and branch the run works on, so its requests go to the next
+  commit's `Node:` trailer there, labelled "attributed by rule".
 - **The map's items carry what Flow's card panel showed** (decision 0019, section 4): at zoom 2, "Details" under an
   item gives its owner, what it waits on (why, and for how long), its default and expiry, its source link, and the
   command to copy when a wait is on missing evidence or a paused role.

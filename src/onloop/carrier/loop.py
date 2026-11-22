@@ -216,8 +216,10 @@ class Carrier:
             self._places[role.name] = telemetry.place(role.cwd)
         return self._places[role.name]
 
-    def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str]:
-        """What a carried turn works on: the one item its deliveries are about, else the run itself."""
+    def _step(self, led: Ledger, claim: lease.Claim) -> tuple[str, str] | None:
+        """What a carried turn works on: the one item its deliveries are about. None when they name no single item: a
+        run is not a step (decision 0019: a task, a PR, a branch or a node), and with no step recorded rule E places the
+        turn's cost by the branch `run.started` records."""
         marks = ",".join("?" * len(claim.deliveries))
         rows = led.select(
             f"SELECT DISTINCT item_id FROM deliveries WHERE id IN ({marks}) AND item_id IS NOT NULL",
@@ -228,7 +230,7 @@ class Carrier:
                 return telemetry.parse_step(f"item:{rows[0]['item_id']}")
             except ValueError:
                 pass
-        return ("run", claim.run_id)
+        return None
 
     def _step_event(self, which: str, role: CarriedRole, step: tuple[str, str], **more: Any) -> dict | None:
         try:
@@ -657,6 +659,7 @@ class Carrier:
                 instance=self.instance,
                 ttl_s=2 * role.silence_s + 60,
                 detail={"kinds": sorted({d["kind"] for d in due if d["id"] in ids})},
+                place=self._place(role),
             )
             if claim is None:
                 rep.waiting[role.name] = "the session is leased by another carrier"
@@ -666,7 +669,11 @@ class Carrier:
             # the step is logged with the lease, in the same hold of the writer: no extra wait before the spawn, while
             # the lease has no holder pid yet
             step_ = self._step(led, claim)
-            started = self._step_event("started", role, step_, run_id=claim.run_id, **self._place(role))
+            started = (
+                self._step_event("started", role, step_, run_id=claim.run_id, **self._place(role))
+                if step_
+                else None
+            )
             if started:
                 led.append(started)
         rep.acted.append(claim.run_id)
@@ -700,7 +707,7 @@ class Carrier:
         text: str,
         argv: list[str],
         rep: TickReport,
-        step_: tuple[str, str],
+        step_: tuple[str, str] | None,
     ) -> None:
         ttl = 2 * role.silence_s + 60
         last_log = [self.clock()]
@@ -834,7 +841,9 @@ class Carrier:
                     },
                 )
             )
-            ended = self._step_event("ended", role, step_, run_id=claim.run_id, status=status)
+            ended = (
+                self._step_event("ended", role, step_, run_id=claim.run_id, status=status) if step_ else None
+            )
             if ended:
                 led.append(ended)
             lease.release(led, claim.lease_id, role.session_id, status)

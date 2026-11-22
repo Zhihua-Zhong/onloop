@@ -55,6 +55,7 @@ def acquire(
     instance: str,
     ttl_s: float,
     detail: dict | None = None,
+    place: dict | None = None,
 ) -> Claim | None:
     """Grant the lease, log the run's start, and claim those of `deliveries` still `created`, all or nothing."""
     lease_id, run_id = f"lease-{uuid.uuid4().hex[:16]}", f"run-{uuid.uuid4().hex[:16]}"
@@ -100,6 +101,8 @@ def acquire(
                         "lease_id": lease_id,
                         "deliveries": left,
                         "detail": detail or {},
+                        # where the run works (decision 0019, rule E): its repository and branch, names only
+                        **{k: v for k, v in (place or {}).items() if k in ("repo", "branch")},
                     },
                 )
             )

@@ -250,23 +250,16 @@ def test_a_carried_turn_gets_onloops_otel_environment_and_none_inherited(tmp_pat
     c.led.close()
 
 
-def test_a_carried_turn_is_a_step_from_its_start_to_its_end(tmp_path):
+def test_a_carried_turn_with_no_item_records_no_step_and_its_run_records_where_it_works(tmp_path):
+    """A run is not a step (decision 0019): a message with no item opens no step span, so rule E can place the turn's
+    cost by the branch run.started records. The turn still gets onloop's OTel environment."""
     beat(tmp_path, port=8790)
     dump = tmp_path / "env.json"
     c = h.carrier(tmp_path, environ=h.env(tmp_path, FAKE_ENV_DUMP=dump))
     h.start(c)
     h.say(c, "please look at the parser")
     c.tick()
-    run = c.led.select("SELECT payload FROM events WHERE kind = 'run.ended'")[0]["payload"]
-    rows = c.led.select(
-        "SELECT kind, subject_ref, source, actor, payload FROM events WHERE kind LIKE 'step.%' ORDER BY seq"
-    )
-    assert [r["kind"] for r in rows] == ["step.started", "step.ended"]
-    assert all(
-        r["source"] == "carrier" and r["actor"] == "builder" and r["subject_ref"] == f"step:run:{run['id']}"
-        for r in rows
-    )
-    assert rows[0]["payload"]["session_id"] == h.SID and rows[1]["payload"]["status"] == run["status"] == "ok"
+    assert c.led.select("SELECT kind FROM events WHERE kind LIKE 'step.%'") == []
     names = json.loads(dump.read_text(encoding="utf-8"))
     assert {
         "OTEL_EXPORTER_OTLP_ENDPOINT",

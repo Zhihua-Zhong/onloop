@@ -2110,6 +2110,22 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_timeline.py::test_working_now_is_each_open_recorded_step_with_its_tokens_so_far"],
     ),
     (
+        "a carried turn with no item records the run as a step, so rule E never places its cost",
+        "src/onloop/carrier/loop.py",
+        "            except ValueError:\n                pass\n        return None\n",
+        '            except ValueError:\n                pass\n        return ("run", claim.run_id)\n',
+        [
+            "tests/test_onloop_open.py::test_a_carried_turn_with_no_item_records_no_step_and_its_run_records_where_it_works"
+        ],
+    ),
+    (
+        "rule E ignores where a carried run works",
+        "src/onloop/timeline.py",
+        "kind IN ('session.opened', 'step.started', 'run.started')",
+        "kind IN ('session.opened', 'step.started')",
+        ["tests/test_timeline.py::test_a_carried_runs_cost_is_placed_by_the_branch_its_run_started_on"],
+    ),
+    (
         "rule E charges a request to the commit before it, not the next one on its branch",
         "src/onloop/timeline.py",
         "                j = bisect.bisect_right(ctimes, t)  # the next commit after the request\n",

@@ -309,3 +309,37 @@ def test_the_persons_wait_is_the_share_of_the_window_with_anything_open(led):
     # t0 waited 09:00-09:30 and t1 from 10:20, still open at now (10:50): one hour of the 110 minutes up to now
     assert w["waited_s"] == 3600.0 and w["share"] == round(3600 / 6600, 4)
     assert w["count"] == derive.waiting_on_you(led, at("10:50"))["count"]
+
+
+def test_a_carried_runs_cost_is_placed_by_the_branch_its_run_started_on(tmp_path):
+    """A carried turn with no item records no step; its run.started names its repository and branch, so rule E puts
+    its requests on the next commit's node (decision 0019)."""
+    repo = git_repo(tmp_path / "repo", [("10:20", "c1")])
+    clock = Clock()
+    with Ledger(tmp_path / "l.db", clock=clock) as led:
+        clock.t = at("10:00")
+        led.append(
+            {
+                "id": "run",
+                "source": "carrier",
+                "kind": "run.started",
+                "subject_ref": "role:builder",
+                "actor": "carrier",
+                "payload": {
+                    "id": "r1",
+                    "role": "builder",
+                    "session_id": "s5",
+                    "lease_id": "l1",
+                    "deliveries": [],
+                    "detail": {},
+                    "repo": str(repo),
+                    "branch": "work",
+                },
+            }
+        )
+        otel(led, clock, at("10:05"), "q1", "s5", input_tokens=3, output_tokens=4)
+        t = derive.timeline(led, at("10:00"), at("11:00"), now=at("11:00"))
+    (b,) = [L for L in t["lanes"] if L["lane"] == "builder"]
+    assert [(s["step"], s["attributed"], s["tokens"]["total"]) for s in b["steps"]] == [
+        ("step:node:c1", "rule", 7)
+    ]
