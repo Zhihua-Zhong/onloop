@@ -676,11 +676,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "age_s": age,
             "period_s": self.server.tick_s,
             "last_seq": beat.get("last_seq") if beat else None,
-            # a server with no writer serves a copy (a frozen ledger, a replay): nothing new can arrive, so the page
-            # says so instead of "Live"; with when its data ends
+            # a server with no writer takes no writes (read_only). Whether anything else still writes the ledger is
+            # another fact (frozen): an onloopd beside the ledger whose heartbeat is fresh is writing it, so a
+            # read-only view of a live ledger is not called a copy
             "read_only": self.server.writer is None,
+            "frozen": self.server.writer is None and not self._written_elsewhere(),
             "data_up_to": self._data_up_to() if self.server.writer is None else None,
         }
+
+    def _written_elsewhere(self) -> bool:
+        """An onloopd's heartbeat beside the served ledger, fresher than the staleness limit: something writes it."""
+        try:
+            path = pathlib.Path(self.server.reader.health()["path"]).parent / "onloopd.heartbeat.json"
+            beat = json.loads(path.read_text(encoding="utf-8"))
+            age = ev.parse_ts(ev.now_ts()).timestamp() - ev.parse_ts(beat["at"]).timestamp()
+        except Exception:  # noqa: BLE001 - no heartbeat beside it, or one onloop cannot read: nothing is writing
+            return False
+        return age <= views.HEARTBEAT_STALE_S
 
     def _data_up_to(self) -> str | None:
         try:

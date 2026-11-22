@@ -156,6 +156,7 @@ def test_a_server_with_no_writer_says_it_serves_a_read_only_copy_and_when_its_da
         code, _h, body = request(s, "/api/heartbeat")
         beat = _json.loads(body)
         assert code == 200 and beat["read_only"] is True and beat["data_up_to"] == "2026-11-22T13:59:00.000Z"
+        assert beat["frozen"] is True  # no onloopd heartbeat beside the copy
     finally:
         s.shutdown()
         s.server_close()
@@ -177,3 +178,28 @@ def test_onloopd_with_a_writer_is_not_a_read_only_copy(tmp_path):
         finally:
             s.shutdown()
             s.server_close()
+
+
+def test_a_read_only_view_of_a_ledger_onloopd_still_writes_is_not_called_a_copy(tmp_path):
+    """A carried review (node r2-readonly-review): no writer here is not nothing writing the ledger. With a fresh
+    onloopd heartbeat beside it, the view is read-only but not frozen."""
+    import json as _json
+
+    from onloop import events as ev
+    from onloop.overlay.ledger import Ledger
+
+    path = tmp_path / "l.db"
+    Ledger(path).close()
+    (tmp_path / "onloopd.heartbeat.json").write_text(
+        _json.dumps({"at": ev.now_ts(), "pid": 1}), encoding="utf-8"
+    )
+    reader = Ledger(path, readonly=True)
+    s = srv.make_server(reader, port=0)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        beat = _json.loads(request(s, "/api/heartbeat")[2])
+        assert beat["read_only"] is True and beat["frozen"] is False
+    finally:
+        s.shutdown()
+        s.server_close()
+        reader.close()

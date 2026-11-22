@@ -9,7 +9,8 @@ export interface Beat {
   age_s: number | null;
   period_s: number;
   last_seq: number | null;
-  read_only?: boolean; // a server with no writer serves a copy: nothing new can arrive
+  read_only?: boolean; // this server takes no writes
+  frozen?: boolean; // and nothing else writes the ledger either: a copy, nothing new can arrive
   data_up_to?: string | null;
 }
 

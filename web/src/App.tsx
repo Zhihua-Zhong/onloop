@@ -85,7 +85,7 @@ function LiveBadge({ live }: { live: Live }) {
       refreshes: q.observers.some((o) => Boolean(o.options.refetchInterval)),
     }));
   const dataAge = dataAgeS(answers, nowMs);
-  if (hb.data?.read_only) {
+  if (hb.data?.read_only && hb.data.frozen !== false) {
     // a copy served read-only (no writer): nothing new can arrive, so it is never "Live" or "No news"
     const upTo = hb.data.data_up_to ? new Date(hb.data.data_up_to).toLocaleString(undefined, { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
     return (
@@ -107,6 +107,8 @@ function LiveBadge({ live }: { live: Live }) {
     quiet: `No news for ${duration(forS)}`,
     down: `onloopd not answering for ${duration(forS)}`,
   };
+  // a read-only view of a ledger something else still writes: live, and says it takes no writes
+  if (hb.data?.read_only) for (const k of Object.keys(words) as LiveState[]) words[k] = `Read-only view · ${words[k]}`;
   // a phone has room for a few words only; the duration must never be the part cut off
   const short: Record<LiveState, string> = { connecting: "", live: "", quiet: `quiet ${duration(forS)}`, down: `offline ${duration(forS)}` };
   const dot: Record<LiveState, string> = { connecting: "bg-state-void", live: "bg-state-done", quiet: "bg-state-human", down: "bg-state-blocked" };
