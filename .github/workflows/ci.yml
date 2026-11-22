@@ -69,3 +69,24 @@ jobs:
           python -m build --wheel
       - name: Check the wheel carries the UI
         run: python tools/check_wheel.py dist/*.whl
+      # The vulnerability audit (0.6.0): what the wheel installs, and the UI's production dependencies. An advisory on
+      # .github/audit-allowlist.yml (each with a reason and an expiry) passes; an expired entry fails.
+      - name: Check the audit allowlist
+        run: |
+          python -m pip install --no-cache-dir "PyYAML>=6"
+          python tools/audit_gate.py check
+      - name: Vulnerability audit (npm, production dependencies; high or critical fails)
+        working-directory: web
+        run: |
+          npm audit --json --omit=dev > ../npm-audit.json || true   # npm exits 1 on any finding; the gate decides
+          python ../tools/audit_gate.py npm < ../npm-audit.json
+      - name: Vulnerability audit (pip, the installed package)
+        run: |
+          python -m venv /tmp/onloop-env
+          /tmp/onloop-env/bin/python -m pip install --no-cache-dir --upgrade pip
+          /tmp/onloop-env/bin/python -m pip install --no-cache-dir dist/*.whl
+          python -m venv /tmp/audit-env
+          /tmp/audit-env/bin/python -m pip install --no-cache-dir "pip-audit==2.7.3"
+          site=$(/tmp/onloop-env/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          # every advisory fails unless allowlisted: pip-audit reports no severity
+          /tmp/audit-env/bin/pip-audit --path "$site" --desc $(python tools/audit_gate.py pip-ignores)

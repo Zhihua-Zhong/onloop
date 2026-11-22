@@ -54,3 +54,16 @@ def test_dependabot_proposes_weekly_grouped_updates_for_actions_pip_and_npm():
     assert by["npm"]["directory"] == "/web" and by["pip"]["directory"] == "/"
     for u in by.values():
         assert u["schedule"]["interval"] == "weekly" and u["groups"]
+
+
+def _steps(job):
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    return [s.get("run", "") for s in doc["jobs"][job]["steps"]]
+
+
+def test_the_wheel_job_audits_the_wheels_dependencies_and_the_uis_production_ones_through_the_gate():
+    runs = "\n".join(_steps("wheel"))
+    assert "tools/audit_gate.py check" in runs
+    assert "npm audit --json --omit=dev" in runs and "audit_gate.py npm" in runs
+    assert "pip-audit --path" in runs and "audit_gate.py pip-ignores" in runs
+    assert runs.index("python -m build --wheel") < runs.index("pip-audit --path")  # it audits the built wheel

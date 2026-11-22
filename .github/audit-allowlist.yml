@@ -1,0 +1,8 @@
+# Advisories the vulnerability audit lets pass, each with why and until when (tools/audit_gate.py reads it).
+# An entry past its expiry fails the build, as does the advisory it covered. Empty to start (0.6.0).
+#
+#   - id: GHSA-xxxx-xxxx-xxxx      # the advisory: a GHSA id (npm or pip), or a PYSEC / CVE id (pip)
+#     ecosystem: npm               # npm or pip
+#     reason: "why it does not apply here, or what it waits for"
+#     expires: 2027-01-31          # YYYY-MM-DD
+entries: []

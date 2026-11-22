@@ -27,6 +27,11 @@ All notable changes to this project are recorded here. The format follows
   the workflows `onloop init` writes (checkout v4.4.0, setup-python v5.6.0, setup-node v4.4.0). A test keeps every
   `uses:` pinned, one SHA per action. `.github/dependabot.yml` proposes grouped weekly updates for the Actions, pip
   and npm.
+- **A vulnerability audit in CI**: the wheel job runs `pip-audit` on what the built wheel installs (any advisory fails,
+  since Python advisories carry no severity) and `npm audit` on the UI's production dependencies (high or critical
+  fails), through `tools/audit_gate.py`. `.github/audit-allowlist.yml` lets an advisory pass with a reason and an
+  expiry; an expired entry fails the build. Empty to start. A local `npm audit` on 2026-11-22 (production
+  dependencies) found 0 vulnerabilities.
 
 ### Fixed
 

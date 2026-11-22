@@ -2173,6 +2173,24 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the audit lets a high npm advisory pass, failing only on critical",
+        "tools/audit_gate.py",
+        'FAILING = ("high", "critical")',
+        'FAILING = ("critical",)',
+        [
+            "tests/test_audit_gate.py::test_a_high_or_critical_npm_advisory_fails_unless_it_is_allowlisted_and_lower_ones_never_do"
+        ],
+    ),
+    (
+        "an expired allowlist entry still lets its advisory pass",
+        "tools/audit_gate.py",
+        "        elif exp < today:",
+        "        elif False:",
+        [
+            "tests/test_audit_gate.py::test_an_allowlist_entry_needs_an_id_an_ecosystem_a_reason_and_an_expiry_not_past"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",
