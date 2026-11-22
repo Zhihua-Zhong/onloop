@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { activityTimes, windowEnd, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
+import { activityTimes, windowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -26,7 +26,7 @@ const WORKER_AT = 100_000; // events in a window past which the index is built o
 export const KIND_LABEL: Record<Kind, string> = { working: "Working", harness: "Harness", waiting: "Waiting on you", queued: "Queued" };
 const KIND_HELP: Record<Kind, string> = {
   working: "a turn running, or a model request",
-  harness: "onloop starting or finishing a carried turn, with no turn running yet",
+  harness: "onloop's own time around a role's turn: starting it, handing it the message, waiting for it to finish; not the role's work",
   waiting: "a task the role asked you, still open",
   queued: "a message to the role, not yet delivered",
 };
@@ -176,6 +176,13 @@ function Player(p: {
   const table = params.get("table") === "1";
   const ledgerScope = params.get("scope") === "ledger"; // the window's figures by default; the ledger's on request
   const [picked, setPicked] = useState<string | null>(null); // a step whose products are shown (a4)
+  // where the step was clicked: its products open under that section, their top at the click's height
+  const [pickedFrom, setPickedFrom] = useState<"table" | "breakdown">("breakdown");
+  const clickY = useRef<number | null>(null);
+  const pickFrom = (where: "table" | "breakdown") => (s: string) => {
+    setPickedFrom(where);
+    setPicked(s);
+  };
   const frameMs = useRef(0);
   const box = useRef<HTMLDivElement>(null);
 
@@ -264,7 +271,7 @@ function Player(p: {
   const scopeHref = href("replay", { hours: String(hours), t: String(Math.round(t)), speed: String(speed), table: table ? "1" : undefined, scope: ledgerScope ? undefined : "ledger" });
 
   return (
-    <div ref={box} className="mx-auto max-w-[1600px] px-6 py-5 max-sm:px-4" data-testid="replay" onKeyDown={onKey}>
+    <div ref={box} className="mx-auto max-w-[1600px] px-6 py-5 max-sm:px-4" data-testid="replay" onKeyDown={onKey} onClickCapture={(e) => { clickY.current = e.clientY; }}>
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <h1 className="text-[20px] font-semibold">Replay</h1>
         <p className="text-[13px] text-muted">Who did what, how long it took, and what it cost, over time.</p>
@@ -319,10 +326,11 @@ function Player(p: {
       )}
       <Summary frame={frame} shown={shown} active={active.length} lanes={frame.length} scope={scope} wait={p.wait} span={span} />
       {p.coverage && p.coverage.runs > 0 && <CoverageLine c={p.coverage} />}
-      {picked && <Products step={picked} at={t} onClose={() => setPicked(null)} />}
-      {table ? <AtCursor frame={shown} ix={ix} t={t} act={p.act} onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} act={p.act} onScrub={(at) => { setPlaying(false); setT(at); }} />}
-      {!table && <AtCursor frame={shown} ix={ix} t={t} act={p.act} compact onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
-      <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={setPicked} ix={ix} act={p.act} />
+      {table ? <AtCursor frame={shown} ix={ix} t={t} act={p.act} onPick={pickFrom("table")} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} act={p.act} onScrub={(at) => { setPlaying(false); setT(at); }} />}
+      {!table && <AtCursor frame={shown} ix={ix} t={t} act={p.act} compact onPick={pickFrom("table")} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
+      {picked && pickedFrom === "table" && <Products step={picked} at={t} anchorY={clickY.current} onClose={() => setPicked(null)} />}
+      <WhereItWent bd={bd} hours={hours} wait={p.wait} onPick={pickFrom("breakdown")} ix={ix} act={p.act} />
+      {picked && pickedFrom === "breakdown" && <Products step={picked} at={t} anchorY={clickY.current} onClose={() => setPicked(null)} />}
     </div>
   );
 }
@@ -457,7 +465,10 @@ function Summary(p: {
 }) {
   const { frame, shown } = p;
   // the glance trial's first question, answered without adding anything up: who did most, and what it cost
-  const top = [...shown].sort((a, b) => b.time_s.working - a.time_s.working || b.tokens - a.tokens)[0];
+  const ranked = [...shown].sort((a, b) => b.time_s.working - a.time_s.working || b.tokens - a.tokens);
+  const top = ranked[0];
+  const second = ranked[1];
+  const close = mostWorkClose(top?.time_s.working ?? 0, second?.time_s.working ?? 0);
   const tok = shown.reduce((s, f) => s + f.tokens, 0);
   const cache = shown.reduce((s, f) => s + f.cache_read, 0);
   const now = KINDS.map((k, ki) => [k, frame.filter((f) => f.state === ki).length] as const).filter(([, n]) => n);
@@ -469,12 +480,13 @@ function Summary(p: {
       <p data-testid="most-work">
         {top && top.time_s.working >= 1 ? (
           <>
-            <span className="font-semibold">Most work: {top.name}</span>, {duration(top.time_s.working)} working
-            {top.tokens ? <>, {tokens(top.tokens)} tokens</> : null}.
-            <span className="text-muted"> The team: {tokens(tok)} tokens, {tokens(cache)} more read from the cache.</span>
+            <span className="font-semibold">Most work (working time): {close ? `${top.name} and ${second!.name}` : top.name}</span>,{" "}
+            {close ? `${duration(top.time_s.working)} and ${duration(second!.time_s.working)}` : duration(top.time_s.working)}
+            {top.tokens || (close && second!.tokens) ? <> · cost {close ? `${tokens(top.tokens)} and ${tokens(second!.tokens)}` : tokens(top.tokens)} tokens</> : null}.
+            <span className="text-muted"> The team's cost: {tokens(tok)} tokens, {tokens(cache)} more read from the cache.</span>
           </>
         ) : (
-          <span className="text-muted">No lane worked in this span. The team: {tokens(tok)} tokens.</span>
+          <span className="text-muted">No lane worked in this span. The team's cost: {tokens(tok)} tokens.</span>
         )}
       </p>
       <p className="text-muted">
@@ -684,7 +696,7 @@ function AtCursor(p: {
         <caption className="px-3 pt-2 text-left text-[12px] text-muted" data-testid="table-scope">
           {p.scope}: time in each state, and tokens. Most work first.{" "}
           <a href={p.scopeHref} className="text-accent hover:underline" data-testid="scope-toggle">
-            {p.ledgerScope ? "Show this window only" : "Show the ledger's totals"}
+            <span title="The ledger is onloop's record of everything it has seen. Its totals count everything since that record began, not only this window">{p.ledgerScope ? "Show this window only" : "Show the ledger's totals"}</span>
           </a>
         </caption>
         <thead className="text-[12px] text-muted">
@@ -699,8 +711,8 @@ function AtCursor(p: {
                 {KIND_LABEL[k]}
               </th>
             ))}
-            <th className="px-3 py-2 text-right font-medium" title="Input, output and cache creation; cache reads apart">
-              Tokens
+            <th className="px-3 py-2 text-right font-medium" title="What the lane's model requests cost, in tokens: input, output and cache creation. Cache reads are apart. onloop counts tokens, not money">
+              Cost (tokens)
             </th>
             <th className="px-3 py-2 text-right font-medium">Cache reads</th>
             <th className="px-3 py-2 font-medium" title="The step recorded on the session of the lane's latest request">
@@ -836,7 +848,7 @@ function WhereItWent({ bd, hours, wait, onPick, ix, act }: { bd: LaneBreakdown[]
                           {c.step.replace(/^step:/, "")}
                         </button>
                         <span className="tabular-nums">{tokens(c.tokens)}</span>
-                        <span className={cn("rounded px-1 text-[11px]", c.by === "rule" ? "bg-state-human/15 text-fg" : "bg-raised text-muted")} title={c.by === "rule" ? "No step was recorded on the session; the next commit on its branch carries this node" : "onloop recorded this step when it started the work"}>
+                        <span className={cn("rounded px-1 text-[11px]", c.by === "rule" ? "bg-state-human/15 text-fg" : "bg-raised text-muted")} title={c.by === "rule" ? "No step was named for these tokens, so onloop gave them to the node of the next commit on the role's branch (its Node: line)" : "onloop recorded this step when the work began"}>
                           {c.by === "rule" ? "attributed by rule" : "recorded"}
                         </span>
                       </span>
@@ -912,7 +924,7 @@ const fileUrl = (f: ProductFile) => `/api/products/file?repo=${f.repo}&sha=${f.s
 // What a step produced, as of the cursor (decision 0019, a4): the files its commits changed, each at its latest commit
 // then. HTML shows in a sandboxed frame (and onloopd serves it with its own sandbox), Markdown as text formatting
 // only, images as images, anything else as text.
-function Products({ step, at, onClose }: { step: string; at: number; onClose: () => void }) {
+function Products({ step, at, anchorY, onClose }: { step: string; at: number; anchorY: number | null; onClose: () => void}) {
   const minute = Math.floor(at / 60_000) * 60_000;
   const kindOk = /^step:(node|branch):/.test(step);
   const q = useQuery({
@@ -928,7 +940,11 @@ function Products({ step, at, onClose }: { step: string; at: number; onClose: ()
   useEffect(() => {
     const el = panel.current;
     if (!el) return;
-    el.scrollIntoView({ block: "start", behavior: "smooth" });
+    // the panel opens below the section clicked in; its top is brought to where the click was, so the reader's eye
+    // stays put (the glance trial's finding: it used to open above, off where they were looking)
+    const scroller = el.closest("main");
+    if (anchorY != null && scroller) scroller.scrollBy({ top: el.getBoundingClientRect().top - anchorY, behavior: "smooth" });
+    else el.scrollIntoView({ block: "start", behavior: "smooth" });
     el.focus({ preventScroll: true });
     setOpen(null);
   }, [step]);

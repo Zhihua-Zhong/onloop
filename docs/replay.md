@@ -43,8 +43,8 @@ The link keeps the moment (`t`, epoch milliseconds) and the speed, so a reload o
 a link with a moment in the past opens the window that ends at that moment, whenever it is opened, and is not live.
 Live ends the window now again.
 
-**Example** (the demo ledger, made up): in the 24 h window at now, the header reads "Most work: builder, 28 min
-working, 60k tokens", and "Where the time went" shows the lead's tokens on `branch:feat/date-check` (recorded) and
+**Example** (the demo ledger, made up): in the 24 h window at now, the header reads "Most work (working time): builder,
+28 min · cost 60k tokens" (when the next role worked within 10% of the first, both are named), and "Where the time went" shows the lead's tokens on `branch:feat/date-check` (recorded) and
 `node:n-date` (attributed by rule), with 5% between steps.
 
 ## Cost: tokens, and how they reach a step

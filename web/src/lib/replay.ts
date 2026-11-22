@@ -296,6 +296,12 @@ export function breakdown(w: ReplayWindow): LaneBreakdown[] {
 /** Playback by the wall clock (the lead's finding: 600x ran at about 290x in a throttled tab). The cursor is the
  * anchor plus the elapsed wall time times the speed, clamped only at the end: a tab that gets two frames a second
  * skips frames but keeps time. */
+/** The summary names both leaders when the second worked within 10% of the first: the glance trial's run 2 had them
+ * 34 s apart (710 s and 676 s), and "most work" naming only one read as a claim the page could not back. */
+export function mostWorkClose(first: number, second: number): boolean {
+  return first > 0 && second > 0 && second >= 0.9 * first;
+}
+
 /** Where a link's window ends: at its moment `t` (epoch ms) when it names one in the past, so a shared link opens the
  * same window whenever it is opened; null otherwise (the window ends now, and moves with the clock when live). */
 export function windowEnd(t: string | null, nowMs: number): number | null {

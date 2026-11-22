@@ -122,6 +122,10 @@ All notable changes to this project are recorded here. The format follows
   whenever it is opened; until now the window always ended at the time the page was opened.
 - **A server with no writer says it serves a copy**: the header reads "Read-only copy · data up to <time>" with a
   grey dot, never "Live" (`GET /api/heartbeat`'s `read_only` and `data_up_to`).
+- **Replay says what its figures measure**: "Most work (working time)", naming both roles when the second worked within
+  10% of the first; cost is "cost (tokens)" in the header and the table; plain hovers for Harness, the ledger's totals
+  and "attributed by rule". A step's products open under the section it was clicked in, at the click's height, not
+  above it (the glance trial's findings).
 - **docs/replay.md**: the Replay view, cost by step and rule E, the telemetry behind it, `onloop open` and a step's
   products, with the API and the limits. `onloop open` is in the configuration reference.
 - **The Replay view, after the lead's check** (four fixes): Play at the window's end starts over from its start,
