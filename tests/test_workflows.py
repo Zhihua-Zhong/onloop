@@ -82,3 +82,12 @@ def test_the_e2e_job_builds_the_ui_before_installing_onloop_and_keeps_the_report
     keep = steps[-1]
     assert keep["if"] == "failure()" and keep["uses"].startswith("actions/upload-artifact@")
     assert "web/playwright-report" in keep["with"]["path"]
+
+
+def test_the_test_matrix_covers_every_python_the_package_says_it_supports():
+    import re
+
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    matrix = doc["jobs"]["test"]["strategy"]["matrix"]["python"]
+    listed = re.findall(r"Programming Language :: Python :: (3\.\d+)", (ROOT / "pyproject.toml").read_text())
+    assert matrix == listed == ["3.11", "3.12", "3.13", "3.14"]

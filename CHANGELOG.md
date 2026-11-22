@@ -35,6 +35,8 @@ All notable changes to this project are recorded here. The format follows
 - **The browser tests run in CI**: an `e2e` job builds the UI, installs onloop with it, installs Playwright's
   Chromium, and runs `npm run e2e` against onloopd's server over the demo ledger; the report and traces are kept as
   an artifact when a test fails. Until now the specs ran nowhere.
+- **Python 3.13 and 3.14** are in CI's test matrix on Linux and Windows, beside 3.11 and 3.12, and in the package's
+  classifiers. `requires-python` stays `>=3.11`.
 
 ### Fixed
 
