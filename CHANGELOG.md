@@ -23,6 +23,9 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **Now, after Flow and Activity** (decision 0019, section 4): the constraint links to the map, and "See when the team
+  worked" opens Replay. Open items whose expiry is past or within a day (Flow's Roadmap showed them) are listed under
+  "Expires within a day" beside Stalled; `GET /api/now` answers them as `expiring`.
 - **Activity's parts, moved to Replay** (decision 0019, section 4): every turn that ended in the window, a short mark
   at its end when its start is not known (an imported snapshot's turns, or a Stop with no SessionStart); turns per hour
   and roles active above the lanes; "Quiet for" in the table and each role's longest quiet in "Where the time went";

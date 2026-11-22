@@ -2003,6 +2003,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "Now lists an expiry that is more than a day away",
+        "src/onloop/report/views.py",
+        "        if in_s <= EXPIRING_S:\n",
+        "        if True:\n",
+        ["tests/test_replay_api.py::test_now_lists_what_expires_within_a_day_as_flows_roadmap_did"],
+    ),
+    (
         "the replay leaves out a turn whose start is not known, so a lane of such turns looks empty",
         "src/onloop/report/replay.py",
         '"SELECT role, started_at, ended_at FROM turns WHERE ended_at >= ? AND ended_at <= ? ORDER BY ended_at, id",',

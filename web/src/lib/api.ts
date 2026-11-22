@@ -78,6 +78,8 @@ export interface NowModel {
   stalls: Stall[];
   /** The person's wait over the last day (decision 0019, a7): the one count, the oldest item, the share of the day. */
   your_wait?: YourWait;
+  /** Open items whose expiry is past or within a day (moved from Flow's Roadmap). */
+  expiring?: { id: string; title: string; ref: string | null; expires: string; in_s: number }[];
   health: {
     /** onloopd's own gaps in the last week (finding #14): time with no record, never shown as quiet. */
     gaps: { from: string; to: string; seconds: number; cause: string | null; while_running: boolean | null }[];

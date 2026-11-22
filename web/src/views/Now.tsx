@@ -82,8 +82,8 @@ function Banner({ m }: { m: NowModel }) {
                   Open it <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                 </a>
               )}
-              <a href={href("flow")} className="inline-flex items-center gap-1 text-accent hover:underline">
-                See it on Flow <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              <a href={href("map")} className="inline-flex items-center gap-1 text-accent hover:underline" data-testid="see-on-map">
+                See it on the map <ArrowRight className="h-3.5 w-3.5" aria-hidden />
               </a>
             </p>
           </div>
@@ -120,8 +120,8 @@ function CompactBanner({ m }: { m: NowModel }) {
           )}
         </span>
       )}
-      <a href={href("flow")} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline max-sm:hidden">
-        Flow <ArrowRight className="h-3 w-3" aria-hidden />
+      <a href={href("map")} className="ml-auto inline-flex items-center gap-1 text-accent hover:underline max-sm:hidden" data-testid="banner-map">
+        Map <ArrowRight className="h-3 w-3" aria-hidden />
       </a>
     </section>
   );
@@ -183,7 +183,7 @@ function StallCard({ s }: { s: Stall }) {
         <p className="mt-1 text-[13px] leading-snug text-muted">
           Without them onloop cannot tell what a turn decided or waits on, so it shows when each role worked instead.
         </p>
-        <a href={href("activity")} className="mt-1.5 inline-block text-[13px] font-medium text-accent hover:underline" data-testid="see-activity">
+        <a href={href("replay", { hours: "48" })} className="mt-1.5 inline-block text-[13px] font-medium text-accent hover:underline" data-testid="see-activity">
           See when the team worked
         </a>
       </Card>
@@ -331,6 +331,7 @@ function TasksFirst({ m }: { m: NowModel }) {
         <div className="flex min-w-0 flex-col gap-6">
           <Section title="Stalled" count={m.stalls.length} t="stall" testid="col-stalls">
             {m.stalls.length ? m.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
+            <Expiring m={m} />
           </Section>
           <Section title="Health" count={healthCount} t={m.health.schedules.length ? "blocked" : "done"} testid="col-health">
             <Health h={m.health} now={m.now} quiet={m.quiet} />
@@ -391,6 +392,7 @@ export function NowView() {
             </Section>
             <Section title="Stalled" count={m.stalls.length} t="stall" testid="col-stalls" note="acknowledged: a later turn by that role">
               {m.stalls.length ? m.stalls.map((s) => <StallCard key={s.id} s={s} />) : <Empty>No work has stalled.</Empty>}
+            <Expiring m={m} />
             </Section>
             <Section
               title="Health"
@@ -424,5 +426,39 @@ function YourWaitLine({ w }: { w: YourWait }) {
         see it in Replay
       </a>
     </p>
+  );
+}
+
+// Moved from Flow's Roadmap (decision 0019, section 4): an open item whose expiry is past or within a day.
+function Expiring({ m }: { m: NowModel }) {
+  if (!m.expiring?.length) return null;
+  return (
+    <div className="space-y-2" data-testid="expiring">
+      <h3 className="pt-1 text-[13px] font-semibold text-muted">
+        Expires within a day <span className="tabular-nums">{m.expiring.length}</span>
+      </h3>
+      {m.expiring.map((x) => (
+        <Card key={x.id} t={x.in_s <= 0 ? "blocked" : "human"} testid={`expiring-${x.id}`}>
+          <h3 className="text-[15px] font-semibold leading-snug">{x.title}</h3>
+          <Meta>
+            <span className={x.in_s <= 0 ? "font-medium text-state-blocked" : "font-medium text-state-human"}>
+              {x.in_s <= 0 ? `expired ${duration(-x.in_s)} ago` : `expires in ${duration(x.in_s)}`}
+            </span>
+            {x.ref && (
+              <>
+                <Dot />
+                {isUrl(x.ref) ? (
+                  <a href={x.ref} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                    open
+                  </a>
+                ) : (
+                  <span className="font-mono">{x.ref}</span>
+                )}
+              </>
+            )}
+          </Meta>
+        </Card>
+      ))}
+    </div>
   );
 }

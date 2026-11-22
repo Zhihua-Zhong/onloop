@@ -501,7 +501,36 @@ def now(ledger: Any, now_ts: str, heartbeat: Mapping[str, Any] | None = None) ->
         "quiet": _quiet_with_gaps(ledger, now_ts),
         # the person's wait over the last day (decision 0019, a7): the one count, the oldest item, the share of the day
         "your_wait": derive.your_wait(ledger, ev.shift_ts(now_ts, -86400), now_ts, now_ts),
+        # moved from Flow's Roadmap (decision 0019, section 4): open items whose expiry is past or within a day
+        "expiring": _expiring(items, now_ts),
     }
+
+
+EXPIRING_S = 86400
+
+
+def _expiring(items: Mapping[str, Any], now_ts: str) -> list[dict[str, Any]]:
+    """Open items whose `expires` is past or within a day, soonest first: what Flow's Roadmap showed as a bar's end."""
+    out = []
+    for i in items.values():
+        exp = (i.get("detail") or {}).get("expires")
+        if not exp or i.get("state") == "done":
+            continue
+        try:
+            in_s = (ev.parse_ts(ev.norm_ts(exp) or "") - ev.parse_ts(now_ts)).total_seconds()
+        except ev.EventError:
+            continue
+        if in_s <= EXPIRING_S:
+            out.append(
+                {
+                    "id": i["id"],
+                    "title": i.get("title") or i["id"],
+                    "ref": i.get("ref"),
+                    "expires": exp,
+                    "in_s": in_s,
+                }
+            )
+    return sorted(out, key=lambda x: (x["in_s"], x["id"]))
 
 
 # -- the task list, the digest, the outcome KPIs (decisions 0013, 0014) --------------------------------------------------

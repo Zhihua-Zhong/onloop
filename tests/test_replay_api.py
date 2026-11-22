@@ -214,3 +214,14 @@ def test_a_window_carries_every_turn_that_ended_in_it_and_when_its_data_begins(d
     assert sum(1 for s in w["turns"]["start"] if s == -1) == sum(1 for r in rows if not r["started_at"])
     assert {w["lanes"][i] for i in w["turns"]["lane"]} == {r["role"] for r in rows}
     assert w["first_ms"] == int(ev.parse_ts(first).timestamp() * 1000) and w["data_as_of"] is None
+
+
+def test_now_lists_what_expires_within_a_day_as_flows_roadmap_did(demo):
+    """Moved from Flow's Roadmap (decision 0019, section 4): an open item past its expiry or within a day of it."""
+    from onloop.report import views
+
+    with Ledger(demo, readonly=True) as reader:
+        n = views.now(reader, NOW)
+    assert [(x["id"], round(x["in_s"])) for x in n["expiring"]] == [
+        ("pr#99", 20 * 60)
+    ]  # n-date expires in 2 days
