@@ -2003,6 +2003,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "the map's zoom 2 drops what Flow's card panel showed",
+        "src/onloop/derive.py",
+        '                "detail": item_detail(ledger, now, lf["id"]),\n',
+        "",
+        ["tests/test_replay_api.py::test_the_maps_zoom_2_item_carries_what_flows_card_panel_showed"],
+    ),
+    (
         "Now lists an expiry that is more than a day away",
         "src/onloop/report/views.py",
         "        if in_s <= EXPIRING_S:\n",

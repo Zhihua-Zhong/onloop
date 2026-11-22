@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Background,
@@ -17,7 +17,7 @@ import { ChevronRight } from "lucide-react";
 import { get, type DigestModel } from "@/lib/api";
 import { downMessage, refetchEvery, viewState } from "@/lib/recovery";
 import { useTicking } from "@/lib/clock";
-import { clock, duration, plural } from "@/lib/format";
+import { clock, duration, plural, reason } from "@/lib/format";
 import { href } from "@/lib/route";
 import {
   BLOCK_H,
@@ -44,6 +44,7 @@ import {
   IDLE,
   stageOfColumn,
   type StageGrid,
+  type ItemDetail,
 } from "@/lib/map";
 import { cn } from "@/lib/utils";
 import { Empty, Loading, Problem, tone } from "@/components/kit";
@@ -867,6 +868,7 @@ function HolderCard({ h }: { h: MapHolder }) {
               {" · "}
               <a href={linkHref(i.link)} className="font-medium text-accent hover:underline" data-testid="item-link">{i.link.kind}</a>
             </p>
+            {i.detail && <ItemDetails d={i.detail} />}
           </li>
         ))}
         {h.items.length > 8 && <li className="text-xs text-muted">and {h.items.length - 8} more, in the list form</li>}
@@ -1052,6 +1054,59 @@ function Zoom2({ m, table, who }: { m: Zoom2Model; table: boolean; who: string |
             <Legend m={m} />
           </aside>
         </div>
+      )}
+    </div>
+  );
+}
+
+// What Flow's card panel showed, moved to the map's zoom 2 (decision 0019, section 4): who owns an item, what it
+// waits on and why, its default and expiry, its source, and the command to copy when one moves it. Closed by default.
+function ItemDetails({ d }: { d: ItemDetail }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="pl-4">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="text-xs text-accent hover:underline" data-testid="item-details-toggle">
+        {open ? "Hide details" : "Details"}
+      </button>
+      {open && (
+        <dl className="mt-1 grid grid-cols-[6rem_1fr] gap-x-2 gap-y-0.5 text-xs" data-testid="item-details">
+          <dt className="text-muted">Owner</dt>
+          <dd className="font-mono">{d.owner_role ?? <span className="font-sans text-muted">nobody</span>}</dd>
+          {d.waits.map((w, k) => (
+            <Fragment key={k}>
+              <dt className="text-muted">Waits on</dt>
+              <dd>
+                <span className="font-mono">{w.on}</span>: {reason(w.reason)}
+                {w.age_s != null ? `, ${duration(w.age_s)}` : ""}
+              </dd>
+            </Fragment>
+          ))}
+          {(d.default || d.expires) && (
+            <>
+              <dt className="text-muted">If nobody answers</dt>
+              <dd>
+                {d.default ?? "nothing happens until someone answers"}
+                {d.expires ? ` · expires ${clock(d.expires)}` : ""}
+              </dd>
+            </>
+          )}
+          {d.url && (
+            <>
+              <dt className="text-muted">Source</dt>
+              <dd>
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                  open
+                </a>
+              </dd>
+            </>
+          )}
+          {d.commands.map((c) => (
+            <Fragment key={c}>
+              <dt className="text-muted">To move it</dt>
+              <dd className="font-mono [overflow-wrap:anywhere]">{c}</dd>
+            </Fragment>
+          ))}
+        </dl>
       )}
     </div>
   );

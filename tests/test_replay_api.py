@@ -225,3 +225,16 @@ def test_now_lists_what_expires_within_a_day_as_flows_roadmap_did(demo):
     assert [(x["id"], round(x["in_s"])) for x in n["expiring"]] == [
         ("pr#99", 20 * 60)
     ]  # n-date expires in 2 days
+
+
+def test_the_maps_zoom_2_item_carries_what_flows_card_panel_showed(demo):
+    """Moved from Flow's side panel (decision 0019, section 4): owner, waits, default and expiry, source, commands."""
+    from onloop import derive
+
+    with Ledger(demo, readonly=True) as reader:
+        z2 = derive.zoom2(reader, NOW, "changes", "opened")
+    items = {i["id"]: i for h in z2["holders"] for i in h["items"]}
+    d99 = items["pr#99"]["detail"]
+    assert d99["owner_role"] == "lead" and d99["url"].endswith("/pull/99") and d99["expires"]
+    assert d99["default"] and [w["on"] for w in d99["waits"]] == ["you"]
+    assert [(w["on"], w["reason"]) for w in items["pr#106"]["detail"]["waits"]] == [("main", "conflict")]

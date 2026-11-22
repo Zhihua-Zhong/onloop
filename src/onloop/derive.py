@@ -15,6 +15,7 @@ real replay.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -1048,6 +1049,43 @@ def grid(ledger: Any, now: str, block: dict[str, Any], stages: list[dict[str, An
     }
 
 
+def item_detail(ledger: Any, now: str, item_id: str) -> dict[str, Any] | None:
+    """What Flow's card panel showed, for the map's zoom 2 (decision 0019, section 4): the item's owner, its source
+    link, its default and expiry, what it waits on (and why, and for how long), and the command to copy when one moves
+    it. None for an id that is no item (a team's imported leaf)."""
+    rows = ledger.select("SELECT id, owner_role, ref, detail FROM items WHERE id = ?", (item_id,))
+    if not rows:
+        return None
+    r = rows[0]
+    d = r["detail"] if isinstance(r["detail"], dict) else json.loads(r["detail"] or "{}")
+    waits = [
+        {
+            "on": "you" if w["on_kind"] == "human" else w["on_ref"],
+            "reason": w["reason"],
+            "age_s": _secs(w["since"], now) if w["since"] else None,
+        }
+        for w in ledger.select(
+            "SELECT on_kind, on_ref, reason, since FROM waits WHERE cleared_at IS NULL AND (item_id = ? OR waiter = ?) "
+            "ORDER BY since",
+            (item_id, item_id),
+        )
+    ]
+    commands = []
+    if any(w["reason"] == "missing_evidence" for w in waits):
+        commands.append(f"onloop item evidence {item_id} <ref>")
+    if any(w["reason"] == "paused_by_human" for w in waits) and r["owner_role"]:
+        commands.append(f"onloop role resume {r['owner_role']}")
+    ref = r["ref"] if isinstance(r["ref"], str) and r["ref"].startswith(("http://", "https://")) else None
+    return {
+        "owner_role": r["owner_role"],
+        "url": ref,
+        "default": d.get("default"),
+        "expires": d.get("expires"),
+        "waits": waits,
+        "commands": commands,
+    }
+
+
 def zoom2(
     ledger: Any, now: str, block_id: str, stage: str, stuck: dict[str, int] | None = None
 ) -> dict[str, Any]:
@@ -1067,6 +1105,7 @@ def zoom2(
                 if lf.get("age_s") is not None
                 else None,
                 "link": _link(z1["block"], lf),
+                "detail": item_detail(ledger, now, lf["id"]),
             }
         )
     holders = []

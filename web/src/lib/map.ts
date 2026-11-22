@@ -175,9 +175,20 @@ export interface Zoom1Model extends MapLevelBase {
   block: Omit<MapBlock, "leaves">;
   stages: MapStageEntry[];
 }
+export interface ItemDetail {
+  owner_role: string | null;
+  url: string | null;
+  default: string | null;
+  expires: string | null;
+  waits: { on: string; reason: string; age_s: number | null }[];
+  commands: string[];
+}
+
 export interface MapHolderItem extends MapStageLeaf {
   age_text: string | null;
   link: { kind: string; view: "now" | "audit"; ref: string };
+  /** What Flow's card panel showed (decision 0019, section 4); null for an imported leaf with no item. */
+  detail?: ItemDetail | null;
 }
 export interface MapHolder {
   holder: string;
