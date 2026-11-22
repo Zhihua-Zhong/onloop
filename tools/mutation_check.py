@@ -2248,6 +2248,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_workflows.py::test_the_release_workflow_builds_from_the_tag_attests_and_only_drafts"],
     ),
     (
+        "a lease released already is released again, so the count of live leases goes below zero",
+        "src/onloop/carrier/lease.py",
+        "            return False\n        ledger.append(",
+        "            pass\n        ledger.append(",
+        ["tests/test_lease_recover.py::test_a_lease_is_released_once_whoever_releases_it_second"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

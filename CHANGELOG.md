@@ -50,12 +50,16 @@ All notable changes to this project are recorded here. The format follows
   `synchronous=NORMAL` and a 15 s busy timeout (it was 5 s); a write whose lock stays held is tried twice more after
   a backoff, then fails that one write cleanly, rolled back, and the process goes on. onloopd's tick is skipped, not
   onloopd. `GET /health` counts the retried attempts, the failed writes and the longest write transaction
-  (`receipts.locks`). The longest wait, 46.5 s, stays under the heartbeat's 60 s staleness less a tick.
+  (`receipts.locks`). The longest wait, 46.5 s, stays under the heartbeat's 60 s staleness less a tick. Measured on
+  onloop's own dogfood after the change (2026-11-22, three carried turns and onloopd's ticks): the longest write
+  transaction took 16 ms, with no retry and no failed write. (The commit's message said no long write had shown up
+  before this was measured; this is the measurement.)
 - **A carrier booting in another carrier's grant window no longer releases its lease** (R7a's round 2, moved into
   0.6.0): a lease is granted before its run has a pid, and a second carrier's boot took it for an orphan, so two
   turns could run on one session. Each carrier boot now registers its instance (pid and creation time), and
   `recover` keeps a lease whose granting instance still runs, releasing it once that instance is gone; `expires_at`
-  stays the backstop for a hung carrier. `test_carrier_race` had failed on this, under load.
+  stays the backstop for a hung carrier. `test_carrier_race` had failed on this, under load. A lease is released
+  once: a second release of it, by any path, does nothing.
 - **Rule E reads the branch's own commits** (`git log --first-parent`, in time order): a merged side branch's `Node:`
   commit no longer takes a request made on the branch it was merged into.
 - **Rule E no longer guesses on a shared branch** (the dogfood's round 2): clause 2 places a request on the next

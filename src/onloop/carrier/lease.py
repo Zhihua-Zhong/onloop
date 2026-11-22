@@ -130,10 +130,18 @@ def renew(ledger: Ledger, lease_id: str, session_id: str, ttl_s: float) -> None:
     )
 
 
-def release(ledger: Ledger, lease_id: str, session_id: str, reason: str) -> None:
-    ledger.append(
-        _event("lease.session_released", f"session:{session_id}", {"id": lease_id, "reason": reason})
-    )
+def release(ledger: Ledger, lease_id: str, session_id: str, reason: str) -> bool:
+    """Release the lease, once: in one transaction, and only while it is live. False when it was released already
+    (by its owner, or by a carrier's boot): a second release would count a lease that is not there."""
+    with ledger.tx():
+        if not ledger.select(
+            "SELECT 1 FROM session_leases WHERE id = ? AND released_at IS NULL", (lease_id,)
+        ):
+            return False
+        ledger.append(
+            _event("lease.session_released", f"session:{session_id}", {"id": lease_id, "reason": reason})
+        )
+    return True
 
 
 @dataclass(frozen=True)

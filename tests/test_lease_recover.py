@@ -157,3 +157,14 @@ def test_a_carrier_booting_in_another_carriers_grant_window_leaves_its_lease_alo
     finally:
         if a.poll() is None:
             a.kill()
+
+
+def test_a_lease_is_released_once_whoever_releases_it_second(tmp_path):
+    """The carried review of the lease fix (node r2-lease-review, its 3a): whatever path releases a lease a second
+    time, the owner after a boot's recover or the other way round, it is a no-op, so no count of live leases ever
+    goes below zero."""
+    with Ledger(tmp_path / "l.db") as led:
+        c = grant(led, "A-1")
+        assert lease.release(led, c.lease_id, "s1", "orphaned") is True
+        assert lease.release(led, c.lease_id, "s1", "done") is False
+        assert released(led) == [{"id": c.lease_id, "why": "orphaned"}]
