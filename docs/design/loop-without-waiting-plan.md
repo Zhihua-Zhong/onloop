@@ -69,7 +69,7 @@ New dependencies: none. SQLite is in the standard library. `gh` stays the only n
 ## 4. SQLite schema (`.onloop/onloop.db`, git-ignored)
 
 The path is `$ONLOOP_DB`, else `.onloop/onloop.db` in the repository's top level. `onloop init` adds it to
-`.gitignore`. `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`. The schema version is
+`.gitignore`. `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=15000` (5000 until 0.6.0). The schema version is
 `PRAGMA user_version`; a migration is a numbered function, applied in one transaction, never edited afterwards.
 
 ```sql

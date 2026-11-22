@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import __version__, fsutil, gitutil, goals, localday, procs
+from .. import __version__, fsutil, gitutil, goals, localday, procs, sqlitedb
 from .. import events as ev
 from ..adapters import EventProbe, set_registry
 from ..adapters import load as load_adapters
@@ -354,23 +354,28 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     last_tick = ledger.now()
     try:
         while not stopping.is_set():
-            with write_lock:
-                # a gap while running: the machine slept, or the process was suspended (finding #14)
-                due = ev.shift_ts(
-                    last_tick, int(cfg.tick_s)
-                )  # when the next tick was due; a long --tick is no gap
-                gap = jobs.boot_gap(ledger, {"at": due}, ledger.now(), while_running=True)
-                if gap:
-                    say(
-                        f"onloopd: no tick from {gap['from']} to {gap['to']} ({gap['cause'] or 'cause unknown'})"
-                    )
-                hook_receiver.ingest_spool(ledger, state)
-                res = tick(ledger, cfg, ingest_sources)
-                last_tick = ledger.now()
-            for err in res.errors:
-                say(f"onloopd: ingest: {err}")
-            with write_lock:
-                _write_heartbeat(cfg, port, ledger, res)
+            try:
+                with write_lock:
+                    # a gap while running: the machine slept, or the process was suspended (finding #14)
+                    due = ev.shift_ts(
+                        last_tick, int(cfg.tick_s)
+                    )  # when the next tick was due; a long --tick is no gap
+                    gap = jobs.boot_gap(ledger, {"at": due}, ledger.now(), while_running=True)
+                    if gap:
+                        say(
+                            f"onloopd: no tick from {gap['from']} to {gap['to']} ({gap['cause'] or 'cause unknown'})"
+                        )
+                    hook_receiver.ingest_spool(ledger, state)
+                    res = tick(ledger, cfg, ingest_sources)
+                    last_tick = ledger.now()
+                for err in res.errors:
+                    say(f"onloopd: ingest: {err}")
+                with write_lock:
+                    _write_heartbeat(cfg, port, ledger, res)
+            except sqlitedb.Locked as e:
+                # another process held the ledger's write lock through every attempt: this tick is skipped, not
+                # onloopd (counted in /health's receipts as a failed write)
+                say(f"onloopd: tick skipped: {e}")
             ticks += 1
             if cfg.max_ticks is not None and ticks >= cfg.max_ticks:
                 break

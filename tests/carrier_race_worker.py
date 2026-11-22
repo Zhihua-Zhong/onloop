@@ -16,6 +16,7 @@ import sys
 from onloop.carrier import deliveries
 from onloop.carrier.loop import Carrier
 from onloop.overlay.ledger import Ledger
+from onloop.sqlitedb import Locked
 
 from . import carrier_helpers as h
 
@@ -34,7 +35,7 @@ def main() -> int:
     c = Carrier(led, cfg, tmp, environ=env, login=h.LoggedIn(), hook_wait_s=2.0)
     c.boot()
     h.start(c)
-    acted, waited = 0, {}
+    acted, waited, locked = 0, {}, 0
     for i in range(n):
         import time
 
@@ -49,13 +50,17 @@ def main() -> int:
                 author="human",
                 channel="cli",
             )
-        rep = c.tick()
+        try:
+            rep = c.tick()
+        except Locked:
+            locked += 1  # as onloopd's carrier thread does: that pass fails, the carrier goes on
+            continue
         acted += len(rep.acted)
         for why in rep.waiting.values():
             key = why.split(":")[0]
             waited[key] = waited.get(key, 0) + 1
     led.close()
-    print(json.dumps({"name": name, "acted": acted, "waited": waited}))
+    print(json.dumps({"name": name, "acted": acted, "waited": waited, "locked": locked}))
     return 0
 
 

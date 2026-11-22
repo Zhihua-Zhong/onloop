@@ -2216,6 +2216,31 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
+        "a write gives up at the first busy timeout, so a lock held a moment longer loses it",
+        "src/onloop/sqlitedb.py",
+        "                if attempt == LOCK_RETRIES:",
+        "                if True:",
+        [
+            "tests/test_ledger_locks.py::test_a_write_waits_out_a_lock_held_longer_than_one_attempt_and_is_made"
+        ],
+    ),
+    (
+        "a failed write is not counted, so /health hides it",
+        "src/onloop/sqlitedb.py",
+        '                    _count("failed")',
+        "                    pass",
+        [
+            "tests/test_ledger_locks.py::test_a_write_the_lock_outlasts_fails_cleanly_counted_and_the_next_one_is_made"
+        ],
+    ),
+    (
+        "the ledger is opened with full sync, slower under WAL than it needs to be",
+        "src/onloop/sqlitedb.py",
+        '                "PRAGMA synchronous=NORMAL"',
+        '                "PRAGMA synchronous=FULL"',
+        ["tests/test_ledger_locks.py::test_every_writable_open_is_wal_with_normal_sync_and_the_busy_timeout"],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",

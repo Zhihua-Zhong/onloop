@@ -76,7 +76,7 @@ import time
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
-from .. import __version__
+from .. import __version__, sqlitedb
 from .. import events as ev
 from ..report import views
 from . import receipts, ui
@@ -471,7 +471,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     "pid": os.getpid(),
                     "started_at": self.server.started_at,
                     "ledger": reader.health(),
-                    "receipts": {"since": self.server.started_at, **self.server.receipts.snapshot()},
+                    "receipts": {
+                        "since": self.server.started_at,
+                        **self.server.receipts.snapshot(),
+                        "locks": sqlitedb.locks(),  # write attempts retried, writes failed, the longest write
+                    },
                 }
             elif url.path == "/api/items":
                 body = {"items": reader.items()}
