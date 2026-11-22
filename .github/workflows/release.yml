@@ -30,9 +30,10 @@ jobs:
       - name: The tag names the package's version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          version=$(python -c 'import re, pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/onloop/__init__.py").read_text()).group(1))')
+          version=$(python -c 'import re, pathlib; m = re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/onloop/__init__.py").read_text()); print(m.group(1) if m else "")')
+          if [ -z "$version" ]; then echo "no __version__ = \"X.Y.Z\" in src/onloop/__init__.py"; exit 1; fi
           echo "tag $tag, onloop.__version__ $version"
-          test "$tag" = "$version"
+          test "$tag" = "$version" || { echo "the tag names $tag, the package is $version"; exit 1; }
       - name: Build the UI
         working-directory: web
         run: |
@@ -45,6 +46,13 @@ jobs:
           python -m build
       - name: Check the wheel carries the UI
         run: python tools/check_wheel.py dist/*.whl
+      - name: Check the sdist carries the UI
+        run: tar tzf dist/*.tar.gz | grep -q '/src/onloop/ui/index.html$'
+      - name: Self-test the wheel to be released
+        run: |
+          python -m venv /tmp/released
+          /tmp/released/bin/python -m pip install --no-cache-dir dist/*.whl
+          /tmp/released/bin/onloop selftest
       - name: SHA256SUMS
         working-directory: dist
         run: |

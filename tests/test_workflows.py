@@ -66,7 +66,7 @@ def test_the_wheel_job_audits_the_wheels_dependencies_and_the_uis_production_one
     assert "tools/audit_gate.py check" in runs
     assert "npm audit --json --omit=dev" in runs and "audit_gate.py npm" in runs
     assert "pip-audit --path" in runs and "audit_gate.py pip-ignores" in runs
-    assert runs.index("python -m build --wheel") < runs.index("pip-audit --path")  # it audits the built wheel
+    assert runs.index("python -m build") < runs.index("pip-audit --path")  # it audits the built wheel
 
 
 def test_the_e2e_job_builds_the_ui_before_installing_onloop_and_keeps_the_report_on_failure():
@@ -126,7 +126,23 @@ def test_the_release_workflow_builds_from_the_tag_attests_and_only_drafts():
 
 def test_the_release_doc_says_how_to_verify_with_gh_attestation():
     text = (ROOT / "docs" / "release.md").read_text(encoding="utf-8")
+    assert "gh attestation verify onloop-X.Y.Z-py3-none-any.whl" in text
+    assert "sha256sum --check --ignore-missing SHA256SUMS" in text
     assert (
-        "gh attestation verify onloop-X.Y.Z-py3-none-any.whl" in text
-        and "sha256sum --check SHA256SUMS" in text
+        "--signer-workflow Zhihua-Zhong/onloop/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z"
+        in text
     )
+
+
+def test_ci_builds_the_wheel_as_a_release_does_and_the_release_self_tests_its_own():
+    def runs(name, job):
+        doc = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+        return "\n".join(s.get("run", "") for s in doc["jobs"][job]["steps"])
+
+    ci, rel = runs("ci.yml", "wheel"), runs("release.yml", "draft")
+    for text in (ci, rel):
+        assert (
+            "python -m build" in text and "python -m build --wheel" not in text
+        )  # the sdist, then the wheel
+        assert "src/onloop/ui/index.html" in text  # the sdist carries the UI
+    assert rel.index("onloop selftest") < rel.index("gh release create")

@@ -40,7 +40,9 @@ All notable changes to this project are recorded here. The format follows
 - **Releases are built by CI from their tag**: on a `v*` tag, the `release` workflow checks the tag names the
   package's version, builds the UI, the wheel and the sdist, writes `SHA256SUMS`, attests where each file was built
   (GitHub artifact attestations), and attaches all of it to a draft release, which a person publishes.
-  [docs/release.md](docs/release.md) has the steps and how to verify a release with `gh attestation verify`.
+  [docs/release.md](docs/release.md) has the steps and how to verify a release with `gh attestation verify`. The
+  release checks its own sdist carries the UI and self-tests its own wheel before drafting, and CI's wheel job builds
+  exactly as the release does.
 
 ### Fixed
 
