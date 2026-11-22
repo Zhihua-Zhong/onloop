@@ -22,8 +22,12 @@ seconds, so the two are seconds apart.
 onloop role, when the session's resource attributes name one as `onloop.role` (onloop sets it when it starts the
 session); otherwise none. A record without a session id cannot be placed and is skipped.
 
-**Redelivery.** An exporter retries a batch it thinks failed. Each event's id is derived from its kind, its session
-and Claude Code's per-session `event.sequence`, so a batch delivered twice is logged once.
+**Redelivery.** An exporter retries a batch it thinks failed, so each event's id is derived from what is unique to it,
+and a batch delivered twice is logged once. A model request is keyed on its `request_id`. Any other record is keyed
+on its session, its `prompt.id` and `event.sequence`: Claude Code numbers events per process, and a carried turn is a
+new process resuming the same session (`claude -p --resume`), so the sequence starts again at each run; without the
+prompt id a resumed run's events took an earlier run's ids and were dropped as redelivered (the dogfood's round 2,
+2026-11-22). With neither, the session and sequence are the key, as before.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import uuid
 from typing import Any
 
 from ..overlay.ledger import Ledger
+from . import receipts
 from .server import WriteRefused
 
 # Identity attributes Claude Code sends when signed in with a Claude account (S1); dropped before anything reads them.
@@ -198,9 +203,7 @@ def _event(rec: Any, role: str | None) -> dict[str, Any] | None:
     seq = _typed(a.get("event.sequence"), "int")
     if seq is not None:
         payload["sequence"] = seq
-        eid = hashlib.sha256("\x1f".join(("otel", kind, session, str(seq))).encode("utf-8")).hexdigest()
-    else:
-        eid = f"otel-{uuid.uuid4().hex}"  # nothing stable to key it on: each record is its own event
+    eid = _event_id(kind, session, payload, seq)
     return {
         "id": eid,
         "source": "otel",
@@ -211,9 +214,35 @@ def _event(rec: Any, role: str | None) -> dict[str, Any] | None:
     }
 
 
+def _event_id(kind: str, session: str, payload: dict[str, Any], seq: int | None) -> str:
+    """What is unique to one record, so a redelivered batch is logged once and a resumed run's records are not taken for
+    an earlier run's (the sequence starts again in each process; see "Redelivery")."""
+    if kind == "cost.request" and payload.get("request_id"):
+        parts: tuple[str, ...] = ("otel", kind, "request", str(payload["request_id"]))
+    elif seq is not None and payload.get("prompt_id"):
+        parts = ("otel", kind, session, "prompt", str(payload["prompt_id"]), str(seq))
+    elif seq is not None:
+        parts = ("otel", kind, session, str(seq))
+    else:
+        return f"otel-{uuid.uuid4().hex}"  # nothing stable to key it on: each record is its own event
+    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def _records(signal: str, body: dict[str, Any]) -> int:
+    """How many log records the body holds, kept or not."""
+    if signal != "logs":
+        return 0
+    return sum(
+        len(_list(sl, "logRecords")) for rl in _list(body, "resourceLogs") for sl in _list(rl, "scopeLogs")
+    )
+
+
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
-    """The `/v1/` write route: `rest` is `logs` or `metrics`. Logs every event of the request in one transaction."""
-    events = events_for(rest.strip("/"), body)
-    if events:
-        ledger.append_batch(events)
-    return {"partialSuccess": {}}
+    """The `/v1/` write route: `rest` is `logs` or `metrics`. Logs every event of the request in one transaction, and
+    reports how many records came, were kept, were stored, and were already logged (`receipts`)."""
+    signal = rest.strip("/")
+    events = events_for(signal, body)
+    stored = len(ledger.append_batch(events)) if events else 0
+    counts = {"received": _records(signal, body), "kept": len(events), "stored": stored}
+    counts["duplicate"] = len(events) - stored
+    return {"partialSuccess": {}, receipts.RECEIPT: counts}

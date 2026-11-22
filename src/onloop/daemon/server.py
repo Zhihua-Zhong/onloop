@@ -11,7 +11,9 @@ UTF-8 to a JSON object. Everything else is 405.
 The token keeps out other programs and web pages; it is not a boundary against agents running as the same user, which
 can read it (decision 0008), so what arrives here is evidence, never authority.
 
-    GET /health                 {"status": "ok", "version", "pid", "started_at", "ledger": {...}}
+    GET /health                 {"status": "ok", "version", "pid", "started_at", "ledger": {...}, "receipts":
+                                {"since", "requests", "records"}}: every write by route and answer, and every
+                                telemetry record kept, stored or dropped as already logged (`receipts.py`)
     GET /api/items              the items projection
     GET /api/waits              open waits (?all=1 for cleared ones too)
     GET /api/leases             live leases (?all=1 for released ones too)
@@ -77,7 +79,7 @@ from urllib.parse import parse_qs, urlsplit
 from .. import __version__
 from .. import events as ev
 from ..report import views
-from . import ui
+from . import receipts, ui
 
 HOST = "127.0.0.1"  # scan:allow
 DEFAULT_PORT = 8790
@@ -185,6 +187,7 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         self.heartbeat = heartbeat  # onloopd's heartbeat file, for /api/now's health
         self.ui_dir = ui_dir or ui.UI_DIR  # the built UI, package data
         self.started_at = ev.now_ts()
+        self.receipts = receipts.Receipts()  # what the write path received since this start; counts only
         self.stopping = threading.Event()
         self.ui_key = secrets.token_bytes(
             32
@@ -266,6 +269,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return None
 
     def _send_json(self, code: int, body: Any, head_only: bool = False) -> None:
+        route = getattr(self, "_write_route", None)
+        if route is not None:
+            self.server.receipts.request(route, code)
+            self._write_route = None
         data = json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -285,6 +292,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._answer(head_only=True)
 
     def _not_allowed(self) -> None:
+        route = getattr(self, "_write_route", None)
+        if route is not None:
+            self.server.receipts.request(route, 405)
+            self._write_route = None
         self.send_response(405)
         self.send_header("Allow", "GET, HEAD, POST" if self.server.writer is not None else "GET, HEAD")
         self.send_header("Content-Length", "0")
@@ -294,6 +305,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        self._write_route = receipts.route_of(path)  # its answer is counted, whatever it is
         if path == UI_WRITE or path in UI_TASK_WRITES:
             self._ui_write(path)
             return
@@ -351,6 +363,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001 - a failed write is a 500 with its reason, and nothing half-written
             self._send_json(500, {"error": f"{type(e).__name__}: {e}"[:300]})
             return
+        if isinstance(out, dict) and isinstance(out.get(receipts.RECEIPT), dict):
+            out = dict(out)
+            self.server.receipts.records(self._write_route or "/", out.pop(receipts.RECEIPT))
         self._send_json(200, out)
 
     def _ui_write(self, path: str = UI_WRITE) -> None:
@@ -439,6 +454,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
 
     def _answer(self, head_only: bool) -> None:
+        self._write_route = None  # a read is not counted
         refusal = self._refusal()
         if refusal:
             self._send_json(403, {"error": refusal}, head_only)
@@ -455,6 +471,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     "pid": os.getpid(),
                     "started_at": self.server.started_at,
                     "ledger": reader.health(),
+                    "receipts": {"since": self.server.started_at, **self.server.receipts.snapshot()},
                 }
             elif url.path == "/api/items":
                 body = {"items": reader.items()}

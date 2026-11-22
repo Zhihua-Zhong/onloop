@@ -21,6 +21,14 @@ All notable changes to this project are recorded here. The format follows
   it, so a repository's `.claude/settings.json` cannot widen the role's tools. Its file tools stay inside `cwd`; a
   folder a step must read beyond it is declared in the role as `add_dirs` and passed as `--add-dir`.
 
+### Fixed
+
+- **A carried turn's telemetry is no longer dropped** (the dogfood's round 2, 2026-11-22): Claude Code numbers its
+  records per process, and a carried turn is a new process resuming the same session, so the sequence started again
+  and onloopd took the second run's records for the first run's, dropping them as redelivered. A model request is now
+  keyed on its request id, any other record on its session, prompt id and sequence. A ledger written before keeps
+  what it has; the dropped records were never stored.
+
 ### Removed
 
 - **Flow and Activity are retired** (decision 0019, section 4), now that their parts have moved to Now, Replay and the
@@ -31,6 +39,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- **What came in, and the cross-check** (the onloop lead's rule: a silent drop is never invisible again). `GET /health`
+  counts every write by route and answer and every telemetry record received, kept, stored and already logged, since
+  onloopd started; counts only. A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`), and
+  Replay says how much of it the window's telemetry brought, naming any run below 95%
+  (`GET /api/replay`'s `coverage`).
 - **A carried turn's cost reaches a node by rule E:** a turn whose deliveries name no item records no step (a run is
   not a step), and `run.started` records the repository and branch the run works on, so its requests go to the next
   commit's `Node:` trailer there, labelled "attributed by rule".

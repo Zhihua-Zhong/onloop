@@ -2,6 +2,8 @@
 
     build(ledger, start, end, now=None) -> dict        derive.timeline: every lane's segments, its four kinds of time,
                                                        its tokens, and those tokens by step
+    coverage(ledger, start, end) -> dict               how much of what each carried run's CLI reported its telemetry
+                                                       brought: the cross-check of every token figure above
 
 **A lane** is a role. **Its time** is cut into segments of four kinds, from what the ledger records:
 
@@ -27,6 +29,11 @@ creation, with cache reads apart since they cost far less. A request is charged 
    is unavailable by design: prompts are never logged (§1);
 3. else to the lane's **between steps**: never to the nearest step (spike S2: that would about double each step's
    cost).
+
+**Coverage.** A carried run's `run.ended` carries the CLI's own count of its tokens (`usage`, from its stream's last
+result). Its telemetry is every `cost.request` of its session from `run.started` until `run.ended`, plus a short
+grace for the last export (never past the session's next run). A run whose telemetry brought less than
+`COVERAGE_LOW` of what it reported is flagged: the page's figures for it are short, and say so.
 """
 
 from __future__ import annotations
@@ -44,6 +51,8 @@ KINDS = ("working", "harness", "waiting", "queued")  # the order wins an overlap
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens")
 NO_ROLE = "(no role)"
 MAX_REQUEST_S = 3600  # the longest a model request is taken to run
+COVERAGE_LOW = 0.95  # a run whose telemetry brought less than this share of its reported tokens is flagged
+COVERAGE_GRACE_S = 30  # the last export can land just after run.ended
 
 
 def ms(ts: str) -> int:
@@ -303,6 +312,65 @@ def requests(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
                     step, by = f"step:node:{nodes[j]}", "rule"
         out.append({"t": t, "lane": r["actor"] or NO_ROLE, "payload": p, "step": step, "by": by})
     return out
+
+
+def coverage(ledger: Any, start: str, end: str) -> dict[str, Any]:
+    """Every carried run that ended in [start, end] and reported its tokens: what it reported, what its telemetry brought,
+    and the runs below `COVERAGE_LOW`. Runs from before the CLI's count was recorded are not counted."""
+    started = {}
+    for r in ledger.select("SELECT ts_system, payload FROM events WHERE kind = 'run.started' ORDER BY seq"):
+        p = _payload(r)
+        if isinstance(p.get("id"), str) and isinstance(p.get("session_id"), str):
+            started[p["id"]] = (ms(r["ts_system"]), p["session_id"])
+    by_session: dict[str, list[int]] = {}
+    for t, sid in started.values():
+        by_session.setdefault(sid, []).append(t)
+    for v in by_session.values():
+        v.sort()
+    runs, reported, received = [], 0, 0
+    for r in ledger.select(
+        "SELECT ts_system, subject_ref, payload FROM events WHERE kind = 'run.ended' AND ts_system >= ? AND ts_system <= ? "
+        "ORDER BY seq",
+        (start, end),
+    ):
+        p = _payload(r)
+        u = p.get("usage")
+        if not isinstance(u, dict) or not isinstance(u.get("total"), int) or p.get("id") not in started:
+            continue
+        t0, sid = started[p["id"]]
+        t1 = ms(r["ts_system"]) + COVERAGE_GRACE_S * 1000
+        later = [t for t in by_session[sid] if t > t0]
+        if later:
+            t1 = min(t1, later[0])
+        got = 0
+        for q in ledger.select(
+            "SELECT payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system < ?",
+            (_iso(t0), _iso(t1)),
+        ):
+            qp = _payload(q)
+            if qp.get("session_id") == sid:
+                got += tokens_of(qp)[0]
+        share = got / u["total"] if u["total"] else 1.0
+        runs.append(
+            {
+                "run": p["id"],
+                "lane": (r["subject_ref"] or "").removeprefix("role:") or NO_ROLE,
+                "ended_ms": ms(r["ts_system"]),
+                "reported": u["total"],
+                "received": got,
+                "share": round(share, 4),
+            }
+        )
+        reported += u["total"]
+        received += got
+    return {
+        "runs": len(runs),
+        "reported": reported,
+        "received": received,
+        "share": round(received / reported, 4) if reported else None,
+        "low": [x for x in runs if x["share"] < COVERAGE_LOW],
+        "low_below": COVERAGE_LOW,
+    }
 
 
 def _zero() -> dict[str, int]:

@@ -834,6 +834,8 @@ class Carrier:
                         else str(result.get("api_error_status")),
                         "denials": res.stream.denials(),
                         "num_turns": result.get("num_turns"),
+                        # the CLI's own count of the run's tokens, beside what its telemetry sent (the cross-check)
+                        "usage": res.stream.reported_usage(),
                         "wall_s": res.wall_s,
                         "rate_limit": res.stream.rate_limit,
                         "stop_turn_id": turn[0]["acked_by_turn"] if turn else None,

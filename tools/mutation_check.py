@@ -2010,6 +2010,76 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ["tests/test_web_units.py::test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved"],
     ),
     (
+        "a resumed run's telemetry is keyed on session and sequence, so its records are dropped as an earlier run's",
+        "src/onloop/daemon/otlp.py",
+        '    elif seq is not None and payload.get("prompt_id"):',
+        "    elif False:",
+        [
+            "tests/test_otlp_receiver.py::test_a_resumed_runs_records_are_logged_though_its_sequence_starts_again"
+        ],
+    ),
+    (
+        "a model request with no prompt id is keyed on its sequence, not its request id",
+        "src/onloop/daemon/otlp.py",
+        '    if kind == "cost.request" and payload.get("request_id"):',
+        "    if False:",
+        ["tests/test_otlp_receiver.py::test_a_request_without_a_prompt_id_is_keyed_on_its_request_id"],
+    ),
+    (
+        "records already logged are not counted, so a drop is silent again",
+        "src/onloop/daemon/otlp.py",
+        '    counts["duplicate"] = len(events) - stored',
+        '    counts["duplicate"] = 0',
+        [
+            "tests/test_otlp_receiver.py::test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged"
+        ],
+    ),
+    (
+        "a refused write is answered but not counted",
+        "src/onloop/daemon/server.py",
+        "            self.server.receipts.request(route, code)\n",
+        "            pass\n",
+        [
+            "tests/test_otlp_receiver.py::test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged"
+        ],
+    ),
+    (
+        "a run's coverage counts another session's telemetry as its own",
+        "src/onloop/timeline.py",
+        '            if qp.get("session_id") == sid:',
+        "            if True:",
+        [
+            "tests/test_coverage.py::test_a_run_whose_telemetry_brought_what_it_reported_is_covered_and_a_short_one_is_flagged"
+        ],
+    ),
+    (
+        "a run's coverage reads into the session's next run",
+        "src/onloop/timeline.py",
+        "            t1 = min(t1, later[0])",
+        "            pass",
+        [
+            "tests/test_coverage.py::test_the_last_export_after_run_ended_counts_but_never_the_sessions_next_run"
+        ],
+    ),
+    (
+        "a run below the line is not flagged, so its short tokens pass for true ones",
+        "src/onloop/timeline.py",
+        '        "low": [x for x in runs if x["share"] < COVERAGE_LOW],',
+        '        "low": [],',
+        [
+            "tests/test_coverage.py::test_a_run_whose_telemetry_brought_what_it_reported_is_covered_and_a_short_one_is_flagged"
+        ],
+    ),
+    (
+        "the CLI's count is the session's total on a resumed session, not the run's own turns",
+        "src/onloop/carrier/stream.py",
+        '            per_model = r.get("model_usage_since_last_result")',
+        '            per_model = r.get("modelUsage")',
+        [
+            "tests/test_coverage.py::test_the_cli_count_is_each_turns_usage_over_every_model_never_the_sessions_total"
+        ],
+    ),
+    (
         "the replay plays by capped frame steps, so a throttled tab plays slower than the speed",
         "web/src/lib/replay.ts",
         "anchorT + Math.max(0, nowWall - anchorWall) * speed",
@@ -2211,8 +2281,8 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "the OTLP receiver gives each record a fresh id, so a redelivered batch is logged twice",
         "src/onloop/daemon/otlp.py",
-        'eid = hashlib.sha256("\\x1f".join(("otel", kind, session, str(seq))).encode("utf-8")).hexdigest()',
-        'eid = f"otel-{uuid.uuid4().hex}"',
+        '    return hashlib.sha256("\\x1f".join(parts).encode("utf-8")).hexdigest()',
+        '    return f"otel-{uuid.uuid4().hex}"',
         ["tests/test_otlp_receiver.py::test_a_logs_export_is_logged_once_even_when_redelivered"],
     ),
     (

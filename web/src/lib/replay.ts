@@ -13,6 +13,9 @@ export interface LaneAt {
   requests: number;
 }
 
+export interface CoverageRun { run: string; lane: string; ended_ms: number; reported: number; received: number; share: number }
+export interface Coverage { runs: number; reported: number; received: number; share: number | null; low: CoverageRun[]; low_below: number }
+
 export interface ReplayWindow {
   from: string;
   to: string;
@@ -32,6 +35,8 @@ export interface ReplayWindow {
   turns?: { t: number[]; lane: number[]; start: number[] }; // each turn's end, lane, and start (-1: not known)
   data_as_of?: string | null; // the export's time, when the ledger replays a team's daily snapshots
   first_ms?: number | null; // when the ledger's data begins
+  // the cross-check: what the window's carried runs reported (the CLI's own count) against what their telemetry brought
+  coverage?: Coverage;
   your_wait?: { count: number; oldest_s: number | null; share: number; waited_s: number; by_role: Record<string, number> }; // a7
 }
 

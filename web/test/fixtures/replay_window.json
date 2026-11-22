@@ -631,6 +631,14 @@
     1793616600000
    ]
   },
+  "coverage": {
+   "low": [],
+   "low_below": 0.95,
+   "received": 0,
+   "reported": 0,
+   "runs": 0,
+   "share": null
+  },
   "data_as_of": null,
   "first_ms": 1793613840000,
   "from": "2026-11-02T10:02:00.000Z",

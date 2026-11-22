@@ -247,3 +247,64 @@ def test_a_body_that_is_not_otlp_is_answered_400_and_stored_nowhere(live):
     assert post(s, "/v1/logs", b'{"hello": "world"}')[0] == 400
     assert post(s, "/v1/traces", b'{"resourceSpans": []}')[0] == 404
     assert otel_rows(led) == []
+
+
+def _api(seq, prompt, request, session="s-1", tokens=10):
+    fields = {"model": "claude-test", "input_tokens": tokens, "output_tokens": 1, "request_id": request}
+    if prompt is not None:
+        fields["prompt.id"] = prompt
+    return record("api_request", seq, session=session, **fields)
+
+
+def test_a_resumed_runs_records_are_logged_though_its_sequence_starts_again(live):
+    """The dogfood's round 2 (2026-11-22): a carried turn is a new process resuming the same session, so Claude Code's
+    event.sequence starts again; keyed on session and sequence alone, the second run's records were dropped as
+    redelivered. Each run has its own prompt id, and each request its own id."""
+    s, led = live
+    run1 = logs(
+        record("user_prompt", 3, **{"prompt.id": "p-run1", "prompt_length": 5}), _api(13, "p-run1", "req-a")
+    )
+    run2 = logs(
+        record("user_prompt", 3, **{"prompt.id": "p-run2", "prompt_length": 7}), _api(13, "p-run2", "req-b")
+    )
+    for raw in (run1, run2, run2):  # run 2's batch delivered twice
+        assert post(s, "/v1/logs", json.dumps(raw).encode())[0] == 200
+    rows = otel_rows(led)
+    assert [(r["kind"], json.loads(r["payload"])["prompt_id"]) for r in rows] == [
+        ("turn.prompted", "p-run1"),
+        ("cost.request", "p-run1"),
+        ("turn.prompted", "p-run2"),
+        ("cost.request", "p-run2"),
+    ]
+
+
+def test_a_request_without_a_prompt_id_is_keyed_on_its_request_id(live):
+    s, led = live
+    for raw in (logs(_api(13, None, "req-a")), logs(_api(13, None, "req-b")), logs(_api(13, None, "req-b"))):
+        assert post(s, "/v1/logs", json.dumps(raw).encode())[0] == 200
+    assert [json.loads(r["payload"])["request_id"] for r in otel_rows(led)] == ["req-a", "req-b"]
+
+
+def _health(s):
+    port = s.server_address[1]
+    c = http.client.HTTPConnection(srv.HOST, port, timeout=5)
+    c.request("GET", "/health", headers={"Host": f"{srv.HOST}:{port}"})
+    r = c.getresponse()
+    body = json.loads(r.read())
+    c.close()
+    return body
+
+
+def test_health_counts_every_write_by_answer_and_every_record_kept_stored_or_already_logged(live):
+    """The onloop lead's rule after round 2: a silent drop is never invisible again. Counts only, never a body."""
+    s, led = live
+    raw = json.dumps(logs(PROMPT, API, TOOL, record("some_other_event", 9))).encode()
+    assert post(s, "/v1/logs", raw)[0] == 200
+    assert post(s, "/v1/logs", raw)[0] == 200  # redelivered: its records are already logged
+    assert post(s, "/v1/logs", gzip.compress(raw), headers={"Content-Encoding": "gzip"})[0] == 415
+    assert post(s, "/v1/logs", raw, auth="Bearer wrong")[0] == 401
+    assert post(s, "/v1/logs", b'{"hello": "world"}')[0] == 400
+    r = _health(s)["receipts"]
+    assert r["since"] and r["requests"] == {"v1": {"200": 2, "400": 1, "401": 1, "415": 1}}
+    assert r["records"] == {"v1": {"received": 8, "kept": 6, "stored": 3, "duplicate": 3}}
+    assert "SECRET" not in json.dumps(r) and "claude-test" not in json.dumps(r)

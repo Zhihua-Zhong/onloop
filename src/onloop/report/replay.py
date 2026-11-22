@@ -132,6 +132,8 @@ def window(
         # (its start too when the source says), the export's time when the ledger replays a team's snapshots, and
         # when the ledger's data begins
         "turns": _turns(reader, start, end, index),
+        # the cross-check: how much of what the window's carried runs reported their telemetry brought
+        "coverage": tl.coverage(reader, start, end),
         "data_as_of": derive.data_as_of(reader),
         "first_ms": _first_ms(reader),
         # the steps open at the window's end (or now, when earlier): who is working on what, and its tokens so far

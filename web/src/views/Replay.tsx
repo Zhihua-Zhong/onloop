@@ -4,7 +4,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
 import { href } from "@/lib/route";
-import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow } from "@/lib/replay";
+import { activityTimes, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
 import { Loading, Problem } from "@/components/kit";
@@ -119,6 +119,7 @@ export function ReplayView({ params }: { params: URLSearchParams }) {
       act={act}
       working={q.data?.working_now ?? []}
       wait={q.data?.your_wait ?? null}
+      coverage={q.data?.coverage ?? null}
       hours={hours}
       params={params}
       live={live}
@@ -143,6 +144,7 @@ function Player(p: {
   act: Act | null;
   working: WorkingNow[];
   wait: ReplayWindow["your_wait"] | null;
+  coverage: Coverage | null;
   hours: number;
   params: URLSearchParams;
   live: boolean;
@@ -309,6 +311,7 @@ function Player(p: {
         </p>
       )}
       <Summary frame={frame} shown={shown} active={active.length} lanes={frame.length} scope={scope} wait={p.wait} span={span} />
+      {p.coverage && p.coverage.runs > 0 && <CoverageLine c={p.coverage} />}
       {picked && <Products step={picked} at={t} onClose={() => setPicked(null)} />}
       {table ? <AtCursor frame={shown} ix={ix} t={t} act={p.act} onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} /> : <Lanes ix={ix} frame={frame} t={t} spanDays={spanDays} act={p.act} onScrub={(at) => { setPlaying(false); setT(at); }} />}
       {!table && <AtCursor frame={shown} ix={ix} t={t} act={p.act} compact onPick={setPicked} scope={scope} scopeHref={scopeHref} ledgerScope={ledgerScope} />}
@@ -398,6 +401,32 @@ function Controls(p: {
         data-testid="scrubber"
       />
     </div>
+  );
+}
+
+// The cross-check of every token figure on the page: what the window's carried runs reported (the CLI's own count)
+// against what their telemetry brought. A run below the line is named, so a short figure never passes for a true one.
+function CoverageLine({ c }: { c: Coverage }) {
+  const pct = (x: number) => `${Math.floor(x * 100)}%`;
+  const low = c.low;
+  return (
+    <p className={cn("mt-2 text-[13px] leading-snug", low.length ? "text-state-blocked" : "text-muted")} data-testid="coverage">
+      Telemetry brought {c.share === null ? "—" : pct(c.share)} of the tokens the {plural(c.runs, "carried run")} in this window reported
+      {low.length ? (
+        <>
+          ; below {pct(c.low_below)}:{" "}
+          {low.slice(0, 3).map((r, i) => (
+            <span key={r.run} data-testid="coverage-low">
+              {i ? ", " : ""}
+              {r.lane} at {stamp(r.ended_ms, true)} ({pct(r.share)})
+            </span>
+          ))}
+          {low.length > 3 ? `, and ${low.length - 3} more` : ""}. Their tokens on this page are short.
+        </>
+      ) : (
+        "."
+      )}
+    </p>
   );
 }
 

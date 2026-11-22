@@ -76,6 +76,23 @@ Every session onloop starts sends here and nowhere else: its own OTel environmen
 variable removed, and no user settings file (whose `env` would win). A session onloop did not start exports nothing
 from onloop's own folders. Metrics (`POST /v1/metrics`) are answered and stored nowhere.
 
+**Each record once.** A batch the exporter sends twice is logged once: a model request is keyed on its request id,
+any other record on its session, its prompt id and its sequence number. Claude Code numbers records per process, and a
+carried turn is a new process resuming the same session, so the sequence starts again at each run; before 0.6.0 a
+resumed run's records were taken for the earlier run's and dropped.
+
+**What came in.** `GET /health` counts, since onloopd started, every write by route and answer (200, and each refusal
+by its status: 401, 403, 413, 415, 400) and every telemetry record received, kept, stored and already logged. Counts
+only, never a body: a refused or dropped batch is never invisible.
+
+**The cross-check.** At the end of a carried run the carrier records the CLI's own count of the run's tokens (each
+turn's usage, per model, summed over the run; never the session's running total, which on a resumed session includes
+earlier runs) on `run.ended`. Replay compares it with what the run's telemetry
+brought (its session's requests from the run's start to its end, and a few seconds after for the last export) and says
+so under the summary: "Telemetry brought 99% of the tokens the 6 carried runs in this window reported". A run below
+95% is named, in red, with its share: its tokens on the page are short. A session onloop did not start has no such
+count, so it is not cross-checked.
+
 ## `onloop open <role>`: your own session, measured
 
 ```
@@ -102,11 +119,12 @@ commits changed, each at its latest commit then.
 
 | Route | Answers |
 |---|---|
-| `GET /api/replay?from=&to=&lanes=` | a window of at most 31 days, in columns: each lane at `from` and at `to`, the state changes and model requests inside, the steps, `working_now` and `your_wait` |
+| `GET /api/replay?from=&to=&lanes=` | a window of at most 31 days, in columns: each lane at `from` and at `to`, the state changes and model requests inside, the steps, `working_now`, `your_wait` and `coverage` (the cross-check) |
 | `GET /api/products?step=&at=` | a node or branch step's commits and changed files as of `at` |
 | `GET /api/products/file?repo=&sha=&path=` | one of those files, in its own sandbox |
 | `POST /v1/logs`, `POST /v1/metrics` | Claude Code's telemetry, with onloopd's token |
 | `POST /sessions/opened`, `/sessions/ended` | what `onloop open` reports |
+| `GET /health` | onloopd's state, and `receipts`: every write by route and answer, every telemetry record kept, stored or already logged |
 
 ## Limits
 

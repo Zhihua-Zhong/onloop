@@ -11,7 +11,13 @@ What a run's stream holds:
   `allowed_warning`, `rejected`), `resetsAt` (epoch seconds), `rateLimitType`, `isUsingOverage`, and a
   `utilization` per window;
 - one `result` per turn: `is_error`, `subtype`, `terminal_reason`, `api_error_status`, `num_turns`,
-  `permission_denials` (a refused tool exits 0 with `is_error: false`: this list is the only sign).
+  `permission_denials` (a refused tool exits 0 with `is_error: false`: this list is the only sign), and the tokens:
+  `usage` is that turn's main model alone, `model_usage_since_last_result` is that turn's per model (camelCase), and
+  `modelUsage` is the session's total so far, including what earlier processes on the session used (measured on CLI
+  2.1.321, 2026-11-22: two messages in one process, then the same session resumed in a new process; the resumed
+  result's `modelUsage` was the first process's total plus its own turn).
+
+    Stream.reported_usage()  the run's tokens as the CLI reports them, for the cross-check against its telemetry
 
 A line that is not valid UTF-8 or not JSON makes the stream `malformed` (story 8): the run fails, it is not guessed.
 """
@@ -94,6 +100,46 @@ class Stream:
 
     def denials(self) -> int:
         return sum(len(r.get("permission_denials") or []) for r in self.results)
+
+    def reported_usage(self) -> dict[str, int] | None:
+        """The run's tokens as the CLI reports them: each result's `model_usage_since_last_result` (that turn, every
+        model), or its `usage` when it has none, summed over the run's results. Never `modelUsage`: on a resumed session
+        it carries what earlier runs used. `total` is input, output and cache creation, as the replay counts; cache
+        reads apart. None when no result says."""
+        out = dict.fromkeys(("input", "output", "cache_creation", "cache_read"), 0)
+        camel = (
+            ("input", "inputTokens"),
+            ("output", "outputTokens"),
+            ("cache_creation", "cacheCreationInputTokens"),
+            ("cache_read", "cacheReadInputTokens"),
+        )
+        snake = (
+            ("input", "input_tokens"),
+            ("output", "output_tokens"),
+            ("cache_creation", "cache_creation_input_tokens"),
+            ("cache_read", "cache_read_input_tokens"),
+        )
+        seen = False
+        for r in self.results:
+            per_model = r.get("model_usage_since_last_result")
+            if isinstance(per_model, dict) and per_model:
+                seen = True
+                for u in per_model.values():
+                    if isinstance(u, dict):
+                        for k, f in camel:
+                            out[k] += _int(u.get(f))
+            elif isinstance(r.get("usage"), dict):
+                seen = True
+                for k, f in snake:
+                    out[k] += _int(r["usage"].get(f))
+        if not seen:
+            return None
+        out["total"] = out["input"] + out["output"] + out["cache_creation"]
+        return out
+
+
+def _int(v: Any) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
 
 
 def _keep_rate_limit(info: dict[str, Any]) -> dict[str, Any]:
