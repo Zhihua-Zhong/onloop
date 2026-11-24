@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { demoDir } from "./demo";
 
 // The vision loop's pictures (decision 0009): every view as a person first meets it, in both themes, at each
 // project's width (1440 and 390), against the demo ledger, plus a few states a person reaches by one click.
@@ -66,10 +67,7 @@ test("screen: a message sent, and the carrier stopped", async ({ page }, info) =
   await expect(page.getByTestId("entry-message").filter({ hasText: "rebase on main" }).getByTestId("delivery")).toContainText("queued");
   await page.mouse.move(1, 1);
   await page.screenshot({ path: path.join(OUT, `conversation-sent-${w}-light.png`), fullPage: true });
-  const demo = path.resolve(process.cwd(), ".demo");
-  const dirs = fs.readdirSync(demo).map((d) => path.join(demo, d)).filter((d) => fs.existsSync(path.join(d, "ledger.db")));
-  const newest = dirs.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-  const kill = path.join(newest, "carrier.off");
+  const kill = path.join(await demoDir(), "carrier.off");
   fs.writeFileSync(kill, "stopped by the screenshot test\n");
   try {
     for (const theme of ["light", "dark"] as const) {
@@ -89,9 +87,7 @@ test("screen: the compose box closed", async ({ page }, info) => {
   const { execFileSync } = await import("node:child_process");
   fs.mkdirSync(OUT, { recursive: true });
   const w = info.project.name === "phone" ? 390 : 1440;
-  const demo = path.resolve(process.cwd(), ".demo");
-  const dirs = fs.readdirSync(demo).map((d) => path.join(demo, d)).filter((d) => fs.existsSync(path.join(d, "ledger.db")));
-  const dir = dirs.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  const dir = await demoDir();
   const off = path.join(dir, "demo-no-carrier");
   fs.writeFileSync(off, "written by the screenshot test\n");
   try {

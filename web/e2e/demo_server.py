@@ -80,6 +80,8 @@ def main() -> int:
             return take(led, rest, body)
 
         routes.add("/messages/", messages)
+        # the task list's writes, as onloopd serves them (the page's /ui/tasks/* and /ui/visits become these)
+        routes.add("/tasks/", dict(daemon.ROUTES)["/tasks/"])
         server = srv.make_server(
             reader,
             port=port,

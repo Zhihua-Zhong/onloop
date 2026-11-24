@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { demoDir } from "./demo";
 
 // The Conversation view (blueprint section 4.4; decisions 0010 and 0011) against onloopd's real server over the demo
 // ledger. Every test fails on a console error. The page's one write is the message to a role, POST /ui/messages: a
@@ -103,15 +104,7 @@ test("the message route refuses a write without the page's cookie, its CSRF toke
   (page as Watched).writes = []; // the refused attempts above are the point of this test
 });
 
-// The demo server's own directory (web/.demo/<pid>), where a test may drop a switch file and must remove it after.
-async function demoDir(): Promise<string> {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const demo = path.resolve(process.cwd(), ".demo");
-  const dirs = fs.readdirSync(demo).map((d) => path.join(demo, d)).filter((d) => fs.existsSync(path.join(d, "ledger.db")));
-  return dirs.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-}
-
+// A switch file in this project's demo server's own directory (demoDir), removed after.
 async function withFile(name: string, fn: () => Promise<void>) {
   const fs = await import("node:fs");
   const path = await import("node:path");

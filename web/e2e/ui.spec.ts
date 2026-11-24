@@ -24,7 +24,7 @@ test.afterEach(async ({ page }) => {
 
 const isPhone = (name: string) => name === "phone";
 
-test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }) => {
+test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }, info) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
   // with tasks waiting, the constraint is one line above the list (vision round 3)
@@ -35,12 +35,17 @@ test("Now answers the three questions: the constraint, what waits on you, where 
   await expect(rows).toHaveCount(10); // the task list (decision 0013), one row each, in its one order
   await expect(rows.first().getByTestId("row-effect")).toHaveText("approve the schema change, so the import can run on real data");
   await expect(rows.first().getByTestId("row-cost")).toHaveText("costing now");
-  await expect(rows.last()).toBeInViewport(); // every task on the first screen
+  // every task on the first screen; on a phone the first screen holds five (the next test), and a person scrolls on
+  if (isPhone(info.project.name)) await rows.last().scrollIntoViewIfNeeded();
+  await expect(rows.last()).toBeInViewport();
   await rows.first().locator("button").first().click(); // a row opens to its card, with the default and the actions
   await expect(waiting).toContainText("If nobody answers: nothing merges");
   await expect(waiting.getByTestId("mark-done")).toBeVisible();
   const stalls = page.getByTestId("col-stalls");
-  await expect(stalls.locator("article")).toHaveCount(4);
+  // the demo's four stalls, and its one item expiring within a day, which 0.6.0 lists in the same column
+  await expect(stalls.locator('article[data-testid^="stall-"]')).toHaveCount(4);
+  await expect(stalls.getByTestId("expiring").locator("article")).toHaveCount(1);
+  await expect(stalls.locator("article")).toHaveCount(5);
   await expect(stalls.getByTestId("would").first()).toContainText("would wake (observe only)");
   await expect(stalls.getByTestId("ack").first()).toHaveText("not acknowledged");
   const health = page.getByTestId("col-health");

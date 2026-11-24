@@ -1,10 +1,12 @@
 import { defineConfig } from "@playwright/test";
 
 // The browser tests run against onloopd's real HTTP server (its Host check, its CSP, its read-only routes) over a
-// fresh demo ledger of generic sample data (e2e/demo_server.py), serving the built UI. Port 8792, loopback only.
+// fresh demo ledger of generic sample data (e2e/demo_server.py), serving the built UI, loopback only. Each project has
+// its own server and its own fresh ledger (desktop on 8792, phone on 8793), so what one project writes (a message
+// sent, a visit) never shows in the other's run; a server is never reused, so every run starts from the demo's story.
 // They use the Chrome installed on the machine (channel "chrome"), so no browser is downloaded; CI sets PW_CHANNEL
 // empty to use the Chromium it installs. ONLOOP_PYTHON names the interpreter that has onloop installed.
-const PORT = 8792;
+const PORTS = { desktop: 8792, phone: 8793 };
 const python = process.env.ONLOOP_PYTHON ?? "python";
 const channel = process.env.PW_CHANNEL ?? "chrome";
 
@@ -13,16 +15,19 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
-  use: { baseURL: `http://localhost:${PORT}`, channel: channel || undefined, trace: "retain-on-failure" },
-  webServer: {
-    command: `"${python}" e2e/demo_server.py ${PORT}`,
-    url: `http://localhost:${PORT}/health`,
-    reuseExistingServer: true,
+  use: { channel: channel || undefined, trace: "retain-on-failure" },
+  webServer: Object.values(PORTS).map((port) => ({
+    command: `"${python}" e2e/demo_server.py ${port}`,
+    url: `http://localhost:${port}/health`,
+    reuseExistingServer: false,
     timeout: 30_000,
-    stdout: "ignore",
-  },
+    stdout: "ignore" as const,
+  })),
   projects: [
-    { name: "desktop", use: { viewport: { width: 1440, height: 900 } } },
-    { name: "phone", use: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: false } },
+    { name: "desktop", use: { baseURL: `http://localhost:${PORTS.desktop}`, viewport: { width: 1440, height: 900 } } },
+    {
+      name: "phone",
+      use: { baseURL: `http://localhost:${PORTS.phone}`, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: false },
+    },
   ],
 });

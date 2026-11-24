@@ -259,8 +259,8 @@ For development, `npm run dev` serves the UI on `localhost:5173` and forwards `/
 ## Tests and the vision loop
 
 `npm run e2e` runs the browser tests against onloopd's real server over a demo ledger of generic sample data
-(`web/e2e/demo_server.py`, built by `tools/demo_ledger.py`, on port 8792), at 1440 and 390 px, using the installed
-Chrome. Every test fails on a console error (a CSP refusal shows up as one) or on any request that is not a GET.
+(`web/e2e/demo_server.py`, built by `tools/demo_ledger.py`), at 1440 px on port 8792 and at 390 px on port 8793,
+each width with its own server and fresh ledger, using the installed Chrome. Every test fails on a console error (a CSP refusal shows up as one) or on any request that is not a GET.
 
 `npm run screens` writes the vision loop's pictures: every view at both widths in light and dark, plus the states one
 click away. Set `SCREENS_DIR` to keep them outside the repository.
