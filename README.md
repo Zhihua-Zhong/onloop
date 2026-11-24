@@ -17,7 +17,8 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.6.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and the roadmap below.
+Status: 0.6.0 is the latest release, alpha. `main` is 0.7.0.dev0. See [CHANGELOG.md](CHANGELOG.md) and the
+roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
 
