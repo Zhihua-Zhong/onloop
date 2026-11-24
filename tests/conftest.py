@@ -116,3 +116,23 @@ class SlotLedger:
                 return [{**r, "subject": r["subject_ref"], "at": r["at"] or r["ts_system"]} for r in rows]
 
         return _SlotLedger(*a, **kw)
+
+
+def pytest_configure(config):
+    """On Windows, every process a test starts gets no console window, as onloop's own children do (0.6.1): a suite
+    run from a process with no console (a scheduled job, an editor, an agent) would otherwise flash a window for each
+    git or worker process. onloop's own spawns are held to it by tests/test_no_window.py; this covers the tests' own
+    helpers."""
+    import subprocess
+    import sys
+
+    if sys.platform != "win32" or getattr(subprocess.Popen, "_onloop_no_window", False):
+        return
+    original = subprocess.Popen.__init__
+
+    def init(self, *args, **kwargs):
+        kwargs["creationflags"] = int(kwargs.get("creationflags", 0)) | 0x08000000  # CREATE_NO_WINDOW
+        original(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = init
+    subprocess.Popen._onloop_no_window = True

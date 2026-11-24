@@ -217,11 +217,11 @@ def spawn(argv: list[str], *, cwd: str, env: Mapping[str, str], **kw: Any) -> Ch
         cwd=cwd, env=dict(env), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kw
     )
     if sys.platform != "win32":
-        return Child(subprocess.Popen(argv, start_new_session=True, **common))  # noqa: S603
+        return Child(procs.popen(argv, start_new_session=True, **common))
     shim = str(argv[0]).lower().endswith((".cmd", ".bat"))
     job = _make_job()
     flags = CREATE_NEW_PROCESS_GROUP | (CREATE_SUSPENDED if job else 0)
-    proc = subprocess.Popen(argv, creationflags=flags, **common)  # noqa: S603
+    proc = procs.popen(argv, creationflags=flags, **common)  # and CREATE_NO_WINDOW: no console pops up
     if job:
         handle = W.HANDLE(int(proc._handle))  # type: ignore[attr-defined]
         if not _k32.AssignProcessToJobObject(W.HANDLE(job), handle):

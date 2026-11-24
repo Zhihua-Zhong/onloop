@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **No console window pops up from onloop on Windows.** A console program that onloopd, the carrier or a step started
+  (git, claude, wevtutil, taskkill) got a console window of its own, since onloopd runs with none; with Windows
+  Terminal as the default terminal each one popped up and took the keyboard. Every child onloop starts now has no
+  console window (CREATE_NO_WINDOW), through one helper, and a test fails on a spawn that bypasses it. Only the
+  commands you work in keep your terminal: `onloop open`'s Claude Code session and `onloop as-app -- <command>`.
+- **`onloop daemon start`** runs onloopd in the background with no console window and returns, so onloopd no longer
+  needs a terminal kept open for it. What it prints goes to `onloopd.log` next to the ledger.
+- **The recommended way to keep onloopd running on Windows** is a task that runs whether you are logged on or not, so
+  nothing it starts can reach your desktop ([configuration.md](docs/configuration.md#keeping-onloopd-running-on-windows),
+  with what it costs: a stored password, no mapped drive letters, no prompts).
+
 ## [0.6.0] - 2026-11-23
 
 0.6.0 shows who did what, how long it took and what it cost. The new Replay view draws the team's work over time, one

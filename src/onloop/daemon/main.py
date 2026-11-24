@@ -1,6 +1,7 @@
 """onloopd, the process: the HTTP surface on the loopback address, and an ingest tick into the ledger.
 
     run(config)            the foreground process (`onloop daemon run`; Task Scheduler will start this)
+    start_detached(ledger) `onloop daemon start`: run it in the background, with no console window, and return
     request_stop(state)    ask a running onloopd to stop (`onloop daemon stop`), then wait for its pid to exit
 
 On each tick (every `tick_s`, 10 s by default), when `onloopd.yaml` names a repository, onloopd reads GitHub into
@@ -20,6 +21,7 @@ import json
 import os
 import pathlib
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -63,6 +65,7 @@ DETECTORS: list[tuple[str, detect.Detector]] = [
 PID_FILE = "onloopd.pid"
 STOP_FILE = "onloopd.stop"
 HEARTBEAT_FILE = "onloopd.heartbeat.json"
+LOG_FILE = "onloopd.log"  # what a started onloopd prints (`onloop daemon start`), appended
 
 
 @dataclass
@@ -420,6 +423,50 @@ def _read_pid(path: pathlib.Path) -> int | None:
         return int(path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return None
+
+
+def start_detached(
+    ledger: pathlib.Path,
+    run_args: list[str] | None = None,
+    *,
+    timeout_s: float = 20.0,
+    popen: Callable[..., Any] | None = None,
+    python: str = sys.executable,
+) -> tuple[int, str]:
+    """`onloop daemon start`: start `onloop daemon run` in the background and return once it has written its pid file.
+
+    It has no console window and no terminal (CREATE_NO_WINDOW and its own process group on Windows, its own session
+    elsewhere), so it neither pops up nor dies with the terminal that started it; its children inherit the hidden
+    console. What it prints is appended to onloopd.log next to the ledger. Returns (exit code, message): 0 started or
+    already running, 2 it did not come up."""
+    state = ledger.resolve().parent
+    state.mkdir(parents=True, exist_ok=True)
+    old = _read_pid(state / PID_FILE)
+    if old and procs.pid_alive(old):
+        return 0, f"onloopd is already running as pid {old}"
+    log = state / LOG_FILE
+    argv = [python, "-m", "onloop", "daemon", "run", "--ledger", str(ledger), *(run_args or [])]
+    kw: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "cwd": str(state),
+        "env": {**os.environ, "PYTHONUTF8": "1"},
+    }
+    if sys.platform == "win32":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # procs adds CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    with open(log, "a", encoding="utf-8") as out:
+        child = (popen or procs.popen)(argv, stdout=out, stderr=subprocess.STDOUT, **kw)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        pid = _read_pid(state / PID_FILE)
+        if pid and pid != old and procs.pid_alive(pid):
+            return 0, f"onloopd started as pid {pid}, in the background with no console (log: {log})"
+        code = child.poll()
+        if code is not None:
+            return 2, f"onloopd stopped at once (exit {code}); its log: {log}"
+        time.sleep(0.2)
+    return 2, f"onloopd wrote no pid file within {timeout_s:.0f} s; its log: {log}"
 
 
 def request_stop(state_dir: pathlib.Path, *, timeout_s: float = 30.0) -> tuple[int, str]:

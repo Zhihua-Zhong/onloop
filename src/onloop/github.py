@@ -17,7 +17,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
-from . import identity
+from . import identity, procs
 
 TRAILER_KEY = "Onloop-Merge"
 Facts = dict[str, Any]
@@ -29,7 +29,7 @@ class GitHubError(RuntimeError):
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return procs.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def _runner(runner: GhRunner | None) -> GhRunner:

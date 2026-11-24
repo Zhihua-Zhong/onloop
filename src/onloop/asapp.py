@@ -19,11 +19,12 @@ import base64
 import json
 import os
 import pathlib
-import subprocess
 import time
 import urllib.request
 from collections.abc import Callable
 from typing import Any
+
+from . import procs
 
 API = "https://api.github.com"
 IDENTITIES = ("agents", "reviewer")
@@ -204,7 +205,7 @@ class TokenSource:
 def key_outside_work_tree(path: str) -> None:
     """Refuse a key that sits inside a git work tree: it could be committed by accident."""
     p = pathlib.Path(path).resolve()
-    r = subprocess.run(
+    r = procs.run(
         ["git", "-C", str(p.parent), "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
@@ -279,7 +280,7 @@ def run(
     key_pem = pathlib.Path(key_path).read_text(encoding="utf-8")
     token = installation_token(str(cfg["app_id"]), str(cfg["installation_id"]), key_pem, repo, http=http)
     env = command_env(cfg, token, env_in)
-    p = (runner or subprocess.run)(cmd, env=env)
+    p = (runner or procs.run_in_console)(cmd, env=env)  # the person's own command, in their terminal
     return int(p.returncode)
 
 

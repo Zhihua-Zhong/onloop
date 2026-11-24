@@ -151,6 +151,7 @@ step has no evidence. In this release it **observes only**: it records what it w
 
 ```bash
 onloop daemon run                                   # the service, in the foreground
+onloop daemon start                                 # the same, in the background with no console window
 onloop ingest github --once --repo owner/name       # one read of a repository into the ledger, by hand
 onloop report observe --since 2026-11-16            # what it would have done, next to what happened
 onloop kpi weekly                                   # asks to the human and messages to the coordinator, per week

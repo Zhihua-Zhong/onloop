@@ -23,6 +23,7 @@ import subprocess
 from typing import Any
 
 from .. import events as ev
+from .. import procs
 from .views import QueryError
 
 MAX_FILE = 1024 * 1024
@@ -49,7 +50,7 @@ def _git(repo: str, *args: str, binary: bool = False) -> subprocess.CompletedPro
     kw: dict[str, Any] = {"capture_output": True, "timeout": 30}
     if not binary:
         kw.update(text=True, encoding="utf-8", errors="replace")
-    return subprocess.run(["git", "-C", repo, *args], **kw)  # noqa: S603 - a fixed argv, no shell
+    return procs.run(["git", "-C", repo, *args], **kw)  # noqa: S603 - a fixed argv, no shell
 
 
 def _payload(row: dict[str, Any]) -> dict[str, Any]:

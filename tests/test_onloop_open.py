@@ -3,6 +3,7 @@ carrier's step events. Each session's OTel environment is its own and points at 
 OTel variable is removed first; the steps are recorded as onloop dispatches the work."""
 
 import json
+import subprocess
 import threading
 import types
 
@@ -198,9 +199,9 @@ def test_onloop_open_reports_the_start_runs_the_session_and_reports_its_end(tmp_
 
     def call(argv, env, cwd):
         ran.append((argv, env, cwd))
-        return 3
+        return subprocess.CompletedProcess(argv, 3)
 
-    monkeypatch.setattr("subprocess.call", call)
+    monkeypatch.setattr("onloop.procs.run_in_console", call)  # the person's session, in their own terminal
     code = cli.main(
         [
             "open",
@@ -224,7 +225,7 @@ def test_onloop_open_reports_the_start_runs_the_session_and_reports_its_end(tmp_
 
 def test_onloop_open_starts_nothing_when_onloopd_does_not_take_the_start(tmp_path, monkeypatch, capsys):
     beat(tmp_path, port=1)  # nothing listens there
-    monkeypatch.setattr("subprocess.call", lambda *a, **k: pytest.fail("started without onloopd"))
+    monkeypatch.setattr("onloop.procs.run_in_console", lambda *a, **k: pytest.fail("started without onloopd"))
     assert (
         cli.main(["open", "builder", "--claude", "claude-test", "--ledger", str(tmp_path / "ledger.db")]) == 2
     )

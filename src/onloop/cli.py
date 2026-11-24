@@ -8,7 +8,6 @@ import json
 import os
 import pathlib
 import sqlite3
-import subprocess
 import sys
 from collections.abc import Sequence
 
@@ -22,6 +21,7 @@ from . import (
     intake,
     kpi,
     ledger,
+    procs,
     watchdog,
 )
 from . import anchor as anchor_mod
@@ -228,7 +228,7 @@ def _since(git: Git, policy: pol.Policy, args) -> str | None:
     configured = (policy.raw.get("audit") or {}).get("since")
     if configured:
         return str(configured)
-    p = subprocess.run(
+    p = procs.run(
         ["git", "log", "--diff-filter=A", "--format=%H", "--", pol.POLICY_FILE],
         capture_output=True,
         text=True,
@@ -1016,7 +1016,6 @@ def cmd_open(args) -> int:
     measured like the sessions onloop starts. It runs with `--setting-sources project,local`, so the user file and its
     OTel keys never load, and with onloop's own OTel environment, so the session's telemetry goes to onloopd only. It
     reports the session (and its step, with --step) to onloopd before it starts, and the step's end when it exits."""
-    import subprocess
 
     argv, env, cwd, sid, step = open_plan(args)
     state = _ledger_path(args).resolve().parent
@@ -1038,7 +1037,9 @@ def cmd_open(args) -> int:
         return 2
     _say(f"onloop: opening {args.role}'s session {sid}" + (f" on {body['step']}" if step else ""))
     try:
-        rc = subprocess.call(argv, env=env, cwd=cwd)  # noqa: S603 - a fixed argv, no shell
+        rc = procs.run_in_console(
+            argv, env=env, cwd=cwd
+        ).returncode  # the person's session, in their terminal
     except OSError as e:
         rc = 127
         _err(f"onloop: Claude Code did not start ({argv[0]}): {e}")
@@ -1313,8 +1314,8 @@ def cmd_daemon(args) -> int:
     from .daemon import main as daemon
     from .daemon import server as daemon_server
 
-    if args.action not in ("run", "stop", "status", "hook"):
-        _err("onloop: say which daemon action: run, stop, status or hook")
+    if args.action not in ("run", "start", "stop", "status", "hook"):
+        _err("onloop: say which daemon action: run, start, stop, status or hook")
         return 2
     if args.action == "hook":
         from .daemon import hook_client
@@ -1322,6 +1323,15 @@ def cmd_daemon(args) -> int:
         return hook_client.main(args.event, args.role, _ledger_path(args), args.timeout)
     ledger = _ledger_path(args)
     state = ledger.resolve().parent
+    if args.action == "start":
+        passed = []
+        for flag, value in (("--port", args.port), ("--host", args.host), ("--config", args.config)):
+            if value is not None:
+                passed += [flag, str(value)]
+        passed += ["--tick", str(args.tick)]
+        code, message = daemon.start_detached(ledger, passed)
+        (_say if code == 0 else _err)(message)
+        return code
     if args.action == "run":
         from .daemon import config as daemon_config
 
@@ -1927,6 +1937,10 @@ def build_parser() -> argparse.ArgumentParser:
     dsub = dp.add_subparsers(dest="action", metavar="<action>")
     for action, help_ in (
         ("run", "run onloopd in the foreground: the HTTP API and the ingest tick"),
+        (
+            "start",
+            "start onloopd in the background, with no console window, and return (its log: onloopd.log)",
+        ),
         ("stop", "ask the running onloopd to stop, and wait for its pid to exit"),
         ("status", "print onloopd's last heartbeat and its /health answer"),
         (
@@ -1937,7 +1951,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp = dsub.add_parser(action, help=help_, description=help_)
         sp.set_defaults(fn=cmd_daemon)
         sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
-        if action == "run":
+        if action in ("run", "start"):
             sp.add_argument(
                 "--port",
                 type=int,
