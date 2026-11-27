@@ -10,6 +10,27 @@ request it makes is a GET but one: the Conversation view's compose box, a messag
 onloop daemon run --ledger .onloop/ledger.db      # then open http://localhost:8790
 ```
 
+## Design principles: outcome first, never process first
+
+A page that narrates what the system did (events, steps, rule alerts and logs in time order) reads as a ledger: the
+person has to work out what it means for them. Every main screen is designed the other way round.
+
+1. **Start from the person's question, written down first:** is it going well, what needs me, what came out. A screen
+   that cannot name its question is not a main screen.
+2. **Main screens show state and results.** History, logs, the audit trail and conversations are one click down, under
+   Details.
+3. **Count instead of listing.** Repeats collapse to one line with a count (and, where it helps, one action for all of
+   them). Internal rule or format alerts never reach a main screen; they belong with the history.
+4. **No dead panels.** An empty panel either hides or says how to fill it.
+5. **Few things, well spaced:** about three primary navigation items, a few numbers and one picture per screen, with
+   whitespace.
+6. **Name the reference.** Each screen names the mainstream product page it follows (an overview such as Linear's,
+   Vercel's or Datadog's home) and matches its restraint.
+
+A UI change states, for each screen it touches, the question the screen answers and what it moved under Details. The
+acceptance includes a 30-second purpose test: a cold reader, given no questions, says what the product does, what it is
+for and what to do next.
+
 ## The views
 
 | View | The question it answers | Reads |
