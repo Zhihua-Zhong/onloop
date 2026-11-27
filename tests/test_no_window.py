@@ -114,7 +114,7 @@ def test_on_windows_every_child_gets_no_console_window(monkeypatch, helper):
         seen.update(kw)
         return "started"
 
-    monkeypatch.setattr(procs.sys, "platform", "win32")
+    monkeypatch.setattr(procs, "on_windows", lambda: True)
     monkeypatch.setattr(procs.subprocess, "run" if helper == "run" else "Popen", fake)
     getattr(procs, helper)(["git", "log"], creationflags=0x200, cwd="x")
     assert seen["creationflags"] == 0x200 | procs.CREATE_NO_WINDOW and seen["cwd"] == "x"
@@ -122,7 +122,7 @@ def test_on_windows_every_child_gets_no_console_window(monkeypatch, helper):
 
 def test_run_text_and_start_add_it_too(monkeypatch):
     seen = []
-    monkeypatch.setattr(procs.sys, "platform", "win32")
+    monkeypatch.setattr(procs, "on_windows", lambda: True)
     monkeypatch.setattr(
         procs.subprocess,
         "run",
@@ -138,7 +138,7 @@ def test_run_text_and_start_add_it_too(monkeypatch):
 
 def test_elsewhere_nothing_changes(monkeypatch):
     seen = {}
-    monkeypatch.setattr(procs.sys, "platform", "linux")
+    monkeypatch.setattr(procs, "on_windows", lambda: False)
     monkeypatch.setattr(procs.subprocess, "run", lambda argv, **kw: seen.update(kw))
     procs.run(["git"], cwd="x")
     assert seen == {"cwd": "x"}
@@ -146,7 +146,7 @@ def test_elsewhere_nothing_changes(monkeypatch):
 
 def test_the_persons_own_command_keeps_their_console(monkeypatch):
     seen = {}
-    monkeypatch.setattr(procs.sys, "platform", "win32")
+    monkeypatch.setattr(procs, "on_windows", lambda: True)
     monkeypatch.setattr(procs.subprocess, "run", lambda argv, **kw: seen.update(kw))
     procs.run_in_console(["claude"], env={})
     assert "creationflags" not in seen
@@ -175,7 +175,7 @@ def test_daemon_start_runs_onloopd_with_no_console_and_returns_its_pid(tmp_path,
         )  # a live pid, as run writes it
         return _Child()
 
-    monkeypatch.setattr(procs.sys, "platform", "win32")
+    monkeypatch.setattr(procs, "on_windows", lambda: True)
     monkeypatch.setattr(procs.subprocess, "Popen", fake_popen)
     code, message = daemon.start_detached(tmp_path / "ledger.db", ["--port", "8790"], python="py")
     assert code == 0 and f"pid {os.getpid()}" in message
@@ -192,7 +192,7 @@ def test_daemon_start_runs_onloopd_with_no_console_and_returns_its_pid(tmp_path,
     ]
     assert (
         seen["creationflags"] & procs.CREATE_NO_WINDOW
-        and seen["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP
+        and seen["creationflags"] & procs.CREATE_NEW_PROCESS_GROUP
     )
     assert seen["stdin"] == subprocess.DEVNULL and seen["stderr"] == subprocess.STDOUT
     assert pathlib.Path(seen["stdout"].name) == tmp_path / daemon.LOG_FILE
@@ -208,7 +208,7 @@ def test_daemon_start_elsewhere_runs_it_in_its_own_session(tmp_path, monkeypatch
         (tmp_path / daemon.PID_FILE).write_text(str(os.getpid()), encoding="utf-8")
         return _Child()
 
-    monkeypatch.setattr(procs.sys, "platform", "linux")
+    monkeypatch.setattr(procs, "on_windows", lambda: False)
     assert daemon.start_detached(tmp_path / "ledger.db", popen=fake_popen)[0] == 0
     assert seen["start_new_session"] is True and "creationflags" not in seen
 
@@ -248,3 +248,95 @@ def test_a_child_and_its_own_children_have_no_console_window():
     )
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == ["0", "0"]
+
+
+# Both branches, on every machine: the Windows branch's flags are procs' own numbers, and the POSIX branch passes no
+# creationflags. 0.6.1's CI found what a Windows-only run hid: a branch read a constant only Windows' subprocess has.
+
+
+def test_the_platform_check_is_os_name():
+    assert procs.on_windows() is (os.name == "nt")
+
+
+def test_the_windows_flags_need_nothing_from_windows():
+    for name in ("CREATE_NO_WINDOW", "CREATE_NEW_PROCESS_GROUP"):
+        assert isinstance(getattr(procs, name), int)
+        if hasattr(subprocess, name):  # on Windows, the same numbers subprocess has
+            assert getattr(procs, name) == getattr(subprocess, name)
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_each_branch_runs_on_this_machine(monkeypatch, windows):
+    """The POSIX branch on Windows and the Windows branch on POSIX, through every helper that branches."""
+    seen = []
+    monkeypatch.setattr(procs, "on_windows", lambda: windows)
+    monkeypatch.setattr(
+        procs.subprocess,
+        "run",
+        lambda argv, **kw: seen.append(("run", kw)) or subprocess.CompletedProcess(argv, 0, "", ""),
+    )
+    monkeypatch.setattr(procs.subprocess, "Popen", lambda argv, **kw: seen.append(("popen", kw)) or _Child())
+    procs.run(["git", "status"], cwd="x")
+    procs.run_text(["git", "log"])
+    procs.popen(["claude"], creationflags=procs.CREATE_NEW_PROCESS_GROUP if windows else 0)
+    procs.start(["claude"])
+    for _, kw in seen:
+        if windows:
+            assert kw["creationflags"] & procs.CREATE_NO_WINDOW
+        else:
+            assert not kw.get("creationflags")
+    assert procs.spawn_kwargs() == (
+        {"creationflags": procs.CREATE_NEW_PROCESS_GROUP | procs.CREATE_NO_WINDOW}
+        if windows
+        else {"start_new_session": True}
+    )
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_daemon_start_takes_either_branch_on_this_machine(tmp_path, monkeypatch, windows):
+    from onloop.daemon import main as daemon
+
+    seen = {}
+
+    def fake_popen(argv, **kw):
+        seen.update(procs.no_window(kw))
+        (tmp_path / daemon.PID_FILE).write_text(str(os.getpid()), encoding="utf-8")
+        return _Child()
+
+    monkeypatch.setattr(procs, "on_windows", lambda: windows)
+    code, _ = daemon.start_detached(tmp_path / "ledger.db", popen=fake_popen)
+    assert code == 0
+    if windows:
+        assert (
+            seen["creationflags"] == procs.CREATE_NEW_PROCESS_GROUP | procs.CREATE_NO_WINDOW
+            and "start_new_session" not in seen
+        )
+    else:
+        assert seen["start_new_session"] is True and "creationflags" not in seen
+
+
+def test_no_source_reads_a_windows_only_constant_from_subprocess():
+    """subprocess defines these only on Windows, so reading one fails on Linux and macOS the moment a branch reaches it,
+    and a test run on Windows never sees it (0.6.1). Use procs' own numbers instead. Fails on this machine too."""
+    windows_only = {
+        "CREATE_NO_WINDOW",
+        "CREATE_NEW_PROCESS_GROUP",
+        "CREATE_NEW_CONSOLE",
+        "DETACHED_PROCESS",
+        "STARTUPINFO",
+        "STARTF_USESHOWWINDOW",
+        "SW_HIDE",
+        "CREATE_BREAKAWAY_FROM_JOB",
+        "CREATE_DEFAULT_ERROR_MODE",
+    }
+    bad = []
+    for f in sorted(SRC.rglob("*.py")):
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "subprocess"
+                and node.attr in windows_only
+            ):
+                bad.append(f"{f.relative_to(SRC)}:{node.lineno} subprocess.{node.attr}")
+    assert bad == []

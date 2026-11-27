@@ -451,10 +451,10 @@ def start_detached(
         "cwd": str(state),
         "env": {**os.environ, "PYTHONUTF8": "1"},
     }
-    if sys.platform == "win32":
-        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # procs adds CREATE_NO_WINDOW
+    if procs.on_windows():
+        kw["creationflags"] = procs.CREATE_NEW_PROCESS_GROUP  # procs adds CREATE_NO_WINDOW
     else:
-        kw["start_new_session"] = True
+        kw["start_new_session"] = True  # POSIX: its own session, and no creationflags
     with open(log, "a", encoding="utf-8") as out:
         child = (popen or procs.popen)(argv, stdout=out, stderr=subprocess.STDOUT, **kw)
     deadline = time.monotonic() + timeout_s

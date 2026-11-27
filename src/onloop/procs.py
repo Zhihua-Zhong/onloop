@@ -30,9 +30,11 @@ from collections.abc import Callable
 from typing import Any
 
 __all__ = [
+    "CREATE_NEW_PROCESS_GROUP",
     "CREATE_NO_WINDOW",
     "kill_tree",
     "no_window",
+    "on_windows",
     "pid_alive",
     "popen",
     "run",
@@ -42,12 +44,23 @@ __all__ = [
     "start",
 ]
 
-CREATE_NO_WINDOW = 0x08000000  # subprocess.CREATE_NO_WINDOW, defined on every platform for the tests
+# Windows' process-creation flags, as plain numbers: `subprocess` defines them only on Windows, so they are used only
+# where on_windows() holds, and never read from `subprocess` (0.6.1: a test that took the Windows branch on Linux read
+# subprocess.CREATE_NEW_PROCESS_GROUP and crashed).
+CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+
+def on_windows() -> bool:
+    """The one platform check for how a child is started: Windows flags on Windows, a new session on POSIX. A function,
+    so a test can take either branch on any machine."""
+    return os.name == "nt"
 
 
 def no_window(kw: dict[str, Any]) -> dict[str, Any]:
-    """`kw` with CREATE_NO_WINDOW added to its creationflags on Windows; unchanged elsewhere."""
-    if sys.platform != "win32":
+    """`kw` with CREATE_NO_WINDOW added to its creationflags on Windows; unchanged elsewhere, where no creationflags
+    are ever passed."""
+    if not on_windows():
         return kw
     return {**kw, "creationflags": int(kw.get("creationflags", 0)) | CREATE_NO_WINDOW}
 
@@ -138,8 +151,10 @@ def start(
 
 
 def spawn_kwargs() -> dict[str, Any]:
-    if sys.platform == "win32":
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW}
+    """How a long-running child is detached: its own process group and no console window on Windows; its own session
+    on POSIX, with no creationflags at all."""
+    if on_windows():
+        return {"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW}
     return {"start_new_session": True}
 
 
