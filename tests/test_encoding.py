@@ -17,7 +17,10 @@ def test_no_subprocess_call_in_text_mode_leaves_its_encoding_to_the_locale():
     bad = []
     for f in sorted((ROOT / "src" / "onloop").rglob("*.py")):
         text = f.read_text(encoding="utf-8")
-        for m in re.finditer(r"subprocess\.(?:run|Popen|check_output)\((?:[^()]|\([^()]*\))*\)", text):
+        for m in re.finditer(
+            r"(?:subprocess\.(?:run|Popen|check_output)|procs\.(?:run|popen|run_in_console))\((?:[^()]|\([^()]*\))*\)",
+            text,
+        ):
             call = m.group(0)
             if ("text=True" in call or "universal_newlines" in call) and "encoding=" not in call:
                 bad.append(f"{f.name}:{text[: m.start()].count(chr(10)) + 1}")

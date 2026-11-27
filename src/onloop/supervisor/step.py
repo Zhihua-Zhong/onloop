@@ -362,7 +362,7 @@ def run_step(
     deadline: float | None = None,
     progress: Progress | None = None,
     cancel: threading.Event | None = None,
-    popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
+    popen: Callable[..., subprocess.Popen[Any]] = procs.popen,
     environ: Mapping[str, str] | None = None,
     clock: Callable[[], float] = time.time,
     progress_every: float = PROGRESS_EVERY,

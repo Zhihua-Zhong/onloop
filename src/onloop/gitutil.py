@@ -8,11 +8,13 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 
+from . import procs
+
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
 
 def run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return procs.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 class GitError(RuntimeError):
@@ -148,7 +150,7 @@ class Git:
         if not self.supports_verbatim():
             return None
         mb = self.merge_base(base, head)
-        diff = subprocess.run(
+        diff = procs.run(
             ["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", mb, head],
             cwd=self.cwd,
             capture_output=True,
@@ -159,7 +161,7 @@ class Git:
             )
         if not diff.stdout.strip():
             return "empty"
-        pid = subprocess.run(
+        pid = procs.run(
             ["git", "patch-id", "--verbatim"], cwd=self.cwd, input=diff.stdout, capture_output=True
         )
         if pid.returncode != 0 or not pid.stdout.strip():
@@ -190,7 +192,7 @@ class Git:
         base = ["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames"]
         out = []
         for extra in (["--raw", "-z"], ["-U0"]):
-            p = subprocess.run([*base, *extra, old, new], cwd=self.cwd, capture_output=True)
+            p = procs.run([*base, *extra, old, new], cwd=self.cwd, capture_output=True)
             if p.returncode != 0:
                 raise GitError(
                     f"`git diff {old[:7]} {new[:7]}` failed: {p.stderr.decode('utf-8', 'replace')[:300]}"
@@ -218,7 +220,7 @@ class Git:
             raise GitError("gained_cr needs a real git, not an injected runner")
 
         def diff(*opts: str) -> bytes:
-            p = subprocess.run(
+            p = procs.run(
                 [
                     "git",
                     "-c",
@@ -247,7 +249,7 @@ class Git:
             raise GitError("show_bytes needs a real git, not an injected runner")
         if not re.fullmatch(r"[0-9a-fA-F]{7,64}|HEAD", rev or ""):
             raise GitError(f"not a commit id: {rev!r}")
-        p = subprocess.run(["git", "show", f"{rev}:{path}"], cwd=self.cwd, capture_output=True)
+        p = procs.run(["git", "show", f"{rev}:{path}"], cwd=self.cwd, capture_output=True)
         return p.stdout if p.returncode == 0 else None
 
     def toplevel(self) -> str:

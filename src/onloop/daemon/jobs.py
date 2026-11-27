@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .. import events as ev
-from .. import localday
+from .. import localday, procs
 from ..overlay.ledger import Ledger
 from ..tasks import quiet as _tasks_quiet
 
@@ -218,7 +218,7 @@ def system_log_cause(since: str, until: str, runner: Any = None) -> str | None:
     query = "*[System[(EventID=41 or EventID=6008 or EventID=1074 or EventID=42)]]"
     try:
         run = runner or (
-            lambda argv: subprocess.run(
+            lambda argv: procs.run(
                 argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10
             )
         )

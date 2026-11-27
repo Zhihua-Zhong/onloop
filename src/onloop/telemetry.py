@@ -25,6 +25,8 @@ import subprocess
 from collections.abc import Mapping
 from typing import Any
 
+from . import procs
+
 HOST = "127.0.0.1"  # scan:allow - onloopd's loopback address
 HEARTBEAT_FILE = (
     "onloopd.heartbeat.json"  # the daemon's own names (daemon/main.py, daemon/token.py), tested equal
@@ -48,7 +50,7 @@ def place(cwd: str | pathlib.Path | None) -> dict[str, str | None]:
     if not cwd:
         return out
     try:
-        top = subprocess.run(
+        top = procs.run(
             ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
@@ -56,7 +58,7 @@ def place(cwd: str | pathlib.Path | None) -> dict[str, str | None]:
             errors="replace",
             timeout=5,
         )
-        head = subprocess.run(
+        head = procs.run(
             ["git", "-C", str(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True,
             text=True,

@@ -50,6 +50,7 @@ import subprocess
 from typing import Any
 
 from . import events as ev
+from . import procs
 
 KINDS = ("working", "harness", "waiting", "queued")  # the order wins an overlap
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens")
@@ -253,7 +254,7 @@ def node_commits(repo: str, branch: str) -> tuple[list[int], list[str | None]]:
     """The branch's commits, oldest first: their committer times (ms) and their Node: trailer (None without one).
     Reads the time and the trailer only. An unknown repository or branch has none."""
     try:
-        r = subprocess.run(
+        r = procs.run(
             [
                 "git",
                 "-C",

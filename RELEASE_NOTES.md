@@ -1,3 +1,17 @@
+# onloop 0.6.1
+
+0.6.1 is a patch release of 0.6.0, for Windows. A console program that onloop started (git, claude, a check, a
+schedule) used to open a console window of its own, and with Windows Terminal as the default terminal each one popped
+up and took the keyboard. Now nothing onloop starts opens a window. `onloop daemon start` runs onloopd in the
+background with no console, and docs/configuration.md describes a Windows task that runs whether you are logged on or
+not, so nothing it starts can reach your desktop. Nothing else changed; the notes for 0.6.0 follow.
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.6.1/onloop-0.6.1-py3-none-any.whl"
+onloop selftest
+onloop daemon start --ledger .onloop/ledger.db    # then open http://localhost:8790
+```
+
 # onloop 0.6.0
 
 onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop

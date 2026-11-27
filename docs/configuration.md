@@ -449,6 +449,51 @@ carrier:
       opt_in: [message, event]
 ```
 
+## Keeping onloopd running on Windows
+
+onloopd is meant to run all the time. On Windows, keep it alive with one Task Scheduler task (decision 0008): two
+triggers, at startup and every minute, and "do not start a new instance" (`IgnoreNew`), so a stopped onloopd is back
+within a minute and a running one is left alone.
+
+**Register it so that it never reaches your desktop.** Run the task **whether you are logged on or not**: Windows then
+runs it in a session of its own, with no window on your desktop at all, so not even a future regression can pop a window
+up while you type. onloop itself starts every child with no console window (0.6.1); this setting is the second wall.
+From a PowerShell prompt, as yourself, not as an administrator:
+
+```powershell
+$py  = "C:\path\to\venv\Scripts\pythonw.exe"           # pythonw: no console of its own
+$dir = "C:\path\to\.onloop"                             # the folder that holds ledger.db
+$action = New-ScheduledTaskAction -Execute $py -WorkingDirectory $dir `
+    -Argument "-m onloop daemon run --ledger `"$dir\ledger.db`""
+$triggers = @(
+    (New-ScheduledTaskTrigger -AtStartup),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1))
+)
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+$cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" -Message "The task runs as you, logged on or not"
+Register-ScheduledTask -TaskPath "\onloop\" -TaskName "onloopd" -Action $action -Trigger $triggers `
+    -Settings $settings -User $cred.UserName -Password $cred.GetNetworkCredential().Password -RunLevel Limited
+```
+
+What this costs:
+- **Windows keeps your password** for the task, and you register it again when the password changes; until then the
+  task does not start.
+- **Mapped drive letters are not there.** A ledger or a repository on a mapped drive (`Z:\`) must be named by its UNC
+  path (`\\server\share\...`).
+- **Nothing it starts can show anything to you,** which is the point: Claude Code's sign-in or any other prompt cannot
+  appear, so sign in to Claude Code and to `gh` once, by hand, before the carrier or the GitHub ingest runs under it.
+
+**Without storing a password** ("Do not store password", `-LogonType S4U` in `New-ScheduledTaskPrincipal` in place of
+`-User` and `-Password`), the task also runs off your desktop, and costs more: it has **no network credentials**
+(network shares are out of reach) and **cannot read the Windows Credential Manager**, where `gh` and Git keep their
+logins, so the GitHub ingest and anything that pushes or reads a private repository fail under it. Use it only for an
+onloopd that reads local files.
+
+A task registered to run **only when you are logged on** runs on your desktop: use it only to try onloopd out.
+`onloop daemon start` is the way to run it by hand: in the background, with no console window, its output in
+`onloopd.log`.
+
 ## Command reference
 
 Every command accepts `--help`. `--policy PATH` (default `onloop.yaml`) is accepted by every command that reads the
@@ -480,6 +525,7 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop overlay replay` | `--ledger FILE`, `--check` (rebuild into a scratch copy and compare, leaving the ledger unchanged). Prints whether the projections are byte-identical, with their sha256 | 0 identical, 1 different, 2 a ledger error |
 | `onloop overlay status` | `--ledger FILE` | 0, 2 no ledger |
 | `onloop daemon run` | `--ledger FILE`, `--port N` (default: `port` in onloopd.yaml, else 8790; 0 picks a free one; a port in use stops it with an error naming the port and this override, never a fallback to another port), `--host` (the loopback address; any other is refused), `--tick SECONDS` (default 10), `--config FILE` (default: `onloopd.yaml` next to the ledger, if there is one). Runs onloopd in the foreground and serves the UI at `http://localhost:<port>` ([ui.md](ui.md)). See [decision 0008](decisions/0008-resident-service-and-dead-man-switch.md) | 0 stopped cleanly, 2 refused (another host, already running on this ledger, or an `onloopd.yaml` with a problem) |
+| `onloop daemon start` | the same options as `run`: starts `onloop daemon run` in the background and returns once it has written its pid file. It has no console window and no terminal (on Windows: CREATE_NO_WINDOW, in its own process group), so it neither pops up nor stops with the terminal that started it; what it prints is appended to `onloopd.log` next to the ledger. An onloopd already running is left alone | 0 started or already running, 2 it did not come up (the message names the log) |
 | `onloop ingest github --once` | `--repo owner/name` (required; any repository the `gh` login can read), `--base` (default `main`), `--workdir` (a clone for patch ids), `--policy`, `--ledger FILE`: one read of the repository into the ledger, as onloopd's tick does. It reads only: REST GETs, plus the GraphQL query for review threads, never a mutation, and never pushes or writes to the remote | 0, 1 the read failed (nothing written), 2 a bad repository or branch |
 | `onloop kpi weekly` | `--coordinator ROLE` (default `lead`), `--json`, `--ledger FILE`: per ISO week, the asks to the human (every wait on the human, with its wait: open ones to now) and the messages onloop delivered to the coordinator, split into mechanical (timer, detector, relay), judgment (human, ask) and unclassified; beside it, the imported baseline for that week | 0 |
 | `onloop kpi baseline import` | `FILE.json`, `--ledger FILE`: import a team's own weekly aggregates. The shape is [schemas/kpi-baseline.schema.json](schemas/kpi-baseline.schema.json), with an [example](schemas/kpi-baseline.example.json); the file is checked whole and refused with every problem listed. Counts only: onloop never reads a team's logs or transcripts. Importing the same file again adds nothing; a week imported again with other numbers replaces it | 0, 2 not UTF-8 JSON, or not the shape |
