@@ -123,6 +123,12 @@ jobs:
           ONLOOP_PYTHON: python
           PW_CHANNEL: ""                  # Playwright's own Chromium, not an installed Chrome
         run: npm run e2e
+      - name: ⌘K ten times over (its timing is read in the page; 0.7.0's tag run failed a check that timed the frames)
+        working-directory: web
+        env:
+          ONLOOP_PYTHON: python
+          PW_CHANNEL: ""
+        run: ./node_modules/.bin/playwright test e2e/overlays.spec.ts -g "⌘K at" --repeat-each=10
       - name: Keep the report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2

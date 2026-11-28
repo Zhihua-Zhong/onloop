@@ -1,7 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // 0.7.0 plan, section 7: every overlay, ⌘K above all, opened and its content checked at every breakpoint; an overlay's
-// content never fades in (only the dim behind it does), so it is fully opaque within 50 ms of opening. ⌘K's question is
+// content never fades in (only the dim behind it does). ⌘K's timing is read in the page: the app mounts the dialog
+// within 50 ms of the key, and the first frame after the key shows it, fully opaque. Both hold at any frame rate; the
+// frame pacing itself is the browser's, logged with each run (0.7.0's tag run failed a check that timed it). ⌘K's question is
 // answered from the demo's recorded answer (tests/fixtures/brief/ask.json); the model is never called. POST /ui/ask is
 // the only write these tests make (a question is a POST, under the page's CSRF rules); nothing else is written.
 
@@ -44,24 +46,65 @@ async function opaqueAndInside(box: Locator): Promise<{ opacity: number; inside:
   });
 }
 
-/** Ctrl+K pressed in the page, and the dialog's opacity sampled every frame until 50 ms: opaque at the first sample. */
-async function openCommandTimed(page: Page): Promise<{ ms: number; opacity: number }> {
+interface OpenTiming {
+  keyToMount: number; // the keydown event's timeStamp to the dialog's insertion: the app's own time
+  mountToFrame: number; // the insertion to the first frame after it: the browser's frame pacing
+  keyToFrame: number;
+  frameInterval: number; // the runner's frame-to-frame interval, measured just before (median of 20)
+  firstFrameHasIt: boolean; // the first requestAnimationFrame after the keydown found the dialog mounted
+  opacity: number; // the dialog and its ancestors, multiplied, at that first frame
+}
+
+/** Ctrl+K pressed in the page and timed there (the onloop lead's 0.7.1 ruling): the app's own time (key -> mount)
+ * holds at any frame rate; the frame pacing (mount -> frame) is the browser's, logged, not asserted. */
+async function openCommandTimed(page: Page): Promise<OpenTiming> {
   return page.evaluate(
     () =>
-      new Promise<{ ms: number; opacity: number }>((resolve) => {
-        const t0 = performance.now();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
-        const tick = () => {
-          const el = document.querySelector('[data-testid="command"]');
-          const ms = performance.now() - t0;
-          if (el) {
-            let o = 1;
-            for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
-            resolve({ ms, opacity: o });
-          } else if (ms > 1000) resolve({ ms, opacity: 0 });
-          else requestAnimationFrame(tick);
+      new Promise<OpenTiming>((resolve) => {
+        const gaps: number[] = [];
+        let last = 0;
+        const sample = (t: number) => {
+          if (last) gaps.push(t - last);
+          last = t;
+          if (gaps.length < 20) requestAnimationFrame(sample);
+          else start();
         };
-        tick();
+        requestAnimationFrame(sample);
+        const opacity = (el: Element) => {
+          let o = 1;
+          for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+          return o;
+        };
+        const start = () => {
+          const frameInterval = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+          let key = 0;
+          let mount = 0;
+          const obs = new MutationObserver(() => {
+            if (!mount && document.querySelector('[data-testid="command"]')) mount = performance.now();
+          });
+          obs.observe(document.body, { childList: true, subtree: true });
+          window.addEventListener(
+            "keydown",
+            (e) => {
+              key = e.timeStamp;
+              requestAnimationFrame(() => {
+                const frame = performance.now();
+                const el = document.querySelector('[data-testid="command"]');
+                obs.disconnect();
+                resolve({
+                  keyToMount: mount ? mount - key : NaN,
+                  mountToFrame: mount ? frame - mount : NaN,
+                  keyToFrame: frame - key,
+                  frameInterval,
+                  firstFrameHasIt: !!el,
+                  opacity: el ? opacity(el) : 0,
+                });
+              });
+            },
+            { capture: true, once: true },
+          );
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
+        };
       }),
   );
 }
@@ -72,9 +115,14 @@ for (const w of BREAKPOINTS) {
     await page.setViewportSize({ width: w, height: w < 700 ? 844 : 900 });
     await page.goto("/#/");
     await expect(page.getByTestId("brief")).toBeVisible();
-    const { ms, opacity } = await openCommandTimed(page);
-    expect(ms, "the dialog is on screen within 50 ms").toBeLessThan(50);
-    expect(opacity, "and fully opaque when it first shows").toBe(1);
+    const t = await openCommandTimed(page);
+    const line = `key→mount ${t.keyToMount.toFixed(1)} ms, mount→frame ${t.mountToFrame.toFixed(1)} ms, key→frame ${t.keyToFrame.toFixed(1)} ms, frame interval ${t.frameInterval.toFixed(1)} ms`;
+    info.annotations.push({ type: "⌘K timing", description: line });
+    await info.attach("cmdk-timing.json", { body: JSON.stringify({ width: w, ...t }), contentType: "application/json" });
+    console.log(`⌘K timing ${info.project.name} ${w} px: ${line}`); // in CI's log on every run
+    expect(t.keyToMount, `the app mounts the dialog within 50 ms of the key (${line})`).toBeLessThanOrEqual(50);
+    expect(t.firstFrameHasIt, `the first frame after the key shows the dialog (${line})`).toBe(true);
+    expect(t.opacity, "and fully opaque when it first shows").toBe(1);
     const cmd = page.getByTestId("command");
     await page.getByTestId("command-input").fill(QUESTION);
     await page.keyboard.press("Enter");
