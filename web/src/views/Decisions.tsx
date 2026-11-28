@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useInStep } from "@/lib/inStep";
 import { Check, ExternalLink, Inbox, Merge, Search, Sparkles, Undo2 } from "lucide-react";
 import { homeApi, type DecisionsModel, type HomeDecision } from "@/lib/api";
 import { useAnswers } from "@/lib/answers";
@@ -337,7 +338,7 @@ export function DecisionsView({ params }: { params?: URLSearchParams }) {
     if (wide) setSel(asked);
     else setSheet(asked);
   }, [asked, q.data?.now === undefined, wide]); // eslint-disable-line react-hooks/exhaustive-deps
-  const m = q.data;
+  const m = useInStep("decisions", q.data);
   const rows = m ? (show === "open" ? m.open : m.done) : [];
   const current = rows.find((r) => r.id === sel) ? sel : rows[0]?.id ?? null;
   const pick = (id: string) => (wide ? setSel(id) : setSheet(id));

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useInStep } from "@/lib/inStep";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { homeApi, tasksApi } from "@/lib/api";
 import { duration } from "@/lib/format";
@@ -22,7 +23,7 @@ export function DigestView() {
   const since = useQuery({ queryKey: ["digest"], queryFn: tasksApi.digest, refetchInterval: 60_000 });
   const t = useTexts();
   const color = useRoleColor();
-  const m = home.data;
+  const m = useInStep("home", home.data);
   const s = since.data;
   const written = t?.brief.text?.sentences ?? null;
   const day = Date.now() - 86_400_000;

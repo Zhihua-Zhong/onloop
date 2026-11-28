@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useInStep } from "@/lib/inStep";
 import { ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, ExternalLink, Sparkles } from "lucide-react";
 import { homeApi, type HomeDecision, type HomeModel } from "@/lib/api";
 import { duration } from "@/lib/format";
@@ -488,7 +489,7 @@ export function HomeView() {
     setOpen(id);
     requestAnimationFrame(() => document.querySelector(`[data-testid="decision"][data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   };
-  const m = q.data;
+  const m = useInStep("home", q.data); // with the badge and the texts, in one render (lib/inStep.ts)
   return (
     <div className="mx-auto w-full max-w-[1320px] px-4 py-6 md:px-8" data-testid="view-home">
       {!m && q.error ? (

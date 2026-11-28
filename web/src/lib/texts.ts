@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useInStep } from "@/lib/inStep";
 import { get } from "@/lib/api";
 
 // The smart layer's texts (src/onloop/brief.py, GET /api/texts): written by onloop over the computed facts, checked
@@ -47,7 +48,7 @@ export interface TextsModel {
 export const textsApi = { all: () => get<TextsModel>("/api/texts") };
 
 export function useTexts() {
-  return useQuery({ queryKey: ["texts"], queryFn: textsApi.all, refetchInterval: 60_000 }).data;
+  return useInStep("texts", useQuery({ queryKey: ["texts"], queryFn: textsApi.all, refetchInterval: 60_000, retry: false }).data);
 }
 
 /** The written title, subject and suggestion of one decision, or null (the facts then stand alone). A suggestion that

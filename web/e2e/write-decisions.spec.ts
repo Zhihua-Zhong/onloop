@@ -69,8 +69,25 @@ test("Home's row answers with the suggested option in one click, with the same u
   const toast = page.getByTestId("toast").filter({ hasText: "Approve. operator sees it at its next prompt." });
   await expect(toast).toBeVisible();
   await expect(page.getByTestId("decisions-count")).toHaveText("6");
+  await expect(page.getByTestId("sidebar").getByTestId("decisions-badge")).toHaveText("6");
+  // right after Undo: every frame shows one count, Home's and the sidebar's together (lib/inStep.ts)
+  await page.evaluate(() => {
+    const w = window as unknown as { __counts: string[] };
+    w.__counts = [];
+    const read = () => {
+      const badge = document.querySelector('[data-testid="sidebar"] [data-testid="decisions-badge"]')?.textContent;
+      const home = document.querySelector('[data-testid="decisions-count"]')?.textContent;
+      w.__counts.push(`${badge}/${home}`);
+      if (w.__counts.length < 400) requestAnimationFrame(read);
+    };
+    requestAnimationFrame(read);
+  });
   await toast.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByTestId("decisions-count")).toHaveText("7");
+  await expect(page.getByTestId("sidebar").getByTestId("decisions-badge")).toHaveText("7");
+  const frames = await page.evaluate(() => (window as unknown as { __counts: string[] }).__counts);
+  expect(frames.filter((f) => f !== "6/6" && f !== "7/7"), "a frame with two counts").toEqual([]);
+  expect(frames).toContain("7/7");
 });
 
 test("Rule alerts sets aside the asks that broke the format rule, each with its reason, and the toast undoes it", async ({ page }) => {

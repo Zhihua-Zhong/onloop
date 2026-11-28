@@ -4,6 +4,7 @@ import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
 import { agentsApi, homeApi, tasksApi } from "@/lib/api";
 import { useRoleColor } from "@/lib/useRoleColor";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInStep } from "@/lib/inStep";
 import { useHeartbeat } from "@/lib/heartbeat";
 import { useNowMs } from "@/lib/clock";
 import { beatAtMs, dataAgeS, liveness, type LiveState } from "@/lib/tick";
@@ -296,7 +297,7 @@ function pageOf(view: View): { label: string; interim?: string; details: boolean
 // The sidebar's count is the Decisions page's count, the same one Home shows (tests/test_agreement.py, e2e)
 function DecisionsBadge() {
   const q = useQuery({ queryKey: ["decisions"], queryFn: homeApi.decisions, refetchInterval: 60_000 });
-  const n = q.data?.count ?? 0;
+  const n = useInStep("decisions", q.data)?.count ?? 0; // changes with Home's count, never before it
   if (!n) return null;
   return (
     <span className="ml-auto rounded-full bg-wait/15 px-1.5 text-xs font-medium text-state-human num" data-testid="decisions-badge" aria-label={`${n} open`}>
