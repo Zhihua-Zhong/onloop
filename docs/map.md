@@ -3,15 +3,15 @@
 The map answers one question at a glance: **where is the work stuck, and is it me?** It is one picture with levels:
 you zoom in on purpose, and every level counts the same things as Now and the task list (decision 0018).
 
-Open it at `#/map`, or from the **Map** tab.
+Open it at `#/details/map`, or from **Details · Map** in the sidebar. An old `#/map/...` link opens the same level.
 
 ## The levels
 
 | Zoom | URL | A block is | It shows |
 |---|---|---|---|
-| 0 | `#/map` | a goal | each checklist, each feedback batch, and "Changes in flight", grouped by where they came from, never by role |
-| 1 | `#/map/<goal>` | a stage of that goal | the stages in order, each with its count, colour, oldest item and, when it is red or amber, which item and why |
-| 2 | `#/map/<goal>/<stage>` | a cell: who holds what in a stage | the goal's grid, a column per stage and a row per holder, with the stage you opened outlined; below it, the items one holder has in that stage |
+| 0 | `#/details/map` | a goal | each checklist, each feedback batch, and "Changes in flight", grouped by where they came from, never by role |
+| 1 | `#/details/map/<goal>` | a stage of that goal | the stages in order, each with its count, colour, oldest item and, when it is red or amber, which item and why |
+| 2 | `#/details/map/<goal>/<stage>` | a cell: who holds what in a stage | the goal's grid, a column per stage and a row per holder, with the stage you opened outlined; below it, the items one holder has in that stage |
 | 3, 4 | reserved | a role's turns, a turn's tool calls | these come with the tool events of a later contract |
 
 **The stages at zoom 1:**

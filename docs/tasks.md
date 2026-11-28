@@ -90,7 +90,7 @@ reads it from the issue's edit history:
 
 A pull request links to an item with a line in its body: `Goal: demo/14`, several comma-separated, or `Goal: none`.
 
-`onloop kpi` and the Outcome view (`#/outcome`, `GET /api/kpi?window=7d`) show:
+`onloop kpi` and the Outcome view (`#/details/outcome`, `GET /api/kpi?window=7d`) show:
 
 - **goal ticks per merged PR**, with the checklist's size and the date it was set (and its size before, when it
   changed in the window);

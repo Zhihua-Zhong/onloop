@@ -41,9 +41,19 @@ def test_an_age_ticks_with_no_new_data_and_a_stalled_onloopd_says_so():
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved():
-    """The onloop lead's ask on 211e547: `#/flow` reads `#/map` in the address, as `#/activity` reads `#/replay`."""
+def test_an_old_link_is_rewritten_to_where_its_view_lives_in_the_shell():
+    """The onloop lead's ask on 211e547 (`#/flow` reads `#/map` in the address), carried into 0.7.0's shell: `#/now`
+    reads `#/`, `#/team` reads `#/agents`, `#/replay` reads `#/timeline`, the rest read `#/details/<view>`; every
+    view's own link opens that view."""
     r = _node_test("route.test.ts")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_toast_with_an_undo_stays_until_it_can_be_reached():
+    """0.7.0 plan, section 2: an outside reviewer of F missed the undo. 9 s with an undo, held while the pointer is on
+    it or it has focus, and at least 5 s once let go."""
+    r = _node_test("toastTimer.test.ts")
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
 
 

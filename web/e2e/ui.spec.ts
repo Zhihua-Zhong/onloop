@@ -24,6 +24,21 @@ test.afterEach(async ({ page }) => {
 
 const isPhone = (name: string) => name === "phone";
 
+// 0.7.0's shell (plan, section 1, step 1): the sidebar on a wide screen, the same list in a drawer on a phone.
+const nav = (page: Page, key: string) => page.getByTestId("sidebar").getByTestId(`nav-${key}`);
+async function go(page: Page, key: string, phone: boolean) {
+  const details = ["map", "outcome", "conversation", "schedules", "audit"].includes(key);
+  if (phone) await page.getByTestId("menu").click();
+  const box = phone ? page.getByTestId("drawer") : page.getByTestId("sidebar");
+  if (details && (await box.getByTestId("details-toggle").getAttribute("aria-expanded")) === "false") await box.getByTestId("details-toggle").click();
+  await box.getByTestId(`nav-${key}`).click();
+  if (phone) await expect(page.getByTestId("drawer")).toHaveCount(0);
+}
+async function chooseTheme(page: Page, theme: "light" | "dark" | "system") {
+  await page.getByTestId("theme").click();
+  await page.getByTestId(`theme-${theme}`).click();
+}
+
 test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }, info) => {
   await page.goto("/#/now");
   await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
@@ -130,11 +145,15 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
   await expect(page.getByTestId("constraint")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const bg = () => page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await bg()).toBe("rgb(17, 20, 28)"); // --bg in dark: hsl(224 24% 9%)
-  await page.getByTestId("theme").click();
+  expect(await bg()).toBe("rgb(17, 17, 19)"); // --bg in dark: hsl(240 6% 7%), F's background
+  await chooseTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light"); // the person's choice is kept
+  await chooseTheme(page, "system"); // "System" forgets the choice: the system's dark decides again
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
   await ctx.close();
   const fresh = await browser.newContext({ colorScheme: "light" });
@@ -146,37 +165,88 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
   await fresh.close();
 });
 
-test("the map's zoom 0 opens into Replay", async ({ page }) => {
-  await page.goto("/#/map");
+test("the map's zoom 0 opens into the Timeline", async ({ page }) => {
+  await page.goto("/#/details/map");
   await page.getByTestId("map-to-replay").click();
-  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/replay\?hours=24/);
+  await expect(nav(page, "timeline")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#\/timeline\?hours=24/);
   await expect(page.getByTestId("replay")).toBeVisible();
 });
 
-test("an old Flow or Activity link opens where its parts moved", async ({ page }) => {
-  await page.goto("/#/flow");
-  await expect(page.getByTestId("nav-map")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/map$/); // the address names the view on screen
-  await page.goto("/#/activity");
-  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/replay/);
+test("an old link opens where its view lives now, and the address names it", async ({ page }) => {
+  for (const [old, key, now] of [
+    ["/#/flow", "map", /#\/details\/map$/],
+    ["/#/activity", "timeline", /#\/timeline(\?|$)/], // Replay adds its own speed to the address
+    ["/#/now", "home", /#\/$/],
+    ["/#/team", "agents", /#\/agents$/],
+    ["/#/replay?hours=24", "timeline", /#\/timeline\?hours=24(&|$)/],
+    ["/#/map/changes", "map", /#\/details\/map\/changes$/],
+    ["/#/audit?kind=role.paused", "audit", /#\/details\/audit\?kind=role\.paused$/],
+  ] as const) {
+    await page.goto(old);
+    await expect(nav(page, key)).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL(now);
+  }
 });
 
-test("the theme toggles and the navigation reaches every view", async ({ page }) => {
-  await page.goto("/?theme=light#/now");
+test("the theme menu switches, and the navigation reaches every view, Details one click down", async ({ page }, info) => {
+  const phone = isPhone(info.project.name);
+  await page.goto("/?theme=light#/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByTestId("theme").click();
+  await chooseTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  // Now, Replay and the map first, then the rest (decision 0019); Flow and Activity are gone from the bar
-  const order = await page.locator('nav[aria-label="Views"] a').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
-  expect(order.slice(0, 3)).toEqual(["nav-now", "nav-replay", "nav-map"]);
-  expect(order).not.toContain("nav-flow");
-  expect(order).not.toContain("nav-activity");
-  const root: Record<string, string> = { replay: "replay", map: "map-level" };
-  for (const v of ["replay", "map", "team", "schedules", "audit", "now"]) {
-    await page.getByTestId(`nav-${v}`).click();
+  // F's order: Home, Decisions (not built yet: marked, and not a link), Agents, Timeline; then Details, folded
+  const order = await page.getByTestId("sidebar").locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => `${e.tagName}:${e.getAttribute("data-testid")}`));
+  expect(order.slice(0, 4)).toEqual(["A:nav-home", "SPAN:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
+  await expect(nav(page, "decisions")).toHaveAttribute("aria-disabled", "true");
+  await expect(nav(page, "decisions")).toContainText("not built yet");
+  if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
+  const root: Record<string, string> = { home: "constraint", timeline: "replay", map: "map-level", agents: "view-team" };
+  for (const v of ["timeline", "map", "agents", "schedules", "audit", "outcome", "home"]) {
+    await go(page, v, phone);
     await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
-    await expect(page.getByTestId(`nav-${v}`)).toHaveAttribute("aria-current", "page");
+    await expect(nav(page, v)).toHaveAttribute("aria-current", "page");
   }
+  // a page shown by its 0.6 view says so until its 0.7.0 page lands
+  await expect(page.getByTestId("interim")).toContainText("Home shows 0.6's Now view");
+});
+
+test("every overlay's content is opaque the moment it opens, inside the window, and Escape closes it", async ({ page }, info) => {
+  const phone = isPhone(info.project.name);
+  await page.goto("/#/details/schedules");
+  await expect(page.getByTestId("schedule-nightly-verify")).toBeVisible();
+  // the product of every ancestor's opacity, read in the first animation frame the overlay is there (plan, section 7)
+  const opacity = (testid: string) =>
+    page
+      .waitForFunction(
+        (id) => {
+          const el = document.querySelector(`[data-testid="${id}"]`);
+          if (!el) return null;
+          let o = 1;
+          for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+          return o;
+        },
+        testid,
+        { polling: "raf" },
+      )
+      .then((h) => h.jsonValue());
+  const inside = (testid: string) =>
+    page.getByTestId(testid).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
+    });
+  if (phone) {
+    await page.getByTestId("menu").click();
+    expect(await opacity("drawer")).toBe(1);
+    await expect.poll(() => inside("drawer")).toBe(true);
+    await expect(page.getByTestId("drawer").getByTestId("nav-schedules")).toBeFocused(); // it opens where you are
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("drawer")).toHaveCount(0);
+  }
+  await page.getByTestId("theme").click();
+  expect(await opacity("theme-menu")).toBe(1);
+  await expect.poll(() => inside("theme-menu")).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("theme-menu")).toHaveCount(0);
+  await expect(page.getByTestId("theme")).toBeFocused();
 });

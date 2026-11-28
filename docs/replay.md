@@ -4,7 +4,7 @@ Replay shows the team's work over time, as one lane per role in proportion to ti
 its time and its tokens at that moment. It answers three questions at a glance: who did most of the work and what it
 cost, where the time went, and what a step produced (decision 0019).
 
-Open it at `#/replay`, or from the **Replay** tab. With no moment in the link it opens **live**: the window ends now,
+Open it at `#/timeline`, or from **Timeline** in the sidebar (until 0.7.0's Timeline lands, it shows this view; an old `#/replay` link opens it). With no moment in the link it opens **live**: the window ends now,
 is read again every 15 s, and the cursor stays at now.
 
 ## What you see

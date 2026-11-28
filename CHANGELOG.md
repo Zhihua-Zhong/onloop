@@ -6,6 +6,19 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A new shell for the UI, the first step of 0.7.0.**
+  - It uses prototype F's design system: shadcn/ui's neutral palette, light and dark, and the Inter typeface. Inter is self-hosted and built into the wheel, with its licence.
+  - A sidebar holds Home, Decisions, Agents and Timeline. History and operations sit one click down under Details: Map, Outcome, Conversation, Schedules and Audit.
+  - On a phone, the same list opens as a drawer.
+  - Until 0.7.0's own pages land, Home, Agents and Timeline show 0.6's Now, Team and Replay, and each says so. Decisions is marked "not built yet" and is not a link.
+  - The theme menu offers Light, Dark and System. System forgets a stored choice.
+- **New addresses.** Every view has one: `#/`, `#/agents`, `#/timeline`, `#/details/<view>`. An old link (`#/now`, `#/team`, `#/replay`, `#/map/...`, `#/audit?...`) opens the same view and its address is rewritten in place.
+- **Overlays.** Dialogs, menus, tooltips and popovers are Radix UI's, and ⌘K's list is cmdk.
+  - An overlay's content never fades in: only the dim behind it fades, and the content moves in, fully opaque from its first frame. Under `prefers-reduced-motion` it does not move.
+  - Radix's scroll lock writes no `<style>` element, so the strict CSP stays as it is.
+
 ## [0.6.1] - 2026-11-28
 
 0.6.1 is a patch release of 0.6.0, for Windows: nothing onloop starts opens a console window any more, and

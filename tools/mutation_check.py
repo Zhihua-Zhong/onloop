@@ -2003,11 +2003,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
-        "an old #/flow link keeps its address while the map shows, so a copied link names a retired view",
+        "an old link (#/flow, #/map/..., #/audit?...) keeps its address while its view shows, so a copied link names an old place",
         "web/src/lib/retired.ts",
-        "  return to ? `#/${to}${m![2]}` : null;",
+        "  return `#/${to}${rest}`;",
         "  return null;",
-        ["tests/test_web_units.py::test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved"],
+        ["tests/test_web_units.py::test_an_old_link_is_rewritten_to_where_its_view_lives_in_the_shell"],
     ),
     (
         "a resumed run's telemetry is keyed on session and sequence, so its records are dropped as an earlier run's",
