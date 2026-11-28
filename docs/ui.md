@@ -70,9 +70,10 @@ it is jammed (decision 0019).
 Prototype F's Home, on the ledger (0.7.0 plan, sections 1 and 2). `GET /api/home` reads 14 days at most: this week and
 the week before. On a frozen copy (a read-only server whose ledger nothing writes) the week ends at its last event.
 
-- **Today's brief:** facts only until onloop writes the brief (a later step of 0.7.0), marked so: what waits on you,
-  how many of those asks say what they change and the first in order; what was merged; the most unusual thing. Every
-  number in it is one the page shows.
+- **Today's brief:** written by onloop over this page's facts (the smart layer, below), else the facts themselves,
+  marked "facts only": what waits on you, how many of those asks say what they change and the first in order; what was
+  merged; the most unusual thing. Every number in it is one the page shows. Its one button opens the first decision,
+  named by its written short title when there is one.
 - **Three numbers against last week:** Delivered (changes merged), Waited on you (each ask's own open time in the week,
   summed), and Cost per delivery (the week's tokens, without cache reads, divided by Delivered), each with its seven
   days as a sparkline. With less than two weeks of data there is no week before, and the page says so instead of a
@@ -129,12 +130,41 @@ right; on a phone the decision opens as a sheet.
   what they change are counted with a link to Rule alerts.
 - **A decision:** what it changes, what waits on it, if nobody answers, the cost of delay, what it is about, and the
   asks merged into it (who, when, and "nothing new" for a repeat). Its answers are the options its ask recorded; with
-  none, Done and Decline. No answer is generated before the smart layer.
+  none, Done and Decline. The smart layer may write its short title and subject and suggest one of the options, with
+  its grounds: that option is the one primary button. Nothing is suggested when the ask recorded no options.
 - **Answering** sends at once; a toast says when the asker sees it ("operator sees it at its next prompt") and offers
   Undo for 9 s, held while the pointer is on it.
 - **Done:** the person's answers of the last 14 days, each with whether it has reached the role that asked. Until it
   has, Withdraw opens the decision again; after, a change of mind is a new answer.
 - **The count** is Home's and the sidebar badge's.
+
+### The smart layer
+
+onloop writes a few short texts over the facts it computed (0.7.0 plan, section 3; `src/onloop/brief.py`), and shows
+each one marked as written: a sparkle and "Written by onloop from … · facts <hash>", the first seven characters of the
+hash of the facts it was written from.
+
+- **What it writes:** the brief (2 or 3 sentences); for each open decision a short title and its subject in a few words;
+  when the ask recorded options, the suggested answer with its grounds, which is the one primary button (the other
+  options are outline, Decline is plain); and near-duplicate merge proposals between open decisions.
+- **What it never writes:** a number that is not in the facts, an option the ask did not record, the order, "Do first".
+- **The checks:** a text is taken only when it is the JSON asked for, every digit run in it is one of its facts, every
+  suggestion is one of its decision's options, and every id is an open decision's. Otherwise it is logged as
+  `text.rejected` with the reason, and the page shows the facts.
+- **The cache is the ledger:** an accepted text is a `text.generated` event keyed by its facts' hash. When the facts
+  change (an answer, a new ask, the brief's numbers) the page shows the facts at once, marked "facts · updating", and
+  the new text when it is written. A decision's texts and the merges are written from the decisions alone, without
+  their ages or order, so an hour passing does not make them stale.
+- **The call:** onloopd runs headless `claude -p --output-format json --tools "" --model sonnet` in a thread of its
+  own, the prompt on stdin, from an empty temporary folder, without a console window and without ANTHROPIC_API_KEY (the
+  subscription, as the carrier's turns). Calls are capped per kind per day (brief 8, decisions 20, merges 6); a failed
+  call is logged as `text.failed` and is not tried again for 15 minutes for the same facts.
+- **Facts only:** with `smart: off` in onloopd.yaml, or ONLOOP_SMART=off, with no `claude` CLI, or when a call fails,
+  times out, is rejected or capped, every page shows the facts, as before 0.7.0's step 5: the brief's facts with
+  "facts only", the decisions' own titles, every option outline, no merge card.
+- **Merges are the person's:** a proposal shows both decisions and why; Merge closes the second into the first as
+  superseded, with its asks counted in the first (`task.merged`); Keep apart hides it in this browser. Nothing merges by
+  itself.
 
 What 0.6's Now showed on the first screen and Home does not: the constraint in the system's words (Details · Map and
 Rule alerts), the log since the last visit, the asks with no effect stated, the turns that ended without a valid outcome

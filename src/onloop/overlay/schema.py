@@ -937,6 +937,7 @@ CREATE INDEX task_asks_task ON task_asks(task_id, at)
 # role's session received (its length only, never its text), which carries the role's decisions to it.
 KINDS_11 = {
     "task.unresolved": "answer withdrawn",
+    "task.merged": "decisions merged",
     "hook.prompt_submit": "prompt submitted",
 }
 

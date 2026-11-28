@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState, type ElementType, type ReactNode }
 import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert, History } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
 import { agentsApi, homeApi } from "@/lib/api";
-import { roleColor } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHeartbeat } from "@/lib/heartbeat";
 import { useNowMs } from "@/lib/clock";
@@ -236,6 +236,7 @@ function DecisionsBadge() {
 
 // F's "Agents now": every role with its state, one click from its page
 function AgentsNow({ onNav }: { onNav?: () => void }) {
+  const color = useRoleColor();
   const q = useQuery({ queryKey: ["agents"], queryFn: agentsApi.all, refetchInterval: 30_000 });
   const list = q.data?.agents ?? [];
   if (!list.length) return null;
@@ -244,7 +245,7 @@ function AgentsNow({ onNav }: { onNav?: () => void }) {
       <div className="px-2 pb-1 text-xs text-muted">Agents now</div>
       {list.map((a) => (
         <a key={a.role} href={href("team", {}, [a.role])} onClick={onNav} className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-muted hover:bg-hover hover:text-fg">
-          <span className="size-2 shrink-0 rounded-full" style={{ background: roleColor(a.role) }} aria-hidden />
+          <span className="size-2 shrink-0 rounded-full" style={{ background: color(a.role) }} aria-hidden />
           <span className="min-w-0 flex-1 truncate">{a.role}</span>
           <StateLine a={a} />
         </a>

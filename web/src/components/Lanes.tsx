@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HomeLane } from "@/lib/api";
 import { duration } from "@/lib/format";
-import { roleColor } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
 import { cn } from "@/lib/utils";
 
 // The lanes as the evidence picture (0.7.0, prototype F): one lane per role, its working time and its time waiting on
@@ -26,7 +26,8 @@ export function RangeTabs({ value, options, onChange }: { value: number; options
   );
 }
 
-export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "Who worked when" }: { lanes: HomeLane[]; flags: Flag[]; to: string; hours: number; callouts?: Callout[]; label?: string }) {
+export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "Who worked when", density = false }: { lanes: HomeLane[]; flags: Flag[]; to: string; hours: number; callouts?: Callout[]; label?: string; density?: boolean }) {
+  const color = useRoleColor();
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   useLayoutEffect(() => {
@@ -50,9 +51,19 @@ export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "
   const PW = W - L - R;
   const x = (t: number) => L + ((Math.min(Math.max(t, S0), END) - S0) / (END - S0)) * PW;
   const ROW = 32;
-  const FLAG = 22;
+  const HIST = density ? 36 : 0; // turns per hour, all roles together, above the flags (F's strip)
+  const FLAG = HIST + 22;
   const AX = 20;
   const lane0 = FLAG + AX;
+  const bins = new Array(Math.max(1, Math.round(hours))).fill(0) as number[];
+  if (density)
+    for (const lane of lanes)
+      for (const t of lane.turns) {
+        const i = Math.floor((Date.parse(t) - S0) / H);
+        if (i >= 0 && i < bins.length) bins[i]++;
+      }
+  const bmax = Math.max(1, ...bins);
+  const bw = PW / bins.length;
   const height = lane0 + Math.max(1, lanes.length) * ROW + 6;
   const step = hours > 48 ? 24 : 6;
   const ticks: number[] = [];
@@ -69,10 +80,18 @@ export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "
   return (
     <div className="flex">
       <div className="shrink-0 border-r border-line" style={{ width: NAMES, paddingTop: lane0 }} data-testid="lane-names">
+        {density && (
+          <div className="-mt-[58px] mb-[22px] flex h-9 items-end pr-2 text-[11px] text-muted" aria-hidden>
+            turns / h
+          </div>
+        )}
         {lanes.map((lane) => (
-          <div key={lane.role} className="flex items-center gap-1.5 truncate pr-2 text-xs" style={{ height: ROW }}>
-            <span className="size-2 shrink-0 rounded-full" style={{ background: roleColor(lane.role) }} aria-hidden />
-            <span className="truncate">{lane.role}</span>
+          <div key={lane.role} className="flex items-center gap-1.5 pr-2 text-xs" style={{ height: ROW }}>
+            <span className="size-2 shrink-0 rounded-full" style={{ background: color(lane.role) }} aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{lane.role}</span>
+            <span className="text-[11px] text-muted num" data-testid="lane-turns" title={`${lane.turns.filter((t) => Date.parse(t) >= S0).length} turns in this window`}>
+              {lane.turns.filter((t) => Date.parse(t) >= S0).length}
+            </span>
           </div>
         ))}
       </div>
@@ -84,6 +103,14 @@ export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "
               <line x1="0" y1="0" x2="0" y2="6" stroke="hsl(var(--wait))" strokeWidth="2" opacity=".75" />
             </pattern>
           </defs>
+          {density &&
+            bins.map((n, i) =>
+              n ? (
+                <rect key={`b${i}`} x={L + i * bw + 0.5} y={HIST - Math.max(2, (n / bmax) * (HIST - 4))} width={Math.max(1, bw - 1)} height={Math.max(2, (n / bmax) * (HIST - 4))} rx={1} fill="hsl(var(--work) / .35)" data-testid="density">
+                  <title>{`${n} ${n === 1 ? "turn" : "turns"} in the hour from ${new Date(S0 + i * H).toLocaleString(undefined, { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}</title>
+                </rect>
+              ) : null,
+            )}
           {ticks.map((t) => (
             <g key={t}>
               <line x1={x(t)} x2={x(t)} y1={FLAG} y2={height} stroke="hsl(var(--line))" />
@@ -106,14 +133,14 @@ export function LanesPicture({ lanes, flags, to, hours, callouts = [], label = "
                 {lane.segments
                   .filter(([, b]) => Date.parse(b) > S0)
                   .map(([a, b, kind], i) => (
-                    <rect key={i} x={x(Date.parse(a))} y={kind === "waiting" ? mid - 6 : mid - 4} width={Math.max(2, x(Date.parse(b)) - x(Date.parse(a)))} height={kind === "waiting" ? 12 : 8} rx={2} fill={kind === "waiting" ? "url(#lanes-hatch)" : "hsl(var(--work) / .55)"}>
+                    <rect key={i} x={x(Date.parse(a))} y={kind === "waiting" ? mid - 6 : mid - 4} width={Math.max(2, x(Date.parse(b)) - x(Date.parse(a)))} height={kind === "waiting" ? 12 : 8} rx={2} fill={kind === "waiting" ? "url(#lanes-hatch)" : color(lane.role)} fillOpacity={kind === "waiting" ? 1 : 0.55}>
                       <title>{`${lane.role}: ${kind === "waiting" ? "waiting on you" : "working"}, ${duration((Date.parse(b) - Date.parse(a)) / 1000)}`}</title>
                     </rect>
                   ))}
                 {lane.turns
                   .filter((t) => Date.parse(t) >= S0)
                   .map((t, i) => (
-                    <rect key={`t${i}`} x={x(Date.parse(t)) - 1} y={mid - 7} width={2} height={14} rx={1} fill="hsl(var(--work))">
+                    <rect key={`t${i}`} x={x(Date.parse(t)) - 1} y={mid - 7} width={2} height={14} rx={1} fill={color(lane.role)}>
                       <title>{`${lane.role}: a turn ended ${new Date(t).toLocaleString(undefined, { hour12: false })}`}</title>
                     </rect>
                   ))}

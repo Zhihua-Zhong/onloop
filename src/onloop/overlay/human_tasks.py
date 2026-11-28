@@ -608,6 +608,32 @@ def task_resolved(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> N
         )
 
 
+def task_merged(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """The person confirmed two open decisions are one: `merge` is superseded by `keep`, and its asks join `keep`."""
+    keep, merge = p["keep"], p["merge"]
+    rows = conn.execute("SELECT id, stage FROM human_tasks WHERE id IN (?, ?)", (keep, merge)).fetchall()
+    if len(rows) != 2 or any(r[1] == "resolved" for r in rows):
+        return
+    resolve(
+        conn,
+        e,
+        merge,
+        "superseded",
+        evidence=f"human:merge:{e['id']}",
+        by="human",
+        superseded_by=f"task:{keep}",
+    )
+    for at, author, new in conn.execute(
+        "SELECT at, author_role, new_fact FROM task_asks WHERE task_id = ? ORDER BY at, id", (merge,)
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO task_asks (id, task_id, at, author_role, new_fact, last_seq) VALUES (?, ?, ?, ?, ?, ?)",
+            (f"{e['id']}/{merge}/{at}", keep, at, author, new, e["seq"]),
+        )
+    n = conn.execute("SELECT count(*) FROM task_asks WHERE task_id = ?", (keep,)).fetchone()[0]
+    conn.execute("UPDATE human_tasks SET asks = ?, last_seq = ? WHERE id = ?", (max(1, n), e["seq"], keep))
+
+
 def task_unresolved(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     """The person withdrew their answer before it reached the role that asked: the decision is open again."""
     row = conn.execute(
@@ -728,6 +754,7 @@ RULES = {
     "task.kept": task_kept,
     "task.resolved": task_resolved,
     "task.unresolved": task_unresolved,
+    "task.merged": task_merged,
     "hook.prompt_submit": prompt_submitted,
     "visit.recorded": visit_recorded,
 }

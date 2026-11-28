@@ -29,7 +29,7 @@ test("Conversation lists the carried roles and opens a thread of deliveries, run
   await expect(human).toContainText("this page · local user, not verified");
   await expect(human.getByTestId("delivery")).toContainText("acknowledged");
   await expect(human.getByTestId("delivery")).toContainText("by the turn below");
-  await expect(thread.getByTestId("entry-turn").filter({ hasText: "outcome: done" })).toBeVisible();
+  await expect(thread.getByTestId("entry-turn").filter({ hasText: "outcome: done ref=pr#102" })).toBeVisible();
   await expect(thread.getByTestId("entry-turn").filter({ hasText: "without an outcome line" })).toBeVisible();
   const corrective = thread.getByTestId("entry-message").filter({ hasText: "asked for the outcome line" });
   await expect(corrective.getByTestId("delivery")).toContainText("being processed");

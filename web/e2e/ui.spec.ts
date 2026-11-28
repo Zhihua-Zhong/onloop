@@ -41,27 +41,30 @@ async function chooseTheme(page: Page, theme: "light" | "dark" | "system") {
 
 test("Home answers what needs me, how it went and what came out, and lists no rule alert", async ({ page }) => {
   await page.goto("/#/");
-  await expect(page.getByTestId("brief-facts")).toContainText("10 asks wait on you, 6 of them saying what they change.");
+  // the demo serves the smart layer's recorded brief (tests/fixtures/brief), marked as written, with its facts' hash
+  await expect(page.getByTestId("brief-written")).toContainText("Seven decisions wait on you");
+  await expect(page.getByTestId("brief").getByTestId("written-by")).toContainText(/Written by onloop from this week's data · facts [0-9a-f]{7}/);
   await expect(page.getByTestId("kpi-delivered").getByTestId("kpi-value")).toHaveText("7");
   await expect(page.getByTestId("kpi-waited").getByTestId("kpi-value")).toHaveText(/^\d+ h$/);
-  await expect(page.getByTestId("decisions-count")).toHaveText("6");
+  await expect(page.getByTestId("decisions-count")).toHaveText("7");
   const rows = page.getByTestId("decision");
   await expect(rows).toHaveCount(5); // the first five in the one order, collapsed
-  await expect(rows.first().getByTestId("decision-title")).toHaveText("approve the schema change, so the import can run on real data");
+  await expect(rows.first().getByTestId("decision-title")).toHaveText("Approve the schema change for the import");
   await page.getByTestId("decisions-all").click();
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(7);
   // the asks that do not say what they change are counted, with where they are; none is listed
   await expect(page.getByTestId("rule-asks")).toContainText("4 more asks do not say what they change");
   const text = await page.getByTestId("view-home").innerText();
   for (const word of ["An ask with no effect stated", "outcome line", "Constraint", "Since you", "Stalled", "merge-check holds"]) expect(text).not.toContain(word);
   // the brief's one button has a short label that is never cut, and opens the first decision to its facts and the
   // answers its ask offered (no options recorded: Done and Decline)
-  await expect(page.getByTestId("decide-first")).toHaveText("Decide the first of 6");
+  await expect(page.getByTestId("decide-first")).toHaveText("Decide: Approve the schema change for the import");
   await expect(page.getByTestId("decision-facts")).toHaveCount(0);
   await page.getByTestId("decide-first").click();
   await expect(rows.first().getByTestId("decision-facts")).toContainText("If nobody answers");
   await expect(rows.first().getByTestId("decision-facts")).toContainText("nothing merges");
   await expect(rows.first().getByTestId("option")).toHaveText(["Approve", "Approve, import paused", "Wait for the review"]);
+  await expect(rows.first().getByTestId("suggested-answer")).toHaveText("Approve");
   await expect(page.getByTestId("kpi-waited")).toContainText("summed");
   // the evidence: one lane per role, a flag per change merged this week
   await expect(page.getByTestId("lane-names")).toContainText("builder");
@@ -117,8 +120,8 @@ test("the Timeline shows who worked when, the merges and each role's figures, an
   await page.goto("/#/timeline");
   await expect(page.getByTestId("timeline-lanes").getByTestId("lane-row")).toHaveCount(6);
   await expect(page.getByTestId("timeline-lanes").getByTestId("flag")).toHaveCount(7);
-  await expect(page.getByTestId("figure-builder").getByTestId("figure-turns")).toHaveText("2");
-  await expect(page.getByTestId("figures")).toContainText("10 asks wait on you");
+  await expect(page.getByTestId("figure-builder").getByTestId("figure-turns")).toHaveText("44"); // the 14-day demo's builder, in the Timeline's window
+  await expect(page.getByTestId("figures")).toContainText("11 asks wait on you");
   await page.getByTestId("to-replay").click();
   await expect(page).toHaveURL(/#\/details\/replay\?hours=168/);
   await expect(page.getByTestId("replay")).toBeVisible();
@@ -245,7 +248,7 @@ test("the theme menu switches, and the navigation reaches every view, Details on
   // F's order: Home, Decisions (with its count), Agents, Timeline; then Details, folded
   const order = await page.getByTestId("sidebar").locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => `${e.tagName}:${e.getAttribute("data-testid")}`));
   expect(order.slice(0, 4)).toEqual(["A:nav-home", "A:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
-  await expect(nav(page, "decisions").getByTestId("decisions-badge")).toHaveText("6");
+  await expect(nav(page, "decisions").getByTestId("decisions-badge")).toHaveText("7");
   if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
   const root: Record<string, string> = { home: "brief", replay: "replay", map: "map-level" };
   for (const v of ["decisions", "timeline", "map", "replay", "agents", "schedules", "audit", "outcome", "rules", "home"]) {

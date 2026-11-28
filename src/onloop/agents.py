@@ -163,7 +163,9 @@ def _model(ledger: Any, role: str, start: str, end: str) -> str | None:
     return (row or {}).get("m")
 
 
-def cards(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
+def cards(
+    ledger: Any, now: str, end: str | None = None, descriptions: dict[str, str] | None = None
+) -> dict[str, Any]:
     end = end or now
     start, before = ev.shift_ts(end, -WEEK_S), ev.shift_ts(end, -2 * WEEK_S)
     turns = derive.turns_per_role(ledger, start, end)
@@ -187,6 +189,7 @@ def cards(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
         out.append(
             {
                 "role": role,
+                "description": (descriptions or {}).get(role),  # onloop.yaml's, as written; never generated
                 **_state(ledger, role, end, working, asks.get(role, 0), role in paused),
                 "on_now": _on_now(ledger, role, end, steps),
                 "model": _model(ledger, role, ev.shift_ts(end, -2 * WEEK_S), end),
@@ -212,11 +215,13 @@ def cards(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
     }
 
 
-def detail(ledger: Any, role: str, now: str, end: str | None = None) -> dict[str, Any] | None:
+def detail(
+    ledger: Any, role: str, now: str, end: str | None = None, descriptions: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     from . import decisions, home
 
     end = end or now
-    all_ = cards(ledger, now, end)
+    all_ = cards(ledger, now, end, descriptions)
     card = next((c for c in all_["agents"] if c["role"] == role), None)
     if card is None:
         return None

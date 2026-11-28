@@ -1,0 +1,20 @@
+{
+ "prompt_version": "0.7.0-4",
+ "model": "sonnet",
+ "output": {
+  "sentences": [
+   {
+    "text": "Seven decisions wait on you, and the first is to approve the schema change so the import can run on real data; two agents have asked and nothing merges until you answer.",
+    "about": "t-demo0001"
+   },
+   {
+    "text": "The week went better than the one before: 7 deliveries against 5, and 297k tokens per delivery against 332k, but work waited 421 hours against 67.",
+    "about": null
+   },
+   {
+    "text": "Most unusual: an ask from lead about whether the export ships in this release has waited 9 days, where such asks are usually answered in 7 h 30 min.",
+    "about": "t-demo0007"
+   }
+  ]
+ }
+}

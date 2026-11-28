@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { agentsApi } from "@/lib/api";
 import { duration } from "@/lib/format";
 import { href, setParams } from "@/lib/route";
-import { roleColor } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
 import { Problem } from "@/components/kit";
 import { LanesLegend, LanesPicture, RangeTabs } from "@/components/Lanes";
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/components/ui/basics";
@@ -21,6 +21,7 @@ const RANGES = [
 ] as const;
 
 export function TimelineView({ params }: { params: URLSearchParams }) {
+  const color = useRoleColor();
   const days = Number(params.get("days") ?? "7");
   const d = RANGES.some(([v]) => v === days) ? days : 7;
   const q = useQuery({ queryKey: ["timeline", d], queryFn: () => agentsApi.timeline(d), refetchInterval: 30_000 });
@@ -42,7 +43,7 @@ export function TimelineView({ params }: { params: URLSearchParams }) {
         <div className="space-y-5">
           <Card data-testid="timeline-lanes">
             <CardContent className="pt-5">
-              <LanesPicture lanes={m.lanes} flags={m.flags} to={m.to} hours={m.days * 24} callouts={m.callouts} />
+              <LanesPicture lanes={m.lanes} flags={m.flags} to={m.to} hours={m.days * 24} callouts={m.callouts} density />
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <LanesLegend callouts={m.callouts.length > 0} />
                 <a href={href("replay", { hours: String(Math.min(168, m.days * 24)) })} className="text-sm font-medium hover:underline" data-testid="to-replay">
@@ -75,7 +76,7 @@ export function TimelineView({ params }: { params: URLSearchParams }) {
                       <tr key={f.role} className="border-b border-line last:border-0" data-testid={`figure-${f.role}`}>
                         <td className="py-2">
                           <a href={href("team", {}, [f.role])} className="inline-flex items-center gap-1.5 hover:underline">
-                            <span className="size-2 rounded-full" style={{ background: roleColor(f.role) }} aria-hidden />
+                            <span className="size-2 rounded-full" style={{ background: color(f.role) }} aria-hidden />
                             {f.role}
                           </a>
                         </td>

@@ -2,6 +2,7 @@
 
 import copy
 import datetime as dt
+import os
 
 import pytest
 
@@ -25,6 +26,10 @@ BASE = {
 }
 
 HEAD = "a" * 40
+
+# 0.7.0: no test calls the model. An onloopd a test starts runs with the smart layer off; the smart layer's own tests
+# use a recorded answer (tests/test_brief.py).
+os.environ["ONLOOP_SMART"] = "off"
 
 
 @pytest.fixture(autouse=True)

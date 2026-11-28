@@ -35,6 +35,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 day, its decisions and its lane
     GET /api/timeline           the Timeline (0.7.0): ?days=1|2|7|14; the lanes, the merges, the callouts and each role's
                                 figures for the window, summed from per-day figures, never read from the ledger's start
+    GET /api/texts              the smart layer's texts valid for today's facts (brief.py), per kind, with the facts'
+                                hash; a kind with none is null, and the pages show the facts
     GET /api/decisions          Decisions (0.7.0): the open decisions in the one order, each with every ask it holds and
                                 its recorded options, and the person's answers of the last 14 days
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
@@ -113,6 +115,7 @@ UI_TASK_WRITES = {
     "/ui/tasks/keep": "keep",
     "/ui/tasks/withdraw": "withdraw",
     "/ui/tasks/tidy": "tidy",
+    "/ui/tasks/merge": "merge",
     "/ui/visits": "visit",
 }
 UI_COOKIE = "onloop_ui"
@@ -194,8 +197,12 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         ui_dir: pathlib.Path | None = None,
         carrier: Any = None,
         tick_s: float = 10.0,
+        descriptions: Any = None,
     ):
         super().__init__(address, _Handler)
+        self._descriptions = (
+            descriptions  # each role's description from onloop.yaml, or a function giving them
+        )
         self.tick_s = tick_s  # onloopd's tick, which writes the heartbeat
         self._carrier = carrier  # the carrier's configuration, None when onloopd.yaml has no carrier: block
         self.reader = reader
@@ -237,6 +244,11 @@ class DaemonServer(http.server.ThreadingHTTPServer):
     def carrier(self) -> Any:
         return self._carrier() if callable(self._carrier) else self._carrier
 
+    @property
+    def descriptions(self) -> dict[str, str]:
+        d = self._descriptions() if callable(self._descriptions) else self._descriptions
+        return dict(d or {})
+
     def shutdown(self) -> None:
         self.stopping.set()  # ends open SSE streams at their next poll
         super().shutdown()
@@ -253,6 +265,7 @@ def make_server(
     ui_dir: pathlib.Path | None = None,
     carrier: Any = None,
     tick_s: float = 10.0,
+    descriptions: Any = None,
 ) -> DaemonServer:
     """A server on the loopback address; `port=0` picks a free one. Any other host is refused before binding.
     Without both a writer and a token, every POST is 405."""
@@ -260,7 +273,9 @@ def make_server(
         raise ValueError("a writer needs a token, and a token a writer")
     host = check_host(host)
     try:
-        return DaemonServer((host, port), reader, writer, token, heartbeat, ui_dir, carrier, tick_s)
+        return DaemonServer(
+            (host, port), reader, writer, token, heartbeat, ui_dir, carrier, tick_s, descriptions
+        )
     except OSError as e:
         if e.errno in _IN_USE or getattr(e, "winerror", None) in _IN_USE:
             raise PortInUse(host, port, e) from e
@@ -432,7 +447,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 self._send_json(400, {"error": "a task write is a JSON object"})
                 return
-            keep = {k: body[k] for k in ("id", "resolution", "note", "reason", "answer", "ids") if k in body}
+            keep = {
+                k: body[k]
+                for k in ("id", "resolution", "note", "reason", "answer", "ids", "keep", "merge")
+                if k in body
+            }
             try:
                 out = self.server.writer.post(
                     f"/tasks/{UI_TASK_WRITES[path]}", {**keep, "channel": "ui", "by": "human"}
@@ -551,12 +570,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     unquote(url.path[len("/api/agents/") :]) if url.path.startswith("/api/agents/") else None
                 )
                 if role:
-                    body = agents.detail(reader, role, now, end)
+                    body = agents.detail(reader, role, now, end, self.server.descriptions)
                     if body is None:
                         self._send_json(404, {"error": f"no role {role!r} in the last two weeks"}, head_only)
                         return
                 else:
-                    body = agents.cards(reader, now, end)
+                    body = agents.cards(reader, now, end, self.server.descriptions)
             elif url.path == "/api/timeline":
                 from .. import home, timeline_page
 
@@ -570,6 +589,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 except ValueError as e:
                     self._send_json(400, {"error": str(e)}, head_only)
                     return
+            elif url.path == "/api/texts":
+                from .. import brief, home
+
+                now = ev.now_ts()
+                frozen = self.server.writer is None and not self._written_elsewhere()
+                body = brief.for_pages(reader, now, (home.last_event(reader) or now) if frozen else None)
             elif url.path == "/api/decisions":
                 from .. import decisions
 

@@ -6,7 +6,7 @@
     card(task, now) -> dict                          what a view shows for a task, days computed now
     open_tasks(ledger, now) -> [card]                every task not resolved, in order
     digest(ledger, since, now) -> dict               added, resolved (and resolved without you), returned, since
-    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit|withdraw|tidy>
+    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit|withdraw|tidy|merge>
 
 The order (decision 0013): weight bands (critical, supporting, unweighted, skippable, then incomplete); in a band, a
 cost of delay with a date first, by the days left (a date passed is 0, "costing now"), then a cost not known, then
@@ -152,6 +152,19 @@ def withdraw_event(task: Mapping[str, Any], *, channel: str, ledger: Any) -> dic
     ):
         raise AskError("a newer ask on the same subject is open: answer that one")
     return _event(channel, "task.unresolved", task["id"], {"id": task["id"], "by": "human"})
+
+
+def merge_event(ledger: Any, keep: Any, merge: Any, *, channel: str) -> dict[str, Any]:
+    """The person confirms that two open decisions are one (0.7.0 plan, section 4.3: proposed, never done by itself):
+    `merge` closes as superseded by `keep`, and its asks are counted in `keep`."""
+    a, b = get(ledger, str(keep or "")), get(ledger, str(merge or ""))
+    if a is None or b is None or a["id"] == b["id"]:
+        raise AskError("merge names two decisions: keep and merge")
+    if a["stage"] == "resolved" or b["stage"] == "resolved":
+        raise AskError("both decisions must be open to merge them")
+    return _event(
+        channel, "task.merged", b["id"], {"id": b["id"], "keep": a["id"], "merge": b["id"], "by": "human"}
+    )
 
 
 def tidy_events(ledger: Any, ids: Iterable[str], *, channel: str) -> list[dict[str, Any]]:
@@ -419,6 +432,8 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
                 title=body.get("title"),
                 source="cli",
             )
+        elif action == "merge":
+            event = merge_event(ledger, body.get("keep"), body.get("merge"), channel=channel)
         elif action == "tidy":
             ids = body.get("ids")
             if not isinstance(ids, list) or not ids or len(ids) > 500:
@@ -452,7 +467,8 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
         else:
             raise Refused(
                 404,
-                "a task write is /tasks/ask, /tasks/resolve, /tasks/keep, /tasks/visit, /tasks/withdraw or /tasks/tidy",
+                "a task write is /tasks/ask, /tasks/resolve, /tasks/keep, /tasks/visit, /tasks/withdraw, /tasks/tidy "
+                "or /tasks/merge",
             )
     except AskError as e:
         raise Refused(422, str(e)) from e

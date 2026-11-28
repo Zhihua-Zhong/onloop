@@ -1,0 +1,13 @@
+{
+ "prompt_version": "0.7.0-4",
+ "model": "sonnet",
+ "output": {
+  "merges": [
+   {
+    "keep": "t-demo0004",
+    "merge": "t-demo-dcolours",
+    "why": "Both ask the person to choose the colours for the report charts so the pages stop showing the placeholder ones."
+   }
+  ]
+ }
+}

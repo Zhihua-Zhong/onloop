@@ -52,6 +52,9 @@ its first author, counts every ask ("asked 3×"), and takes what the new ask add
 - **The answer reaches the asker** at its next prompt or session start, as context from its hook ("t-… answered by the
   person: Merge both"). Until then the person can withdraw it in Decisions · Done; after that, a change of mind is a
   new answer. `onloop decisions --mine --role <role>` lists a role's open decisions and the answers to it.
+- **Near duplicates** under different subjects stay two decisions. The smart layer may propose merging them
+  ([ui.md](ui.md#the-smart-layer)); only the person merges (`POST /ui/tasks/merge` with `keep` and `merge`, logged as
+  `task.merged`): the second closes as superseded by the first, and its asks are counted in the first.
 
 Carried roles get these hooks from the carrier, and `onloop open` gives the person's session the same three for that
 run only (`--settings`); a session started any other way sees nothing. Decision 0020 records the rules.

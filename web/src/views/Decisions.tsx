@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ExternalLink, Inbox, Search, Undo2 } from "lucide-react";
+import { Check, ExternalLink, Inbox, Merge, Search, Sparkles, Undo2 } from "lucide-react";
 import { homeApi, type DecisionsModel, type HomeDecision } from "@/lib/api";
 import { useAnswers } from "@/lib/answers";
 import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
 import { isUrl } from "@/lib/url";
 import { askerName, avatarOf } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
+import { decisionText, useTexts, type MergeText, type TextsModel } from "@/lib/texts";
+import { OptionButtons, Suggested, WrittenMark } from "@/components/Written";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +20,10 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 // Decisions (0.7.0 plan, sections 1 and 4): what must I decide, in what order? Prototype F's split view: the list on
 // the left, the decision on the right (a sheet on a phone). One subject, one decision: every ask about it, from any
-// role, is one row with its count. The answers are the ask's recorded options, else Done and Decline; no answer is
-// generated before the smart layer (step 5). Answers stay withdrawable under Done until they reach the asker.
+// role, is one row with its count. The answers are the ask's recorded options, else Done and Decline. The smart layer
+// (src/onloop/brief.py) may write a short title and subject, suggest one of the recorded options with its grounds (the
+// one primary button), and propose merging two near-duplicate decisions, which only a person confirms. Answers stay
+// withdrawable under Done until they reach the asker.
 
 type Sort = "order" | "waiting" | "asked";
 
@@ -48,10 +53,13 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: boolean; onDone?: () => void }) {
+export function DecisionPanel({ d, first, onDone, t }: { d: HomeDecision; first: boolean; onDone?: () => void; t?: TextsModel }) {
+  const color = useRoleColor();
   const { answer, withdraw, busy, error } = useAnswers();
   const who = askerName(d.asked_by);
   const open = d.resolution == null;
+  const w = open ? decisionText(t, d) : null;
+  const title = w?.title ?? d.title;
   const act = async (resolution: "done" | "declined", option?: string) => {
     await answer(d.id, d.asked_by, resolution, option);
     onDone?.();
@@ -60,11 +68,16 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
     <div className="flex h-full min-h-0 flex-col" data-testid="decision-panel" data-id={d.id}>
       <div className="border-b border-line px-5 py-4 pr-12">
         <div className="flex items-center gap-2 text-xs text-muted">
-          <Avatar {...avatarOf(d.asked_by)} size={18} />
+          <Avatar {...avatarOf(d.asked_by, color)} size={18} />
+          {w?.subject && (
+            <>
+              <span data-testid="panel-subject">{w.subject}</span> ·{" "}
+            </>
+          )}
           {d.askers.length > 1 ? d.askers.join(", ") : who} · {open ? `waiting ${duration(d.age_s)}` : `answered ${at(d.resolved_at)}`}
         </div>
         <h2 className="mt-1.5 text-lg font-semibold leading-6" data-testid="panel-title">
-          {d.title}
+          {title}
         </h2>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {open && first && <Badge tone="solid">Do first</Badge>}
@@ -93,9 +106,10 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
             )}
           </div>
         )}
+        {w && t && <Suggested t={w} hash={t.decisions.facts_hash} />}
         <dl className="space-y-2.5" data-testid="facts">
-          {/* the title is what it changes until step 5 writes a short title: no row that repeats it */}
-          {d.effect_text && d.effect_text !== d.title && <Fact label="What it changes">{d.effect_text}</Fact>}
+          {/* the ask's own words, unless the title already is them */}
+          {(d.effect_text ?? d.title) !== title && <Fact label="What it changes">{d.effect_text ?? d.title}</Fact>}
           <Fact label="What waits on it">{d.holds ?? "not said"}</Fact>
           <Fact label="If nobody answers">{d.default ?? "not said"}</Fact>
           {d.cost_text && <Fact label="Cost of delay">{d.cost_text}</Fact>}
@@ -135,16 +149,7 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
           ) : d.options.length ? (
             <>
               <div className="mb-2 text-xs text-muted">{who} offered these answers</div>
-              <div className="flex flex-wrap gap-2">
-                {d.options.map((o) => (
-                  <Button key={o} variant="outline" disabled={busy === d.id} onClick={() => void act("done", o)} data-testid="option">
-                    {o}
-                  </Button>
-                ))}
-                <Button variant="ghost" disabled={busy === d.id} onClick={() => void act("declined")} data-testid="decline">
-                  Decline
-                </Button>
-              </div>
+              <OptionButtons d={d} suggested={w?.suggested ?? null} busy={busy === d.id} onAnswer={(r, o) => void act(r, o)} />
             </>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -164,8 +169,10 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
   );
 }
 
-function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on: boolean; onPick: () => void }) {
+function Row({ d, rank, on, onPick, t }: { d: HomeDecision; rank: number | null; on: boolean; onPick: () => void; t?: TextsModel }) {
+  const color = useRoleColor();
   const who = askerName(d.asked_by);
+  const w = d.resolution == null ? decisionText(t, d) : null;
   return (
     <li>
       <button
@@ -176,14 +183,15 @@ function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on
         data-id={d.id}
         className={cn("flex w-full items-start gap-3 border-b border-line px-4 py-3 text-left transition-colors hover:bg-hover/60", on && "bg-hover")}
       >
-        <Avatar {...avatarOf(d.asked_by)} size={28} className="mt-0.5" />
+        <Avatar {...avatarOf(d.asked_by, color)} size={28} className="mt-0.5" />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="min-w-0 text-sm font-medium" data-testid="row-title">{d.title}</span>
+            <span className="min-w-0 text-sm font-medium" data-testid="row-title">{w?.title ?? d.title}</span>
             {rank === 1 && <Badge tone="solid">Do first</Badge>}
           </span>
           <span className="mt-0.5 block truncate text-sm text-muted">{d.holds ? `holds ${d.holds}` : d.cost_text ?? "nothing said to wait on it"}</span>
           <span className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted">
+            {w?.subject && <span>{w.subject}</span>}
             <span>{d.askers.length > 1 ? d.askers.join(", ") : who}</span>
             <span className="num">{d.resolution ? `answered ${at(d.resolved_at)}` : `waiting ${duration(d.age_s)}`}</span>
             {d.asks > 1 && <span className="num">asked {d.asks}×</span>}
@@ -192,6 +200,11 @@ function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on
         <span className="mt-0.5 shrink-0">
           {d.resolution ? (
             <Badge tone={d.resolution === "dismissed" ? "default" : "done"}>{d.answer_text}</Badge>
+          ) : w?.suggested ? (
+            <Badge tone="outline" className="max-sm:hidden" title="Suggested by onloop, one of the answers offered">
+              <Sparkles className="mr-1 size-3" aria-hidden />
+              {w.suggested}
+            </Badge>
           ) : d.options.length ? (
             <Badge tone="outline">{d.options.length} answers</Badge>
           ) : null}
@@ -201,7 +214,7 @@ function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on
   );
 }
 
-function List({ m, show, setShow, pick, current, wide }: { m: DecisionsModel; show: "open" | "done"; setShow: (v: "open" | "done") => void; pick: (id: string) => void; current: string | null; wide: boolean }) {
+function List({ m, show, setShow, pick, current, wide, t }: { m: DecisionsModel; show: "open" | "done"; setShow: (v: "open" | "done") => void; pick: (id: string) => void; current: string | null; wide: boolean; t?: TextsModel }) {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("order");
   const base = show === "open" ? m.open : m.done;
@@ -240,7 +253,7 @@ function List({ m, show, setShow, pick, current, wide }: { m: DecisionsModel; sh
       {rows.length ? (
         <ul>
           {rows.map((d) => (
-            <Row key={d.id} d={d} rank={show === "open" && sort === "order" ? m.open.indexOf(d) + 1 : null} on={wide && d.id === current} onPick={() => pick(d.id)} />
+            <Row key={d.id} d={d} t={t} rank={show === "open" && sort === "order" ? m.open.indexOf(d) + 1 : null} on={wide && d.id === current} onPick={() => pick(d.id)} />
           ))}
         </ul>
       ) : (
@@ -256,8 +269,75 @@ function List({ m, show, setShow, pick, current, wide }: { m: DecisionsModel; sh
 
 const asksTotal = (m: DecisionsModel) => m.open.reduce((n, d) => n + d.asks, 0);
 
+const KEPT = "onloop.merges.kept"; // this viewer's "Keep apart": a convenience in this browser, never the ledger's
+
+function keptApart(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(KEPT) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
+
+/** The smart layer's near-duplicate proposals between open decisions (0.7.0 plan, section 4.3). Nothing merges by
+ * itself: Merge is the person's, and it closes the second into the first with every ask counted. */
+function MergeProposals({ m, t }: { m: DecisionsModel; t?: TextsModel }) {
+  const { merge, busy, error } = useAnswers();
+  const [kept, setKept] = useState<string[]>(keptApart);
+  const byId = new Map(m.open.map((d) => [d.id, d]));
+  const pairs = (t?.merges.text?.merges ?? []).filter(
+    (p: MergeText) => byId.has(p.keep) && byId.has(p.merge) && !kept.includes(`${p.keep}|${p.merge}`),
+  );
+  if (!t || !pairs.length) return null;
+  const title = (id: string) => decisionText(t, byId.get(id)!)?.title ?? byId.get(id)!.title;
+  const keepApart = (p: MergeText) => {
+    const next = [...kept, `${p.keep}|${p.merge}`];
+    setKept(next);
+    try {
+      localStorage.setItem(KEPT, JSON.stringify(next));
+    } catch {
+      /* this browser keeps nothing: it shows again on reload */
+    }
+  };
+  return (
+    <div className="mb-5 space-y-3">
+      {pairs.map((p) => (
+        <Card key={`${p.keep}|${p.merge}`} className="p-4" data-testid="merge-proposal">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
+            <Sparkles className="size-3.5" aria-hidden />
+            These two look like one decision
+          </div>
+          <ul className="mt-2 space-y-1 text-sm">
+            <li>
+              <b>{title(p.keep)}</b> <span className="text-muted">· {askerName(byId.get(p.keep)!.asked_by)}</span>
+            </li>
+            <li>
+              <b>{title(p.merge)}</b> <span className="text-muted">· {askerName(byId.get(p.merge)!.asked_by)}</span>
+            </li>
+          </ul>
+          <p className="mt-2 text-sm text-muted">{p.why}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" disabled={busy === "merge"} onClick={() => void merge(p.keep, p.merge)} data-testid="merge">
+              <Merge aria-hidden />
+              Merge into the first
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => keepApart(p)} data-testid="keep-apart">
+              Keep apart
+            </Button>
+            <span className="text-xs text-muted">
+              <WrittenMark hash={t.merges.facts_hash} what="the open decisions" />. Nothing merges unless you do.
+            </span>
+          </div>
+          {error?.id === "merge" && <p className="mt-2 text-sm text-danger" role="alert">{error.text}</p>}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export function DecisionsView() {
   const q = useQuery({ queryKey: ["decisions"], queryFn: homeApi.decisions, refetchInterval: 60_000 });
+  const t = useTexts();
   const wide = useWide();
   const [show, setShow] = useState<"open" | "done">("open");
   const [sel, setSel] = useState<string | null>(null);
@@ -290,6 +370,7 @@ export function DecisionsView() {
           </p>
         )}
       </div>
+      {m && show === "open" && <MergeProposals m={m} t={t} />}
       {!m && q.error ? (
         <Problem error={q.error} />
       ) : !m ? (
@@ -299,10 +380,10 @@ export function DecisionsView() {
         </div>
       ) : wide ? (
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-5">
-          <List m={m} show={show} setShow={setShow} pick={pick} current={current} wide />
+          <List m={m} t={t} show={show} setShow={setShow} pick={pick} current={current} wide />
           <Card className="sticky top-4 h-[calc(100vh-170px)] min-h-[520px] overflow-hidden">
             {shown ? (
-              <DecisionPanel key={shown.id} d={shown} first={m.open[0]?.id === shown.id} />
+              <DecisionPanel key={shown.id} d={shown} t={t} first={m.open[0]?.id === shown.id} />
             ) : (
               <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-muted">
                 <Inbox className="mb-2 size-5" aria-hidden />
@@ -313,11 +394,11 @@ export function DecisionsView() {
         </div>
       ) : (
         <>
-          <List m={m} show={show} setShow={setShow} pick={pick} current={null} wide={false} />
+          <List m={m} t={t} show={show} setShow={setShow} pick={pick} current={null} wide={false} />
           <Dialog open={!!inSheet} onOpenChange={(o) => !o && setSheet(null)}>
             <DialogContent side="right" className="p-0" aria-describedby={undefined} data-testid="decision-sheet">
               <DialogTitle className="sr-only">{inSheet?.title ?? "Decision"}</DialogTitle>
-              {inSheet && <DecisionPanel d={inSheet} first={m.open[0]?.id === inSheet.id} onDone={() => setSheet(null)} />}
+              {inSheet && <DecisionPanel d={inSheet} t={t} first={m.open[0]?.id === inSheet.id} onDone={() => setSheet(null)} />}
             </DialogContent>
           </Dialog>
         </>

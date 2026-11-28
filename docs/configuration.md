@@ -32,6 +32,7 @@ A mapping from a role name to a mapping of settings. At least one role is requir
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `roles.<name>.charter` | string | none | Path of the role's charter. Documentation only; onloop does not read it. |
+| `roles.<name>.description` | string, at most 80 characters | none | One line on what the role does, shown under its name on its Agents card. Without it the card shows none; onloop never writes one. |
 | `roles.<name>.leads` | list of role names | `[]` | The roles this one coordinates. The stop anchor asks whether each has a next item. |
 | `roles.<name>.anchor` | `session` or `every_message` | `session` | `every_message` adds a short anchor before each incoming message (for coordinating roles). Not authority: changing it needs no approval. |
 | `roles.<name>.kpis` | list of names, or mapping of name to target | `[]` | The measures the full anchor shows this role. Not authority. |
@@ -411,6 +412,17 @@ overview:
     wait: 2h
 ```
 
+### The smart layer
+
+Optional; on by default. `smart: off` stops onloopd from writing any text with the model: every page then shows the
+facts alone. On, onloopd runs headless `claude -p` (the carrier's `claude` CLI, else `claude`) on the subscription,
+never with ANTHROPIC_API_KEY, at most 8 briefs, 20 decision texts and 6 merge proposals a day
+([ui.md](ui.md#the-smart-layer)). ONLOOP_SMART=off in onloopd's environment turns it off too.
+
+```yaml
+smart: off
+```
+
 ### The carrier
 
 Optional. The session carrier ([carrier.md](carrier.md), [decision 0010](decisions/0010-session-lease-and-delivery.md)):
@@ -565,6 +577,7 @@ Notes:
 | `GITHUB_REPOSITORY` | gate, audit, as-app, watchdog | Default for `--repo`. |
 | the variable named by `apps.<identity>.key_env` | as-app | Path of the App's private key file. |
 | `GH_TOKEN` | the `gh` CLI | Used by `gh` for the gate, the audit and the watchdog. In the audit workflow it is the workflow's own token. |
+| `ONLOOP_SMART` | onloopd | `off` turns the smart layer off, as `smart: off` in onloopd.yaml. |
 
 ## Extension points
 

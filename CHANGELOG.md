@@ -18,6 +18,19 @@ All notable changes to this project are recorded here. The format follows
   - **The lanes as the evidence:** waits on you amber, merges green.
   - **Agreement:** every number agrees with the views one click down (`tests/test_agreement.py`).
   - **A frozen copy:** a read-only copy that nothing writes is read up to its last event.
+- **The smart layer (0.7.0, step 5):** onloop writes the brief, each decision's short title and subject, a suggested
+  answer from its recorded options with grounds from its facts, and near-duplicate merge proposals, over the facts it
+  computed (`src/onloop/brief.py`, `GET /api/texts`).
+  - Headless `claude -p` from onloopd, on the subscription (never ANTHROPIC_API_KEY), windowless, capped per kind per
+    day; `smart: off` in onloopd.yaml or ONLOOP_SMART=off turns it off.
+  - A text is taken only when every number in it is in its facts and every suggestion is a recorded option; it is
+    cached in the ledger (`text.generated`) by its facts' hash and shown as "Written by onloop from … · facts <hash>".
+    When it fails, times out, is rejected or stale, the page shows the facts.
+  - A merge is the person's: `POST /ui/tasks/merge` closes one decision into the other (`task.merged`).
+  - The generic demo now covers 14 days (a few hundred turns, several merges, a quiet stretch, a token spike, a
+    repeated ask and a near duplicate), with each role's `description` and its recorded texts. Each role has its own
+    colour from a fixed palette on its avatar, lane marks and sidebar dot; the Timeline shows each lane's turn count
+    and a turns-per-hour strip; a card shows the role's `description` from onloop.yaml when there is one.
 - **Agents (0.7.0, step 4):** `#/agents`, prototype F's cards over `GET /api/agents`.
   - Each card shows the role's state in plain words: working, waits on you, paused by you, stopped, or idle. "Stopped" is a carried run with nothing done for an hour, and is the only stuck: a format-rule break never is.
   - It also shows what the role is on, and its week by day: turns, tokens and changes merged against last week.

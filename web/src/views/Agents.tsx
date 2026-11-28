@@ -3,7 +3,7 @@ import { ArrowLeft, Copy } from "lucide-react";
 import { agentsApi, type AgentCard, type AgentState } from "@/lib/api";
 import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
-import { roleColor } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
 import { LanesLegend, LanesPicture } from "@/components/Lanes";
@@ -41,16 +41,22 @@ export function StateLine({ a }: { a: AgentCard }) {
 }
 
 function AgentTile({ a }: { a: AgentCard }) {
+  const color = useRoleColor();
   return (
     <a href={href("team", {}, [a.role])} className="group block rounded-lg border border-line bg-surface p-4 transition-colors hover:border-fg/20" data-testid={`agent-${a.role}`}>
       <div className="flex items-start gap-3">
-        <Avatar name={a.role} color={roleColor(a.role)} size={36} />
+        <Avatar name={a.role} color={color(a.role)} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-medium">{a.role}</span>
             <StateLine a={a} />
           </div>
-          <div className="mt-0.5 truncate text-sm text-muted" data-testid="on-now">
+          {a.description && (
+            <div className="truncate text-sm text-muted" data-testid="description">
+              {a.description}
+            </div>
+          )}
+          <div className="mt-0.5 truncate text-xs text-muted" data-testid="on-now">
             {a.state === "stopped" ? a.words : a.on_now ?? "nothing recorded yet"}
           </div>
         </div>
@@ -131,6 +137,7 @@ function Bars({ values, label }: { values: number[]; label: string }) {
 }
 
 export function AgentDetailView({ role }: { role: string }) {
+  const color = useRoleColor();
   const q = useQuery({ queryKey: ["agent", role], queryFn: () => agentsApi.one(role), refetchInterval: 30_000 });
   const m = q.data;
   return (
@@ -146,9 +153,10 @@ export function AgentDetailView({ role }: { role: string }) {
       ) : (
         <div className="space-y-5">
           <div className="flex flex-wrap items-start gap-3">
-            <Avatar name={m.card.role} color={roleColor(m.card.role)} size={44} />
+            <Avatar name={m.card.role} color={color(m.card.role)} size={44} />
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-semibold tracking-tight">{m.card.role}</h1>
+              {m.card.description && <p className="text-sm text-muted">{m.card.description}</p>}
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <StateLine a={m.card} />
                 <span className="text-sm text-muted" data-testid="on-now">{m.card.state === "stopped" ? m.card.words : m.card.on_now ?? "nothing recorded yet"}</span>

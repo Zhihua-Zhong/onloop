@@ -104,6 +104,9 @@ def test_the_brief_says_only_numbers_the_page_shows(demo_path):
         str(h["numbers"]["delivered"]["last_week"]),
         *re.findall(r"\d+", " ".join(i["title"] for i in h["decisions"]["items"])),
         *re.findall(r"\d+", derive.plain_age(h["decisions"]["items"][0]["age_s"])),
+        *re.findall(
+            r"\d+", " ".join(f"{u['title']} {u['text']}" for u in h["unusual"])
+        ),  # Unusual is on the page
     }
     said = set(re.findall(r"\d+", " ".join(h["brief"]["facts"])))
     assert said <= shown | {"7"}, said - shown  # "the last 7 days" is the window, shown in the page's heading
@@ -114,7 +117,7 @@ def test_home_reads_14_days_at_most(demo_path, tmp_path):
     path = _copy(demo_path, tmp_path)
     with Ledger(path, readonly=True) as led:
         before = home.build(led, NOW)
-    old = ev.shift_ts(NOW, -15 * 86400)
+    old = ev.shift_ts(NOW, -20 * 86400)  # the demo already reaches two weeks back; this is older still
     clock = [old]
     with Ledger(path, clock=lambda: clock[0]) as led:
         _merge(led, "old-merge", "pr#900", old)
@@ -122,10 +125,8 @@ def test_home_reads_14_days_at_most(demo_path, tmp_path):
         _turn(led, "old-turn", "builder")
     with Ledger(path, readonly=True) as led:
         after = home.build(led, NOW)
-    assert after["young"] is False and before["young"] is True  # the first event is now two weeks back
+    assert after["young"] is False and before["young"] is False
     for k in ("numbers", "decisions", "unusual", "lanes", "brief"):
-        if k in ("numbers", "brief"):
-            continue  # the deltas appear once there is a week before; their values are unchanged
         assert after[k] == before[k], k
     for k in ("delivered", "waited_h"):
         assert after["numbers"][k]["value"] == before["numbers"][k]["value"]

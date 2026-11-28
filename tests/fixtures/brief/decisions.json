@@ -1,0 +1,57 @@
+{
+ "prompt_version": "0.7.0-4",
+ "model": "sonnet",
+ "output": {
+  "decisions": [
+   {
+    "id": "t-demo0001",
+    "title": "Approve the schema change for the import",
+    "subject": "Schema change",
+    "suggested": "Approve",
+    "grounds": "It was asked twice, it holds the import walk for demo/7, and if nobody answers nothing merges."
+   },
+   {
+    "id": "t-demo0007",
+    "title": "Decide if export ships this release",
+    "subject": "Export release",
+    "suggested": "Ship it in this release",
+    "grounds": "It was asked twice and it holds the release plan, which keeps carrying both branches until someone decides."
+   },
+   {
+    "id": "t-demo0002",
+    "title": "Register the CI runner on your machine",
+    "subject": "CI runner",
+    "suggested": null,
+    "grounds": null
+   },
+   {
+    "id": "t-demo0003",
+    "title": "Sign the data provider's terms",
+    "subject": "Provider terms",
+    "suggested": null,
+    "grounds": null
+   },
+   {
+    "id": "t-a4f1038f63",
+    "title": "Resume the paused reviewer",
+    "subject": "Reviewer role",
+    "suggested": null,
+    "grounds": null
+   },
+   {
+    "id": "t-demo0004",
+    "title": "Choose the chart palette for reports",
+    "subject": "Chart palette",
+    "suggested": null,
+    "grounds": null
+   },
+   {
+    "id": "t-demo-dcolours",
+    "title": "Pick the report chart colours",
+    "subject": "Chart colours",
+    "suggested": null,
+    "grounds": null
+   }
+  ]
+ }
+}

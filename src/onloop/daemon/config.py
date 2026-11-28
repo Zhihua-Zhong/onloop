@@ -66,6 +66,7 @@ _TOP = (
     "goals",
     "jobs",
     "overview",
+    "smart",
 )
 _SCHEDULE = ("id", "name", "period", "grace", "owner")
 _GITHUB = ("repo", "base", "every", "workdir", "policy")
@@ -119,6 +120,7 @@ class OnloopdConfig:
     adapters: tuple[dict[str, Any], ...] = field(default_factory=tuple)  # each as written, with poll_s added
     goals: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)  # (id, adapter, locator)
     jobs: tuple[Any, ...] = field(default_factory=tuple)  # jobs.Job: onloopd's own scheduled work
+    smart: bool = True  # 0.7.0: the smart layer (brief.py); `smart: off` turns it off entirely
     overview_stuck: tuple[tuple[str, int], ...] = field(default_factory=tuple)  # (step, seconds) the map's
     # stuck thresholds, as written; the rest keep their defaults
 
@@ -391,9 +393,14 @@ def parse(data: Any, path: pathlib.Path | str = CONFIG_FILE) -> OnloopdConfig:
         from ..carrier import config as carrier_config
 
         carrier = carrier_config.parse(data["carrier"], problems)
+    smart = data.get("smart", True)
+    if smart not in (True, False):  # YAML's on/off read as booleans
+        problems.append("smart is on or off")
+        smart = True
     if problems:
         raise ConfigError(path, problems)
     return OnloopdConfig(
+        smart=bool(smart),
         carrier=carrier,
         schedules=tuple(schedules),
         github=github,

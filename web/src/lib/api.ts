@@ -287,7 +287,7 @@ export const tasksApi = {
 
 // The page's task writes (decision 0013): evidence from a local user, never an approval. Same rules as a message.
 export async function uiPost(
-  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/visits",
+  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/tasks/merge" | "/ui/visits",
   body: Record<string, unknown>,
 ): Promise<unknown> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -398,6 +398,7 @@ export type AgentState = "working" | "waiting" | "idle" | "paused" | "stopped";
 
 export interface AgentCard {
   role: string;
+  description: string | null;
   state: AgentState;
   words: string;
   command?: string;

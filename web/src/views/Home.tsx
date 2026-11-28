@@ -1,12 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, ExternalLink, Sparkles } from "lucide-react";
 import { homeApi, type HomeDecision, type HomeModel } from "@/lib/api";
 import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
 import { isUrl } from "@/lib/url";
 import { useAnswers } from "@/lib/answers";
 import { askerName, avatarOf } from "@/lib/roleColor";
+import { useRoleColor } from "@/lib/useRoleColor";
+import { decisionText, useTexts, type TextsModel } from "@/lib/texts";
+import { OptionButtons, Suggested, WrittenMark } from "@/components/Written";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
 import { LanesLegend, LanesPicture, RangeTabs } from "@/components/Lanes";
@@ -16,7 +19,7 @@ import { Avatar, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/co
 import { Tooltip } from "@/components/ui/tooltip";
 
 // Home (0.7.0 plan, sections 1 and 2): is it going well, what needs me, what came out. Prototype F's Home, on the
-// ledger: the brief (facts only until the smart layer lands), three numbers against last week, the decisions in their
+// ledger: the brief (written by onloop over the facts, else the facts), three numbers against last week, the decisions in their
 // one order, what is unusual this week, and the lanes as the evidence. Rule alerts are counted under Details, never
 // listed here. Every number is GET /api/home's, which agrees with the views one click down (tests/test_agreement.py).
 
@@ -145,35 +148,60 @@ function Numbers({ m, onWaited }: { m: HomeModel; onWaited: () => void }) {
   );
 }
 
-function Brief({ m, onDecide }: { m: HomeModel; onDecide: (id: string) => void }) {
+function Brief({ m, t, onDecide }: { m: HomeModel; t: TextsModel | undefined; onDecide: (id: string) => void }) {
   const top = m.decisions.items[0];
+  const written = t?.brief.text?.sentences ?? null;
+  const short = top ? decisionText(t, top)?.title : null;
   return (
     <Card className="relative overflow-hidden" data-testid="brief">
       <div className="absolute inset-y-0 left-0 w-0.5 bg-gradient-to-b from-work to-done" aria-hidden />
       <CardContent className="flex flex-col gap-4 pt-5 md:flex-row md:items-start md:justify-between">
         <div className="max-w-[760px]">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+            {written && <Sparkles className="size-3.5" aria-hidden />}
             Today's brief
-            <Tooltip content="Until onloop writes the brief (a later step of 0.7.0), it is these facts, word for word from the numbers on this page.">
-              <span tabIndex={0} className="rounded-sm">
-                <Badge tone="soon">facts only</Badge>
-              </span>
-            </Tooltip>
+            {!written && (
+              <Tooltip
+                content={
+                  t?.brief.stale
+                    ? "The facts changed since onloop last wrote the brief. Until the new one is written and checked, these are the facts, word for word from this page."
+                    : "onloop writes the brief from these facts when it can (smart layer). Until then, or when writing fails, these are the facts, word for word from this page."
+                }
+              >
+                <span tabIndex={0} className="rounded-sm" data-testid="brief-mode">
+                  <Badge tone="soon">{t?.brief.stale ? "facts · updating" : "facts only"}</Badge>
+                </span>
+              </Tooltip>
+            )}
           </div>
-          <p className="text-lg leading-7 text-fg" data-testid="brief-facts">
-            {m.brief.facts.map((s, i) => (
-              <span key={i}>{s} </span>
-            ))}
-          </p>
+          {written ? (
+            <p className="text-lg leading-7 text-fg" data-testid="brief-written">
+              {written.map((s, i) => (
+                <span key={i}>{s.text} </span>
+              ))}
+            </p>
+          ) : (
+            <p className="text-lg leading-7 text-fg" data-testid="brief-facts">
+              {m.brief.facts.map((s, i) => (
+                <span key={i}>{s} </span>
+              ))}
+            </p>
+          )}
           <p className="mt-2 text-xs text-muted">
-            From the ledger, {m.frozen ? `a frozen copy up to ${new Date(m.to).toLocaleString(undefined, { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "as of now"}.
+            {written && t ? (
+              <>
+                <WrittenMark hash={t.brief.facts_hash} />. Answered items update at once.
+              </>
+            ) : (
+              <>From the ledger, {m.frozen ? `a frozen copy up to ${new Date(m.to).toLocaleString(undefined, { hour12: false, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "as of now"}.</>
+            )}
           </p>
         </div>
         {top && (
           <div className="flex shrink-0 gap-2 md:flex-col md:items-stretch">
-            {/* one primary action, with a short label that is never cut: the generated short form comes with step 5 */}
-            <Button onClick={() => onDecide(top.id)} data-testid="decide-first" title={top.title}>
-              Decide the first of {m.decisions.count}
+            {/* one primary action, with a short label that is never cut: the written short title, else the count */}
+            <Button onClick={() => onDecide(top.id)} data-testid="decide-first" title={top.title} className="max-w-[320px]">
+              <span className="truncate">{short ? `Decide: ${short}` : `Decide the first of ${m.decisions.count}`}</span>
               <ChevronRight aria-hidden />
             </Button>
           </div>
@@ -192,16 +220,19 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boolean; open: boolean; onToggle: () => void }) {
+function DecisionRow({ d, first, open, onToggle, t }: { d: HomeDecision; first: boolean; open: boolean; onToggle: () => void; t: TextsModel | undefined }) {
+  const color = useRoleColor();
   const { answer, busy, error } = useAnswers();
   const who = askerName(d.asked_by);
+  const w = decisionText(t, d);
+  const title = w?.title ?? d.title;
   return (
     <li className={cn("rounded-md", open && "bg-hover/50")} data-testid="decision" data-id={d.id}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="group flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-hover/60">
-        <Avatar {...avatarOf(d.asked_by)} size={28} />
+        <Avatar {...avatarOf(d.asked_by, color)} size={28} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="min-w-0 max-w-full truncate text-sm font-medium" data-testid="decision-title">{d.title}</span>
+            <span className="min-w-0 max-w-full truncate text-sm font-medium" data-testid="decision-title" title={w ? d.title : undefined}>{title}</span>
             {first && <Badge tone="solid">Do first</Badge>}
             {d.asks > 1 && <Badge tone="outline">asked {d.asks}×</Badge>}
             {d.days_left === 0 && <Badge tone="wait">costing now</Badge>}
@@ -215,7 +246,7 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
       {open && (
         <div className="space-y-3 px-2 pb-3 pl-12" data-testid="decision-facts">
           <dl className="space-y-2">
-            {d.effect_text && d.effect_text !== d.title && <Fact label="What it changes">{d.effect_text}</Fact>}
+            {(d.effect_text ?? d.title) !== title && <Fact label="What it changes">{d.effect_text ?? d.title}</Fact>}
             <Fact label="What waits on it">{d.holds ?? "not said"}</Fact>
             <Fact label="If nobody answers">{d.default ?? "not said"}</Fact>
             {d.cost_text && <Fact label="Cost of delay">{d.cost_text}</Fact>}
@@ -234,22 +265,14 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
               </Fact>
             )}
           </dl>
+          {w && t && <Suggested t={w} hash={t.decisions.facts_hash} />}
           <div className="flex flex-wrap items-center gap-2">
             {d.origin === "gate" ? (
               <span className="text-sm text-muted">Approve it on the code host; onloop sees the approval.</span>
             ) : d.origin === "pause" ? (
               <code className="rounded bg-raised px-1.5 py-0.5 text-xs">onloop role resume {d.ref?.replace(/^role:/, "")}</code>
             ) : d.options.length ? (
-              <>
-                {d.options.map((o) => (
-                  <Button key={o} size="sm" variant="outline" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "done", o)} data-testid="option">
-                    {o}
-                  </Button>
-                ))}
-                <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "declined")} data-testid="mark-declined">
-                  Decline
-                </Button>
-              </>
+              <OptionButtons d={d} suggested={w?.suggested ?? null} size="sm" busy={busy === d.id} onAnswer={(r, o) => void answer(d.id, d.asked_by, r, o)} />
             ) : (
               <>
                 <Button size="sm" variant="outline" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "done")} data-testid="mark-done">
@@ -272,7 +295,7 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
 
 const SHOWN = 5;
 
-function Decisions({ m, open, setOpen }: { m: HomeModel; open: string | null; setOpen: (id: string | null) => void }) {
+function Decisions({ m, t, open, setOpen }: { m: HomeModel; t: TextsModel | undefined; open: string | null; setOpen: (id: string | null) => void }) {
   const [all, setAll] = useState(false);
   const { items, count, rule_asks } = m.decisions;
   const shown = all ? items : items.slice(0, SHOWN);
@@ -288,7 +311,7 @@ function Decisions({ m, open, setOpen }: { m: HomeModel; open: string | null; se
         {items.length ? (
           <ul className="-mx-2">
             {shown.map((d, i) => (
-              <DecisionRow key={d.id} d={d} first={i === 0} open={open === d.id} onToggle={() => setOpen(open === d.id ? null : d.id)} />
+              <DecisionRow key={d.id} d={d} t={t} first={i === 0} open={open === d.id} onToggle={() => setOpen(open === d.id ? null : d.id)} />
             ))}
           </ul>
         ) : (
@@ -406,6 +429,7 @@ function HomeLoading() {
 
 export function HomeView() {
   const q = useQuery({ queryKey: ["home"], queryFn: homeApi.home, refetchInterval: 60_000 });
+  const texts = useTexts();
   const [open, setOpen] = useState<string | null>(null);
   const decide = (id: string) => {
     setOpen(id);
@@ -428,10 +452,10 @@ export function HomeView() {
               </p>
             </div>
           </div>
-          <Brief m={m} onDecide={decide} />
+          <Brief m={m} t={texts} onDecide={decide} />
           <Numbers m={m} onWaited={() => document.getElementById("decisions")?.scrollIntoView({ block: "start", behavior: "smooth" })} />
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <Decisions m={m} open={open} setOpen={setOpen} />
+            <Decisions m={m} t={texts} open={open} setOpen={setOpen} />
             <Unusual m={m} />
           </div>
           <Lanes m={m} />

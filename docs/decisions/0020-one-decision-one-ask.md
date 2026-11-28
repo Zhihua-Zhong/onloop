@@ -45,7 +45,11 @@ gaps: Claude Code shows a SessionStart or UserPromptSubmit hook's `additionalCon
 
 | Kind | OCEL 2.0 event type |
 |---|---|
-| `task.unresolved`, `hook.prompt_submit` | `answer withdrawn`, `prompt submitted` |
+| `task.unresolved`, `hook.prompt_submit`, `task.merged` | `answer withdrawn`, `prompt submitted`, `decisions merged` |
+
+`task.merged` (0.7.0 step 5) is the person confirming a merge the smart layer proposed: `merge` closes as superseded by
+`keep`, and its asks are counted in `keep`. onloopd's own record of the smart layer, `text.generated`, `text.rejected`
+and `text.failed` (source `config`, subject `text:<kind>`), changes no table: the pages read it by the facts' hash.
 
 ## Consequences
 

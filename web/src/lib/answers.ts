@@ -62,5 +62,20 @@ export function useAnswers() {
     }
   };
 
-  return { answer, withdraw, tidy, busy, error };
+  // a merge the smart layer proposed and the person confirms (0.7.0 plan, section 4.3): `merge` closes into `keep`
+  const merge = async (keep: string, gone: string) => {
+    setBusy("merge");
+    try {
+      await uiPost("/ui/tasks/merge", { keep, merge: gone });
+      setError(null);
+      toast("Merged: one decision now, with every ask counted in it.");
+    } catch (e) {
+      setError({ id: "merge", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
+  return { answer, withdraw, tidy, merge, busy, error };
 }

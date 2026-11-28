@@ -216,6 +216,9 @@ def validate(raw: Any) -> list[str]:
         leads = spec.get("leads", [])
         if not isinstance(leads, list) or any(r not in roles for r in leads):
             problems.append(f"role `{role}` leads {leads!r}: `leads` must list roles that exist")
+        desc = spec.get("description")
+        if desc is not None and (not isinstance(desc, str) or not desc.strip() or len(desc) > 80):
+            problems.append(f"role `{role}` has `description` that is not a line of at most 80 characters")
         kpis = spec.get("kpis", [])
         if not (isinstance(kpis, dict) or (isinstance(kpis, list) and all(isinstance(k, str) for k in kpis))):
             problems.append(
@@ -621,3 +624,15 @@ def automation_loosening(base: dict[str, Any], head: dict[str, Any]) -> list[str
     if base.get("cross_owner") == "reviewer_ack" and head.get("cross_owner") == "author":
         out.append("automation.cross_owner moves from reviewer_ack to author")
     return out
+
+
+def descriptions(policy: Policy | None) -> dict[str, str]:
+    """Each role's `description` from onloop.yaml (0.7.0: the line under its name on Agents), as written; none is ever
+    made up. Empty when there is no policy or no role says one."""
+    if policy is None:
+        return {}
+    return {
+        name: str(spec["description"]).strip()
+        for name, spec in policy.roles.items()
+        if isinstance(spec, dict) and isinstance(spec.get("description"), str) and spec["description"].strip()
+    }

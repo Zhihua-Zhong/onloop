@@ -53,6 +53,8 @@ def _asks(ledger: Any, ids: list[str]) -> dict[str, list[dict[str, Any]]]:
 def answer_text(t: dict[str, Any]) -> str:
     if t.get("answer"):
         return str(t["answer"])
+    if t.get("resolution") == "superseded" and str(t.get("evidence") or "").startswith("human:merge:"):
+        return "Merged"  # the person merged it into another decision (task.merged)
     return {"done": "Done", "declined": "Declined", "dismissed": "Set aside"}.get(
         t.get("resolution") or "", "—"
     )
