@@ -1,0 +1,18 @@
+{
+ "prompt_version": "0.7.0-6",
+ "model": "sonnet",
+ "question": "Who is working, and who is waiting on me?",
+ "output": {
+  "answer": "Only builder is working. Data-eng, lead and operator are waiting, reviewer is paused, and designer is idle. On your side, 11 asks are waiting on you across 7 open decisions, and the top one is approving the schema change that holds the import walk for demo/7.",
+  "cites": [
+   "agent:builder",
+   "agent:data-eng",
+   "agent:lead",
+   "agent:operator",
+   "agent:reviewer",
+   "agent:designer",
+   "numbers",
+   "t-demo0001"
+  ]
+ }
+}

@@ -19,6 +19,7 @@ real replay.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 
@@ -210,6 +211,52 @@ def plain_age(age_s: float | None, lower_bound: bool = False) -> str:
         days = int(age_s // 86400)
         text = "1 day" if days == 1 else f"{days} days"
     return f"≥ {text}" if lower_bound else text
+
+
+def coarse_age(age_s: float | None) -> str:
+    """An age in the buckets the smart layer's facts use, so a text is rewritten when a bucket changes, not every hour:
+    "under an hour", "hours", "over a day", "3 days"."""
+    if age_s is None:
+        return "an unknown time"
+    if age_s < 3600:
+        return "under an hour"
+    if age_s < 86400:
+        return "hours"
+    if age_s < 2 * 86400:
+        return "over a day"
+    return f"{int(age_s // 86400)} days"
+
+
+_AGE = re.compile(r"(?:≥ )?(?:\d+ h(?: \d+ min)?|\d+ min|\b1 day\b)")
+
+
+def coarse_text(text: str | None) -> str | None:
+    """A page sentence with each plain_age in it put in its bucket ("waited 5 h 20 min" → "waited hours")."""
+    if text is None:
+        return None
+    return _AGE.sub(
+        lambda m: (
+            "under an hour"
+            if m.group(0).endswith(" min") and " h" not in m.group(0)
+            else "over a day"
+            if m.group(0).endswith("1 day")
+            else "hours"
+        ),
+        text,
+    )
+
+
+def ago(age_s: float | None) -> str:
+    """When, relative and coarse, for a sentence on a page: "under an hour ago", "5 hours ago", "4 days ago"."""
+    if age_s is None:
+        return "at an unknown time"
+    if age_s < 3600:
+        return "under an hour ago"
+    if age_s < 86400:
+        h = int(age_s // 3600)
+        return "1 hour ago" if h == 1 else f"{h} hours ago"
+    d = int(age_s // 86400)
+    return "1 day ago" if d == 1 else f"{d} days ago"
 
 
 def _secs(a: str, b: str) -> float:

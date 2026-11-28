@@ -54,7 +54,9 @@ its first author, counts every ask ("asked 3×"), and takes what the new ask add
   new answer. `onloop decisions --mine --role <role>` lists a role's open decisions and the answers to it.
 - **Near duplicates** under different subjects stay two decisions. The smart layer may propose merging them
   ([ui.md](ui.md#the-smart-layer)); only the person merges (`POST /ui/tasks/merge` with `keep` and `merge`, logged as
-  `task.merged`): the second closes as superseded by the first, and its asks are counted in the first.
+  `task.merged`): the second closes as superseded by the first, and its asks are counted in the first. Undo it from
+  the toast or from Decisions · Done until either is answered (`POST /ui/tasks/unmerge`, `task.unmerged`); "Keep apart"
+  (`POST /ui/tasks/keep_apart`, `task.kept_apart`) stops the proposal in every browser.
 
 Carried roles get these hooks from the carrier, and `onloop open` gives the person's session the same three for that
 run only (`--settings`); a session started any other way sees nothing. Decision 0020 records the rules.

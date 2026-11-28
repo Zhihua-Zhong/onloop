@@ -65,6 +65,12 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     POST /ui/tasks/keep         task done or declined, keep a returned task with a reason, record a visit (it keys the
     POST /ui/visits             digest). Each is evidence from a local user, not verified, never an approval
     POST /ui/tasks/withdraw     0.7.0: take back an answer before it reached the role that asked; set aside asks that
+    POST /ui/tasks/merge        0.7.0: merge a near duplicate into another open decision ({keep, merge}), undo it
+    POST /ui/tasks/unmerge      ({id}, until the decision it went into is answered), and keep two apart ({a, b, apart})
+    POST /ui/tasks/keep_apart   so the smart layer stops proposing them; each under the page's CSRF rules
+    POST /ui/ask                ⌘K's question (0.7.0): {"q"} -> {answer, cites, facts_hash} from the facts, checked and
+                                cached as the smart layer's texts are; {"off": why} when it is not answered (smart off,
+                                the day's cap, a failed or rejected answer), and the page searches instead
     POST /ui/tasks/tidy         broke the format rule (no effect stated), each with that reason, under the same rules
     POST /v1/logs, /v1/metrics  Claude Code's own telemetry, OTLP/HTTP JSON (`otlp.py`, decision 0019): identity
                                 dropped on arrival; model requests, prompts and tool calls kept as `otel` events
@@ -109,6 +115,7 @@ WRITE_PREFIXES = (
     "/sessions/",
 )  # /v1/, /sessions/: 0019
 UI_WRITE = "/ui/messages"
+UI_ASK = "/ui/ask"  # ⌘K's question (0.7.0): answered from the facts, or {"off": why} and the page searches
 # the page's task writes (decision 0013), each evidence and none authority: -> the /tasks/ action they become
 UI_TASK_WRITES = {
     "/ui/tasks/resolve": "resolve",
@@ -116,6 +123,8 @@ UI_TASK_WRITES = {
     "/ui/tasks/withdraw": "withdraw",
     "/ui/tasks/tidy": "tidy",
     "/ui/tasks/merge": "merge",
+    "/ui/tasks/unmerge": "unmerge",
+    "/ui/tasks/keep_apart": "keep_apart",
     "/ui/visits": "visit",
 }
 UI_COOKIE = "onloop_ui"
@@ -198,8 +207,10 @@ class DaemonServer(http.server.ThreadingHTTPServer):
         carrier: Any = None,
         tick_s: float = 10.0,
         descriptions: Any = None,
+        asker: Any = None,
     ):
         super().__init__(address, _Handler)
+        self.asker = asker  # ⌘K's question to the smart layer: q -> {answer, cites, ...}, or raises brief.Off
         self._descriptions = (
             descriptions  # each role's description from onloop.yaml, or a function giving them
         )
@@ -266,6 +277,7 @@ def make_server(
     carrier: Any = None,
     tick_s: float = 10.0,
     descriptions: Any = None,
+    asker: Any = None,
 ) -> DaemonServer:
     """A server on the loopback address; `port=0` picks a free one. Any other host is refused before binding.
     Without both a writer and a token, every POST is 405."""
@@ -274,7 +286,7 @@ def make_server(
     host = check_host(host)
     try:
         return DaemonServer(
-            (host, port), reader, writer, token, heartbeat, ui_dir, carrier, tick_s, descriptions
+            (host, port), reader, writer, token, heartbeat, ui_dir, carrier, tick_s, descriptions, asker
         )
     except OSError as e:
         if e.errno in _IN_USE or getattr(e, "winerror", None) in _IN_USE:
@@ -338,7 +350,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
         self._write_route = receipts.route_of(path)  # its answer is counted, whatever it is
-        if path == UI_WRITE or path in UI_TASK_WRITES:
+        if path == UI_WRITE or path in UI_TASK_WRITES or path == UI_ASK:
             self._ui_write(path)
             return
         if self.server.writer is None or not path.startswith(WRITE_PREFIXES):
@@ -443,13 +455,39 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except (UnicodeDecodeError, ValueError):
             self._send_json(400, {"error": "the body is not a JSON object in UTF-8"})
             return
+        if path == UI_ASK:
+            from .. import brief
+
+            q = body.get("q") if isinstance(body, dict) else None
+            if self.server.asker is None:
+                self._send_json(200, {"off": "onloop does not answer questions here"})
+                return
+            try:
+                self._send_json(200, self.server.asker(q))
+            except brief.Off as e:
+                self._send_json(200, {"off": str(e)})
+            except Exception as e:  # noqa: BLE001 - no answer: the page searches
+                self._send_json(200, {"off": f"onloop could not answer: {type(e).__name__}"})
+            return
         if path in UI_TASK_WRITES:
             if not isinstance(body, dict):
                 self._send_json(400, {"error": "a task write is a JSON object"})
                 return
             keep = {
                 k: body[k]
-                for k in ("id", "resolution", "note", "reason", "answer", "ids", "keep", "merge")
+                for k in (
+                    "id",
+                    "resolution",
+                    "note",
+                    "reason",
+                    "answer",
+                    "ids",
+                    "keep",
+                    "merge",
+                    "a",
+                    "b",
+                    "apart",
+                )
                 if k in body
             }
             try:

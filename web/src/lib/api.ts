@@ -287,7 +287,7 @@ export const tasksApi = {
 
 // The page's task writes (decision 0013): evidence from a local user, never an approval. Same rules as a message.
 export async function uiPost(
-  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/tasks/merge" | "/ui/visits",
+  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/tasks/merge" | "/ui/tasks/unmerge" | "/ui/tasks/keep_apart" | "/ui/ask" | "/ui/visits",
   body: Record<string, unknown>,
 ): Promise<unknown> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -332,6 +332,8 @@ export interface HomeDecision {
   resolved_at: string | null;
   delivered_at: string | null;
   can_withdraw: boolean;
+  can_unmerge?: boolean; // merged into another decision, still open: the merge can be undone
+  merged_into?: string | null;
   age_s: number;
   weight: string | null;
   band: string;
@@ -345,7 +347,7 @@ export interface HomeDecision {
   action: string;
 }
 
-export interface HomeUnusual { id: string; kind: "quiet" | "tokens" | "wait"; role: string; value: number; norm: number; title: string; text: string }
+export interface HomeUnusual { id: string; kind: "quiet" | "tokens" | "wait"; role: string; value: number; norm: number; title: string; text: string; at: string }
 
 export interface HomeLane { role: string; segments: [string, string, string][]; turns: string[]; turn_count: number }
 

@@ -1171,6 +1171,28 @@ def _history(s: _Story) -> None:
 RECORDED = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "brief"
 
 
+def asker(path: pathlib.Path) -> Callable[[object], dict]:
+    """⌘K for the demo: its one recorded question (tests/fixtures/brief/ask.json, a real answer over this demo's facts)
+    is answered from the recording, after the same check against today's facts; any other question is not answered,
+    and the page searches, as it does when the smart layer is off. The model is never called."""
+    import json
+
+    from onloop import brief
+
+    rec = json.loads((RECORDED / "ask.json").read_text(encoding="utf-8"))
+
+    def answer(q: object) -> dict:
+        if " ".join(str(q or "").lower().split()).rstrip("?") != rec["question"].lower().rstrip("?"):
+            raise brief.Off("the demo answers only its recorded question")
+        with Ledger(path, readonly=True) as led:
+            f = brief.ask_facts(led, ev.now_ts())
+        if brief.check_ask(rec["output"], f):
+            raise brief.Off("the recorded answer no longer fits today's facts")
+        return {**rec["output"], "facts_hash": brief.facts_hash(f), "cached": True}
+
+    return answer
+
+
 def texts(path: pathlib.Path, now: str | None = None) -> dict[str, str]:
     """Log the smart layer's recorded texts for the demo (tests/fixtures/brief: real `claude -p` answers over this demo's
     facts, generic data), as onloopd logs a text it generated, so the pages and the browser tests show them without a

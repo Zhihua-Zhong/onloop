@@ -283,6 +283,21 @@ class SmartLayer:
         self._thread.start()
 
 
+class Asker:
+    """⌘K's questions (POST /ui/ask) to the smart layer: the ledger read and written under onloopd's writer lock, the
+    model called outside it. Off with `smart: off` or ONLOOP_SMART=off."""
+
+    def __init__(self, ledger: Any, lock: Any, claude: tuple[str, ...], on: bool):
+        self.ledger, self.lock, self.claude, self.on = ledger, lock, claude, on
+
+    def __call__(self, q: Any) -> dict[str, Any]:
+        from .. import brief
+
+        if not self.on:
+            raise brief.Off("onloop's smart layer is off (smart: off)")
+        return brief.ask(self.ledger, ev.now_ts(), str(q or ""), claude=self.claude, guard=lambda: self.lock)
+
+
 class RoleDescriptions:
     """Each role's `description` from onloop.yaml, for Agents (0.7.0): the policy file the GitHub ingest reads, else the
     onloop.yaml beside the ledger's `.onloop` folder. Read again only when the file changes; a file that does not load
@@ -392,6 +407,12 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
             carrier=cfg.watch.carrier,
             tick_s=cfg.tick_s,
             descriptions=RoleDescriptions(cfg, state),
+            asker=Asker(
+                ledger,
+                write_lock,
+                cfg.watch.carrier.claude if cfg.watch.carrier is not None else CarrierConfig().claude,
+                cfg.watch.smart,
+            ),
         )
     except srv.PortInUse as e:
         say(f"onloopd: does not start: {e}")
@@ -418,6 +439,9 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
         carrier_thread.start()
     fsutil.write_atomic(pid_path, f"{os.getpid()}\n", newline="\n")
     say(f"onloopd {__version__}: listening on http://{host}:{port}, ledger {cfg.ledger}, pid {os.getpid()}")
+    from .. import brief
+
+    brief.set_denylist(cfg.watch.smart_denylist)  # no prompt that matches it is sent (brief.denylist_hits)
     smart = SmartLayer(
         ledger,
         write_lock,

@@ -634,6 +634,39 @@ def task_merged(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> Non
     conn.execute("UPDATE human_tasks SET asks = ?, last_seq = ? WHERE id = ?", (max(1, n), e["seq"], keep))
 
 
+def task_unmerged(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
+    """The person undid a merge (the toast, or Decisions · Done) while the decision it went into is still open: the
+    merged one is open again, and the asks it brought leave the other."""
+    row = conn.execute(
+        "SELECT evidence FROM human_tasks WHERE id = ? AND stage = 'resolved' AND resolution = 'superseded'",
+        (p["id"],),
+    ).fetchone()
+    keep = conn.execute("SELECT stage FROM human_tasks WHERE id = ?", (p["keep"],)).fetchone()
+    if row is None or row[0] != f"human:merge:{p['merge_event']}" or keep is None or keep[0] == "resolved":
+        return
+    _update(
+        conn,
+        e,
+        p["id"],
+        {
+            "stage": "open",
+            "resolution": None,
+            "resolved_at": None,
+            "resolved_by": None,
+            "evidence": None,
+            "superseded_by": None,
+        },
+    )
+    conn.execute(
+        "DELETE FROM task_asks WHERE task_id = ? AND id LIKE ?",
+        (p["keep"], f"{p['merge_event']}/{p['id']}/%"),
+    )
+    n = conn.execute("SELECT count(*) FROM task_asks WHERE task_id = ?", (p["keep"],)).fetchone()[0]
+    conn.execute(
+        "UPDATE human_tasks SET asks = ?, last_seq = ? WHERE id = ?", (max(1, n), e["seq"], p["keep"])
+    )
+
+
 def task_unresolved(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     """The person withdrew their answer before it reached the role that asked: the decision is open again."""
     row = conn.execute(
@@ -755,6 +788,7 @@ RULES = {
     "task.resolved": task_resolved,
     "task.unresolved": task_unresolved,
     "task.merged": task_merged,
+    "task.unmerged": task_unmerged,
     "hook.prompt_submit": prompt_submitted,
     "visit.recorded": visit_recorded,
 }

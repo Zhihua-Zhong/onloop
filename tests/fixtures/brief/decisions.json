@@ -1,5 +1,5 @@
 {
- "prompt_version": "0.7.0-4",
+ "prompt_version": "0.7.0-6",
  "model": "sonnet",
  "output": {
   "decisions": [
@@ -12,10 +12,10 @@
    },
    {
     "id": "t-demo0007",
-    "title": "Decide if export ships this release",
+    "title": "Decide if the export ships this release",
     "subject": "Export release",
     "suggested": "Ship it in this release",
-    "grounds": "It was asked twice and it holds the release plan, which keeps carrying both branches until someone decides."
+    "grounds": "It was asked twice and holds the release plan, which keeps carrying both branches until someone decides."
    },
    {
     "id": "t-demo0002",
@@ -26,28 +26,28 @@
    },
    {
     "id": "t-demo0003",
-    "title": "Sign the data provider's terms",
+    "title": "Sign the provider's terms",
     "subject": "Provider terms",
     "suggested": null,
     "grounds": null
    },
    {
     "id": "t-a4f1038f63",
-    "title": "Resume the paused reviewer",
+    "title": "Resume the reviewer",
     "subject": "Reviewer role",
     "suggested": null,
     "grounds": null
    },
    {
     "id": "t-demo0004",
-    "title": "Choose the chart palette for reports",
+    "title": "Choose the chart palette",
     "subject": "Chart palette",
     "suggested": null,
     "grounds": null
    },
    {
     "id": "t-demo-dcolours",
-    "title": "Pick the report chart colours",
+    "title": "Pick the report charts' colours",
     "subject": "Chart colours",
     "suggested": null,
     "grounds": null

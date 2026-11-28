@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, ExternalLink, Sparkles } from "lucide-react";
 import { homeApi, type HomeDecision, type HomeModel } from "@/lib/api";
@@ -152,10 +152,32 @@ function Brief({ m, t, onDecide }: { m: HomeModel; t: TextsModel | undefined; on
   const top = m.decisions.items[0];
   const written = t?.brief.text?.sentences ?? null;
   const short = top ? decisionText(t, top)?.title : null;
+  const long = short ? `Decide: ${short}` : null;
+  const plain = `Decide the first of ${m.decisions.count}`;
+  // the short title in full when it fits on the button; otherwise the count. Measured, never cut with an ellipsis.
+  const btn = useRef<HTMLButtonElement>(null);
+  const [fits, setFits] = useState(true);
+  useLayoutEffect(() => {
+    const el = btn.current;
+    if (!el || !long) return;
+    const check = () => {
+      el.dataset.measure = "1";
+      const label = el.querySelector<HTMLElement>("[data-label]");
+      if (label) label.textContent = long;
+      const ok = el.scrollWidth <= el.clientWidth + 1 && el.offsetWidth <= (el.parentElement?.clientWidth ?? Infinity) + 1;
+      if (label) label.textContent = ok ? long : plain;
+      delete el.dataset.measure;
+      setFits(ok);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    if (el.parentElement) ro.observe(el.parentElement);
+    return () => ro.disconnect();
+  }, [long, plain]);
   return (
     <Card className="relative overflow-hidden" data-testid="brief">
       <div className="absolute inset-y-0 left-0 w-0.5 bg-gradient-to-b from-work to-done" aria-hidden />
-      <CardContent className="flex flex-col gap-4 pt-5 md:flex-row md:items-start md:justify-between">
+      <CardContent className="flex flex-col gap-4 pt-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="max-w-[760px]">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
             {written && <Sparkles className="size-3.5" aria-hidden />}
@@ -198,11 +220,14 @@ function Brief({ m, t, onDecide }: { m: HomeModel; t: TextsModel | undefined; on
           </p>
         </div>
         {top && (
-          <div className="flex shrink-0 gap-2 md:flex-col md:items-stretch">
-            {/* one primary action, with a short label that is never cut: the written short title, else the count */}
-            <Button onClick={() => onDecide(top.id)} data-testid="decide-first" title={top.title} className="max-w-[320px]">
-              <span className="truncate">{short ? `Decide: ${short}` : `Decide the first of ${m.decisions.count}`}</span>
+          <div className="flex shrink-0 flex-wrap gap-2 xl:flex-col xl:flex-nowrap xl:items-stretch">
+            {/* one primary action whose label is never cut: the written short title in full, else the count */}
+            <Button ref={btn} onClick={() => onDecide(top.id)} data-testid="decide-first" title={top.title} className="max-w-full whitespace-nowrap xl:max-w-[420px]">
+              <span data-label>{long && fits ? long : plain}</span>
               <ChevronRight aria-hidden />
+            </Button>
+            <Button variant="outline" asChild data-testid="open-digest">
+              <a href={href("digest")}>Morning digest</a>
             </Button>
           </div>
         )}
@@ -228,7 +253,8 @@ function DecisionRow({ d, first, open, onToggle, t }: { d: HomeDecision; first: 
   const title = w?.title ?? d.title;
   return (
     <li className={cn("rounded-md", open && "bg-hover/50")} data-testid="decision" data-id={d.id}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="group flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-hover/60">
+      <div className="flex items-center">
+      <button type="button" onClick={onToggle} aria-expanded={open} className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-hover/60">
         <Avatar {...avatarOf(d.asked_by, color)} size={28} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -241,8 +267,27 @@ function DecisionRow({ d, first, open, onToggle, t }: { d: HomeDecision; first: 
             {d.holds ? `holds ${d.holds}` : d.cost_text ?? "nothing said to wait on it"} · {who} · {duration(d.age_s)}
           </span>
         </span>
-        {open ? <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden /> : <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden />}
+        {open ? (
+          <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
+        ) : (
+          <ChevronRight className={cn("size-4 shrink-0 text-muted", w?.suggested && "sm:hidden")} aria-hidden />
+        )}
       </button>
+      {!open && w?.suggested && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mr-1 shrink-0 max-sm:hidden"
+          disabled={busy === d.id}
+          onClick={() => void answer(d.id, d.asked_by, "done", w.suggested!)}
+          title="Suggested by onloop, one of the answers it offered"
+          data-testid="row-suggested"
+        >
+          <Sparkles className="text-muted" aria-hidden />
+          {w.suggested}
+        </Button>
+      )}
+      </div>
       {open && (
         <div className="space-y-3 px-2 pb-3 pl-12" data-testid="decision-facts">
           <dl className="space-y-2">
@@ -305,7 +350,11 @@ function Decisions({ m, t, open, setOpen }: { m: HomeModel; t: TextsModel | unde
         <CardTitle>
           Decisions <span className="ml-1 font-normal text-muted num" data-testid="decisions-count">{count}</span>
         </CardTitle>
-        <span className="text-xs text-muted max-sm:hidden">in order: weight, then when the delay costs, then age</span>
+        <Tooltip content="In order: weight, then when the delay costs, then age.">
+          <span tabIndex={0} className="rounded-sm text-xs text-muted" data-testid="order-rule">
+            in order
+          </span>
+        </Tooltip>
       </CardHeader>
       <CardContent className="pb-3">
         {items.length ? (
@@ -347,6 +396,8 @@ function Decisions({ m, t, open, setOpen }: { m: HomeModel; t: TextsModel | unde
   );
 }
 
+const exact = (ts: string) => new Date(ts).toLocaleString(undefined, { hour12: false, weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
 function Unusual({ m }: { m: HomeModel }) {
   return (
     <Card data-testid="unusual" className="self-start">
@@ -362,7 +413,9 @@ function Unusual({ m }: { m: HomeModel }) {
                   <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-fg text-[11px] font-semibold">{i + 1}</span>
                   <span>
                     <span className="block text-sm font-medium group-hover:underline">{a.title}</span>
-                    <span className="block text-sm text-muted">{a.text}</span>
+                    <Tooltip content={a.kind === "quiet" ? `Last turn ended ${exact(a.at)}` : `From ${exact(a.at)}`}>
+                      <span className="block text-sm text-muted" data-testid="unusual-text">{a.text}</span>
+                    </Tooltip>
                   </span>
                 </a>
               </li>
@@ -454,7 +507,7 @@ export function HomeView() {
           </div>
           <Brief m={m} t={texts} onDecide={decide} />
           <Numbers m={m} onWaited={() => document.getElementById("decisions")?.scrollIntoView({ block: "start", behavior: "smooth" })} />
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Decisions m={m} t={texts} open={open} setOpen={setOpen} />
             <Unusual m={m} />
           </div>

@@ -162,7 +162,7 @@ def _unusual(ledger: Any, end: str) -> list[dict[str, Any]]:
                     "value": quiet,
                     "norm": norm,
                     "title": f"{role} quiet for {derive.plain_age(quiet)}",
-                    "text": f"its usual longest quiet is {derive.plain_age(norm)}; its last turn ended {ends[-1][:16].replace('T', ' ')} UTC",
+                    "text": f"its usual longest quiet is {derive.plain_age(norm)}; its last turn ended {derive.ago(quiet)}",
                 }
             )
 

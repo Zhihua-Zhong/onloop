@@ -55,7 +55,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 export function DecisionPanel({ d, first, onDone, t }: { d: HomeDecision; first: boolean; onDone?: () => void; t?: TextsModel }) {
   const color = useRoleColor();
-  const { answer, withdraw, busy, error } = useAnswers();
+  const { answer, withdraw, unmerge, busy, error } = useAnswers();
   const who = askerName(d.asked_by);
   const open = d.resolution == null;
   const w = open ? decisionText(t, d) : null;
@@ -93,11 +93,19 @@ export function DecisionPanel({ d, first, onDone, t }: { d: HomeDecision; first:
         {!open && (
           <div className="rounded-lg border border-line bg-raised/50 p-4 text-sm" data-testid="answered">
             You answered <b>{d.answer_text}</b> at {at(d.resolved_at)}.{" "}
-            {d.resolution === "dismissed"
+            {d.answer_text === "Merged"
+              ? "You merged it into another decision; its asks are counted there."
+              : d.resolution === "dismissed"
               ? "It was set aside: it said nothing of what it changes."
               : d.delivered_at
                 ? `It reached ${who} at ${at(d.delivered_at)}.`
                 : `${who} sees it at its next prompt.`}
+            {d.can_unmerge && (
+              <Button size="sm" variant="outline" className="ml-2" disabled={busy === d.id} onClick={() => void unmerge(d.id)} data-testid="unmerge">
+                <Undo2 aria-hidden />
+                Undo merge
+              </Button>
+            )}
             {d.can_withdraw && (
               <Button size="sm" variant="outline" className="ml-2" disabled={busy === d.id} onClick={() => void withdraw(d.id)} data-testid="withdraw">
                 <Undo2 aria-hidden />
@@ -269,36 +277,15 @@ function List({ m, show, setShow, pick, current, wide, t }: { m: DecisionsModel;
 
 const asksTotal = (m: DecisionsModel) => m.open.reduce((n, d) => n + d.asks, 0);
 
-const KEPT = "onloop.merges.kept"; // this viewer's "Keep apart": a convenience in this browser, never the ledger's
-
-function keptApart(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(KEPT) ?? "[]") as string[];
-  } catch {
-    return [];
-  }
-}
-
 /** The smart layer's near-duplicate proposals between open decisions (0.7.0 plan, section 4.3). Nothing merges by
- * itself: Merge is the person's, and it closes the second into the first with every ask counted. */
+ * itself: Merge is the person's, it closes the second into the first with every ask counted, and it can be undone.
+ * Keep apart is logged (task.kept_apart), so the proposal stops in every browser. */
 function MergeProposals({ m, t }: { m: DecisionsModel; t?: TextsModel }) {
-  const { merge, busy, error } = useAnswers();
-  const [kept, setKept] = useState<string[]>(keptApart);
+  const { merge, keepApart, busy, error } = useAnswers();
   const byId = new Map(m.open.map((d) => [d.id, d]));
-  const pairs = (t?.merges.text?.merges ?? []).filter(
-    (p: MergeText) => byId.has(p.keep) && byId.has(p.merge) && !kept.includes(`${p.keep}|${p.merge}`),
-  );
+  const pairs = (t?.merges.text?.merges ?? []).filter((p: MergeText) => byId.has(p.keep) && byId.has(p.merge));
   if (!t || !pairs.length) return null;
   const title = (id: string) => decisionText(t, byId.get(id)!)?.title ?? byId.get(id)!.title;
-  const keepApart = (p: MergeText) => {
-    const next = [...kept, `${p.keep}|${p.merge}`];
-    setKept(next);
-    try {
-      localStorage.setItem(KEPT, JSON.stringify(next));
-    } catch {
-      /* this browser keeps nothing: it shows again on reload */
-    }
-  };
   return (
     <div className="mb-5 space-y-3">
       {pairs.map((p) => (
@@ -321,7 +308,7 @@ function MergeProposals({ m, t }: { m: DecisionsModel; t?: TextsModel }) {
               <Merge aria-hidden />
               Merge into the first
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => keepApart(p)} data-testid="keep-apart">
+            <Button size="sm" variant="ghost" disabled={busy === "merge"} onClick={() => void keepApart(p.keep, p.merge)} data-testid="keep-apart">
               Keep apart
             </Button>
             <span className="text-xs text-muted">
@@ -335,13 +322,21 @@ function MergeProposals({ m, t }: { m: DecisionsModel; t?: TextsModel }) {
   );
 }
 
-export function DecisionsView() {
+export function DecisionsView({ params }: { params?: URLSearchParams }) {
   const q = useQuery({ queryKey: ["decisions"], queryFn: homeApi.decisions, refetchInterval: 60_000 });
   const t = useTexts();
   const wide = useWide();
   const [show, setShow] = useState<"open" | "done">("open");
   const [sel, setSel] = useState<string | null>(null);
   const [sheet, setSheet] = useState<string | null>(null);
+  // `?id=` opens one decision (⌘K, the bell, the digest, an old #/tasks link): on its tab, selected, or in the sheet
+  const asked = params?.get("id") ?? null;
+  useEffect(() => {
+    if (!asked || !q.data) return;
+    if (q.data.done.some((d) => d.id === asked)) setShow("done");
+    if (wide) setSel(asked);
+    else setSheet(asked);
+  }, [asked, q.data?.now === undefined, wide]); // eslint-disable-line react-hooks/exhaustive-deps
   const m = q.data;
   const rows = m ? (show === "open" ? m.open : m.done) : [];
   const current = rows.find((r) => r.id === sel) ? sel : rows[0]?.id ?? null;

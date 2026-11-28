@@ -58,7 +58,7 @@ test("Home answers what needs me, how it went and what came out, and lists no ru
   for (const word of ["An ask with no effect stated", "outcome line", "Constraint", "Since you", "Stalled", "merge-check holds"]) expect(text).not.toContain(word);
   // the brief's one button has a short label that is never cut, and opens the first decision to its facts and the
   // answers its ask offered (no options recorded: Done and Decline)
-  await expect(page.getByTestId("decide-first")).toHaveText("Decide: Approve the schema change for the import");
+  await expect(page.getByTestId("decide-first")).toHaveText(test.info().project.name === "phone" ? "Decide the first of 7" : "Decide: Approve the schema change for the import");
   await expect(page.getByTestId("decision-facts")).toHaveCount(0);
   await page.getByTestId("decide-first").click();
   await expect(rows.first().getByTestId("decision-facts")).toContainText("If nobody answers");
@@ -300,4 +300,20 @@ test("every overlay's content is opaque the moment it opens, inside the window, 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("theme-menu")).toHaveCount(0);
   await expect(page.getByTestId("theme")).toBeFocused();
+});
+
+test("Home's one primary button is never cut: the short title in full where it fits, else the count", async ({ page }) => {
+  for (const [w, h] of [[1440, 900], [1024, 800], [390, 844]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto("/#/");
+    const btn = page.getByTestId("decide-first");
+    await expect(btn).toBeVisible();
+    await expect(btn).toHaveText(/^(Decide: Approve the schema change for the import|Decide the first of 7)$/);
+    const clipped = await btn.evaluate((el) => {
+      const label = el.querySelector("[data-label]") as HTMLElement;
+      const box = el.getBoundingClientRect();
+      return el.scrollWidth > el.clientWidth || label.scrollWidth > label.clientWidth + 1 || box.right > window.innerWidth;
+    });
+    expect(clipped, `${w} px`).toBe(false);
+  }
 });

@@ -74,7 +74,7 @@ test("Decisions lists the open decisions in their one order, one subject one dec
   // Home shows the same count
   await page.goto("/#/");
   await expect(page.getByTestId("decisions-count")).toHaveText("7");
-  await expect(page.getByTestId("decide-first")).toHaveText(`Decide: ${TITLE}`);
+  await expect(page.getByTestId("decide-first")).toHaveText(test.info().project.name === "phone" ? "Decide the first of 7" : `Decide: ${TITLE}`);
 });
 
 test("the smart layer proposes merging two near-duplicate decisions, and nothing merges unless the person does", async ({ page }) => {
@@ -83,15 +83,10 @@ test("the smart layer proposes merging two near-duplicate decisions, and nothing
   await expect(card).toHaveCount(1);
   await expect(card).toContainText("These two look like one decision");
   await expect(card).toContainText("Choose the chart palette");
-  await expect(card).toContainText("Pick the report chart colours");
+  await expect(card).toContainText("Pick the report charts' colours");
   await expect(card).toContainText("Nothing merges unless you do.");
   await expect(page.getByTestId("decision-row")).toHaveCount(7); // proposed, not merged
-  // Keep apart is this browser's: no write, and the card stays gone on reload
-  await card.getByTestId("keep-apart").click();
-  await expect(card).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByTestId("decision-row")).toHaveCount(7);
-  await expect(page.getByTestId("merge-proposal")).toHaveCount(0);
+  // Merge and Keep apart write: they are in write-decisions.spec.ts
 });
 
 test("when the smart layer has nothing for today's facts, every page shows the facts alone", async ({ page }, info) => {

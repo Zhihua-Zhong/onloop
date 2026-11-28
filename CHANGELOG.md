@@ -18,6 +18,18 @@ All notable changes to this project are recorded here. The format follows
   - **The lanes as the evidence:** waits on you amber, merges green.
   - **Agreement:** every number agrees with the views one click down (`tests/test_agreement.py`).
   - **A frozen copy:** a read-only copy that nothing writes is read up to its last event.
+- **⌘K, the header and the digest preview (0.7.0, step 6):**
+  - ⌘K goes to any page, decision or agent, and answers a question from this week's facts only, with every number
+    checked and every fact cited (`POST /ui/ask`); when it does not answer it says why and searches.
+  - The header has search, the bell (what is new since your last visit, shown here only) and the account (a local
+    user; sign-in later, marked).
+  - `#/digest`: the morning digest as a preview, marked as not sent anywhere.
+  - Home's button shows the short title in full or the count, never cut; a row answers with its suggested option in
+    one click, with the same undo; Unusual says "3 days ago", the exact time on hover.
+  - A merge is undone from its toast or from Done (`task.unmerged`); Keep apart is logged (`task.kept_apart`).
+  - The smart layer checks number words, sends ages and running figures in buckets, and sends nothing that matches
+    the denylist (`smart_denylist`, ONLOOP_DENYLIST): no call, `text.rejected` with reason "denylist".
+  - The retired-link table is complete and tested; every overlay is checked at seven widths, opaque at once.
 - **The smart layer (0.7.0, step 5):** onloop writes the brief, each decision's short title and subject, a suggested
   answer from its recorded options with grounds from its facts, and near-duplicate merge proposals, over the facts it
   computed (`src/onloop/brief.py`, `GET /api/texts`).

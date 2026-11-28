@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // into one row only while nothing else comes between them). Each test still undoes what it wrote.
 
 type Watched = Page & { problems: string[]; writes: string[]; answers?: boolean };
-const ANSWERS = ["POST /ui/tasks/resolve", "POST /ui/tasks/withdraw", "POST /ui/tasks/tidy", "POST /ui/tasks/merge"];
+const ANSWERS = ["POST /ui/tasks/resolve", "POST /ui/tasks/withdraw", "POST /ui/tasks/tidy", "POST /ui/tasks/merge", "POST /ui/tasks/unmerge", "POST /ui/tasks/keep_apart"];
 
 test.beforeEach(async ({ page }) => {
   const p = page as Watched;
@@ -57,6 +57,22 @@ test("an answer is sent at once, says when the asker sees it, and can be withdra
   await expect(page.getByTestId("decision-row").first().getByTestId("row-title")).toHaveText(TITLE);
 });
 
+test("Home's row answers with the suggested option in one click, with the same undo", async ({ page }, info) => {
+  test.skip(info.project.name === "phone", "the row's suggestion is a wide-screen shortcut, as in F; a phone opens the row");
+  (page as Watched).answers = true;
+  await page.goto("/#/");
+  const row = page.getByTestId("decision").first();
+  const btn = row.getByTestId("row-suggested");
+  await expect(btn).toHaveText("Approve");
+  await expect(page.getByTestId("decision").nth(2).getByTestId("row-suggested")).toHaveCount(0); // no options: no suggestion
+  await btn.click();
+  const toast = page.getByTestId("toast").filter({ hasText: "Approve. operator sees it at its next prompt." });
+  await expect(toast).toBeVisible();
+  await expect(page.getByTestId("decisions-count")).toHaveText("6");
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByTestId("decisions-count")).toHaveText("7");
+});
+
 test("Rule alerts sets aside the asks that broke the format rule, each with its reason, and the toast undoes it", async ({ page }) => {
   (page as Watched).answers = true;
   await page.goto("/#/details/rules");
@@ -72,19 +88,53 @@ test("Rule alerts sets aside the asks that broke the format rule, each with its 
   await expect(count).toHaveText("4");
 });
 
-// last: a merge closes one decision into another for good (the demo has no undo for it)
-test("the person confirms a proposed merge: one decision, with both asks counted", async ({ page }, info) => {
+test("Keep apart is logged, so the proposal stops in every browser, and its toast undoes it", async ({ page }) => {
   (page as Watched).answers = true;
   await page.goto("/#/decisions");
   const card = page.getByTestId("merge-proposal");
-  await card.getByTestId("merge").click();
-  await expect(page.getByTestId("toast").filter({ hasText: "Merged: one decision now" })).toBeVisible();
-  await expect(page.getByTestId("tab-open")).toContainText("6");
+  await card.getByTestId("keep-apart").click();
+  const toast = page.getByTestId("toast").filter({ hasText: "Kept apart" });
+  await expect(toast).toBeVisible();
   await expect(card).toHaveCount(0);
+  // kept apart in the ledger, not in this browser: a fresh browser context does not see the proposal either
+  const fresh = await page.context().browser()!.newContext({ baseURL: new URL(page.url()).origin });
+  const other = await fresh.newPage();
+  await other.goto("/#/decisions");
+  await expect(other.getByTestId("decision-row").first()).toBeVisible();
+  await expect(other.getByTestId("merge-proposal")).toHaveCount(0);
+  await fresh.close();
+  await toast.hover(); // the toast holds while the pointer is on it
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(card).toHaveCount(1); // the same facts again: the proposal written for them is back
+});
+
+test("the person confirms a proposed merge: one decision with both asks counted, undone from the toast and from Done", async ({ page }, info) => {
+  (page as Watched).answers = true;
+  await page.goto("/#/decisions");
+  const card = page.getByTestId("merge-proposal");
+  await expect(card).toHaveCount(1);
+  await card.getByTestId("merge").click();
+  const toast = page.getByTestId("toast").filter({ hasText: "Merged: one decision now" });
+  await expect(toast).toBeVisible();
+  await expect(page.getByTestId("tab-open")).toContainText("6");
   const row = page.getByTestId("decision-row").filter({ hasText: /chart palette/i });
   await expect(row).toContainText("asked 2×");
   await expect(row).toContainText("operator, builder");
-  if (isPhone(info.project.name)) return;
+  // the toast's Undo: two decisions again
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByTestId("tab-open")).toContainText("7");
+  await expect(row).not.toContainText("asked 2×");
+  // merged again, then undone from Done
+  await card.getByTestId("merge").click();
+  await expect(page.getByTestId("tab-open")).toContainText("6");
   await page.getByTestId("tab-done").click();
-  await expect(page.getByTestId("decision-row").filter({ hasText: "pick the report charts' colours" })).toContainText("Merged");
+  const merged = page.getByTestId("decision-row").filter({ hasText: "pick the report charts' colours" });
+  await expect(merged).toContainText("Merged");
+  await merged.click();
+  const panel = isPhone(info.project.name) ? page.getByTestId("decision-sheet").getByTestId("decision-panel") : page.getByTestId("decision-panel");
+  await panel.getByTestId("unmerge").click();
+  await expect(page.getByTestId("toast").filter({ hasText: "Merge undone" })).toBeVisible();
+  if (isPhone(info.project.name)) await page.keyboard.press("Escape");
+  await page.getByTestId("tab-open").click();
+  await expect(page.getByTestId("tab-open")).toContainText("7");
 });

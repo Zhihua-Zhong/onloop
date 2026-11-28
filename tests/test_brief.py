@@ -228,3 +228,127 @@ def test_the_decisions_texts_cover_every_open_decision_once(led):
     out = recorded("decisions")
     assert brief.check("decisions", {"decisions": out["decisions"][:-1]}, f)  # one left out
     assert brief.check("decisions", {"decisions": out["decisions"] + out["decisions"][:1]}, f)  # one twice
+
+
+def test_a_merge_is_undone_until_the_decision_it_went_into_is_answered(led):
+    keep, gone = "t-demo0004", "t-demo-dcolours"
+    before = tasks.get(led, keep)["asks"]
+    tasks.handle(led, "merge", {"keep": keep, "merge": gone, "channel": "ui", "by": "human"})
+    done = {d["id"]: d for d in decisions.answered(led, NOW)}
+    assert done[gone]["can_unmerge"] and done[gone]["merged_into"] == keep
+    tasks.handle(led, "unmerge", {"id": gone, "channel": "ui", "by": "human"})
+    g, k = tasks.get(led, gone), tasks.get(led, keep)
+    assert g["stage"] != "resolved" and g["superseded_by"] is None and k["asks"] == before
+    # merged again, then the kept decision answered: the merge stands
+    tasks.handle(led, "merge", {"keep": keep, "merge": gone, "channel": "ui", "by": "human"})
+    tasks.handle(led, "resolve", {"id": keep, "resolution": "done", "channel": "ui", "by": "human"})
+    assert not {d["id"]: d for d in decisions.answered(led, NOW)}[gone]["can_unmerge"]
+    with pytest.raises(tasks.Refused, match="no merge to undo"):
+        tasks.handle(led, "unmerge", {"id": gone, "channel": "ui", "by": "human"})
+
+
+def test_keep_apart_is_logged_stops_the_proposal_and_is_undone(led):
+    brief.refresh(led, NOW, run=Fake())
+    assert brief.for_pages(led, NOW)["merges"]["text"]["merges"]
+    tasks.handle(
+        led, "keep_apart", {"a": "t-demo-dcolours", "b": "t-demo0004", "channel": "ui", "by": "human"}
+    )
+    assert tasks.kept_apart(led) == {("t-demo-dcolours", "t-demo0004")} or tasks.kept_apart(led) == {
+        tuple(sorted(("t-demo-dcolours", "t-demo0004")))
+    }
+    pages = brief.for_pages(led, NOW)
+    assert pages["merges"]["text"] is None and pages["merges"]["stale"]  # gone at once, in every browser
+    assert brief.check("merges", recorded("merges"), brief.facts(led, NOW))  # and never proposed again
+    tasks.handle(
+        led,
+        "keep_apart",
+        {"a": "t-demo0004", "b": "t-demo-dcolours", "apart": False, "channel": "ui", "by": "human"},
+    )
+    assert tasks.kept_apart(led) == set()
+
+
+@pytest.mark.parametrize(
+    "text, ok",
+    [
+        ("Seven decisions wait on you.", True),  # 7 is in the demo's facts
+        ("Nineteen decisions wait on you.", False),
+        ("It was asked twice.", True),
+        ("better than the one before", True),  # "one" is a pronoun here, never checked
+    ],
+)
+def test_number_words_are_checked_like_digits(led, text, ok):
+    f = brief.facts(led, NOW)
+    out = {"sentences": [{"text": text, "about": None}]}
+    assert (brief.check("brief", out, f) == []) is ok
+
+
+def test_the_facts_carry_ages_in_buckets_so_time_passing_does_not_make_the_brief_stale(led):
+    import datetime as dt
+
+    from onloop import localday
+
+    was = localday.zone()
+    localday.set_zone(dt.UTC)  # 14:52 to 15:22 UTC: one local day, and no age leaves its bucket
+    try:
+        a = brief.facts(led, NOW)
+        b = brief.facts(led, ev.shift_ts(NOW, 1800))
+    finally:
+        localday.set_zone(was)
+    assert a["decisions"][0]["waiting"] == "hours" and a["waited_hours"]["this_week"].startswith("over ")
+    assert brief.facts_hash(a) == brief.facts_hash(b)
+
+
+@pytest.fixture
+def denylist(tmp_path, monkeypatch):
+    """A denylist of placeholder patterns: one the generic demo's facts match ("import walk"), and one they do not."""
+    path = tmp_path / "denylist.txt"
+    path.write_text("# placeholder patterns\nplaceholder-never-[0-9]+\nIMPORT +WALK\n", encoding="utf-8")
+    monkeypatch.setattr(brief, "_DENYLIST", [str(path)])
+    return path
+
+
+def test_facts_that_match_the_denylist_never_reach_the_model(led, denylist):
+    fake = Fake()
+    assert brief.refresh(led, NOW, run=fake) == {k: "rejected" for k in brief.KINDS}
+    assert fake.calls == []  # no call at all
+    rows = led.select("SELECT payload FROM events WHERE kind = 'text.rejected'")
+    payloads = [r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"]) for r in rows]
+    assert {tuple(p["reasons"]) for p in payloads} == {("denylist",)} and all(
+        p["hits"] == 1 for p in payloads
+    )
+    assert "import walk" not in json.dumps(payloads).lower()  # the match is never logged
+    assert all(v["text"] is None for v in brief.for_pages(led, NOW).values())  # the pages show the facts
+
+
+def test_a_question_whose_facts_match_the_denylist_is_not_sent(led, denylist, monkeypatch):
+    monkeypatch.setenv("ONLOOP_SMART", "on")
+    fake = Fake()
+    with pytest.raises(brief.Off, match="denylist"):
+        brief.ask(led, NOW, "What is waiting on me?", run=fake)
+    assert fake.calls == []
+
+
+def test_a_denylist_that_cannot_be_read_stops_every_call(led, tmp_path, monkeypatch):
+    monkeypatch.setattr(brief, "_DENYLIST", [str(tmp_path / "missing.txt")])
+    fake = Fake()
+    assert brief.refresh(led, NOW, kinds=("brief",), run=fake) == {"brief": "rejected"}
+    assert fake.calls == []
+    p = led.select("SELECT payload FROM events WHERE kind = 'text.rejected'")[0]["payload"]
+    assert "denylist unreadable" in json.dumps(p)
+
+
+def test_facts_that_pass_the_denylist_are_sent(led, tmp_path, monkeypatch):
+    path = tmp_path / "denylist.txt"
+    path.write_text("placeholder-never-[0-9]+\n", encoding="utf-8")
+    monkeypatch.setattr(brief, "_DENYLIST", [str(path)])
+    fake = Fake()
+    assert brief.refresh(led, NOW, kinds=("brief",), run=fake) == {"brief": "generated"}
+    assert len(fake.calls) == 1
+
+
+def test_smart_denylist_is_a_key_of_onloopd_yaml(tmp_path):
+    from onloop.daemon import config
+
+    p = tmp_path / "onloopd.yaml"
+    p.write_text("smart_denylist: C:/somewhere/denylist.txt\n", encoding="utf-8")
+    assert config.load(p).smart_denylist == ("C:/somewhere/denylist.txt",)

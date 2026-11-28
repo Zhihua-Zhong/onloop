@@ -49,13 +49,60 @@ from typing import Any
 from . import derive
 from . import events as ev
 
-PROMPT_VERSION = "0.7.0-4"
+PROMPT_VERSION = "0.7.0-6"
 KINDS = ("brief", "decisions", "merges")
 CAPS = {"brief": 8, "decisions": 20, "merges": 6}  # calls per kind per day (plan, section 3)
 MODELS = {"brief": "sonnet", "decisions": "sonnet", "merges": "sonnet"}
 TIMEOUT_S = 120
 DEBOUNCE_S = 15 * 60  # a kind whose last attempt failed waits this long before it tries again
 SOURCE = "config"
+
+
+# -- the denylist: no ledger's facts reach the model unless they pass it ----------------------------------------------
+# The onloop lead's ruling (step 6): before every call, the whole prompt (the facts, and ⌘K's question) is scanned
+# against the denylist files (one regular expression per line, case-insensitive, `#` a comment: the confidentiality
+# scan's format). On any hit there is no call: `text.rejected` with reason "denylist" and the number of hits, never the
+# match, and the page shows the facts. A denylist that cannot be read stops every call (it fails closed).
+
+_DENYLIST: list[str] = []
+
+
+def set_denylist(paths: Sequence[str]) -> None:
+    """onloopd's `smart_denylist` paths; ONLOOP_DENYLIST (os.pathsep-separated) is added to them."""
+    _DENYLIST[:] = [str(p) for p in paths if str(p).strip()]
+
+
+def _denylist_paths() -> list[str]:
+    env = [p for p in os.environ.get("ONLOOP_DENYLIST", "").split(os.pathsep) if p.strip()]
+    return [*_DENYLIST, *env]
+
+
+def _denylist() -> list[re.Pattern[str]]:
+    """Raises ValueError, quoting no pattern, when a file cannot be read or a line is not a regular expression."""
+    out: list[re.Pattern[str]] = []
+    for path in _denylist_paths():
+        try:
+            raw = open(path, encoding="utf-8").read()  # noqa: SIM115 - a small file, read once per call
+        except (OSError, UnicodeDecodeError) as e:
+            raise ValueError(f"cannot read a denylist ({type(e).__name__})") from None
+        for number, line in enumerate(raw.splitlines(), start=1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            try:
+                out.append(re.compile(text, re.IGNORECASE))
+            except re.error:
+                raise ValueError(f"a denylist line ({number}) is not a regular expression") from None
+    return out
+
+
+def denylist_hits(text: str) -> int:
+    """How many denylist patterns match `text` (the count only: a match is never shown). -1: the denylist is unreadable."""
+    try:
+        patterns = _denylist()
+    except ValueError:
+        return -1
+    return sum(1 for p in patterns if p.search(text))
 
 
 class Failed(Exception):
@@ -75,7 +122,7 @@ def facts(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
     """What the texts may say, computed. Ages are in the page's words ("9 days"), so the facts hold until something on the
     page would change."""
     from . import decisions as dec
-    from . import home
+    from . import home, tasks
 
     h = home.build(ledger, now, end)
     opened, rule_asks = dec.open_decisions(ledger, h["to"])
@@ -83,6 +130,24 @@ def facts(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
 
     def k(v: Any) -> Any:  # tokens as the page shows them ("297k"), never a figure the page does not
         return None if v is None else (f"{round(v / 1000)}k" if v >= 1000 else v)
+
+    def over(
+        v: Any,
+    ) -> Any:  # this week's running figures, which grow by the minute: "over 400", stable for hours
+        if v is None:
+            return None
+        v = int(v)
+        if v < 10:
+            return v
+        step = 10 ** (len(str(v)) - 1)
+        return f"over {v // step * step}"
+
+    def about(v: Any) -> Any:  # tokens per delivery move with every request: "about 300k"
+        if v is None or v < 1000:
+            return v
+        kk = v / 1000
+        step = 10 ** max(0, len(str(int(kk))) - 2)
+        return f"about {round(kk / step) * step}k"
 
     return {
         "window": "the last 7 days",
@@ -96,11 +161,11 @@ def facts(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
             "week_before": None if h["young"] else n["delivered"]["last_week"],
         },
         "waited_hours": {
-            "this_week": round(n["waited_h"]["value"]),
-            "week_before": None if h["young"] else round(n["waited_h"]["last_week"]),
+            "this_week": over(n["waited_h"]["value"]),
+            "week_before": None if h["young"] else over(n["waited_h"]["last_week"]),  # its window slides too
         },
         "tokens_per_delivery": {
-            "this_week": k(n["cost_per_delivery"]["value"]),
+            "this_week": about(n["cost_per_delivery"]["value"]),
             "week_before": None if h["young"] else k(n["cost_per_delivery"]["last_week"]),
         },
         "decisions": [
@@ -110,16 +175,22 @@ def facts(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
                 "effect": d["title"],
                 "asked_by": d["askers"] or ([d["asked_by"]] if d["asked_by"] else []),
                 "asked_times": d["asks"],
-                "waiting": derive.plain_age(d["age_s"]),
+                "waiting": derive.coarse_age(d["age_s"]),  # buckets: the exact age stays on the page
                 "holds": d["holds"],
                 "if_nobody_answers": d["default"],
-                "cost_of_delay": d["cost_text"],
+                "cost_of_delay": derive.coarse_text(d["cost_text"]),
                 "about": d["ref"],
                 "options": d["options"],
             }
             for i, d in enumerate(opened[:12])
         ],
-        "unusual": [{"title": u["title"], "detail": u["text"]} for u in h["unusual"][:5]],
+        "kept_apart": [
+            list(pair) for pair in sorted(tasks.kept_apart(ledger))
+        ],  # the person said: not one decision
+        "unusual": [
+            {"title": derive.coarse_text(u["title"]), "detail": derive.coarse_text(u["text"])}
+            for u in h["unusual"][:5]
+        ],
     }
 
 
@@ -132,9 +203,12 @@ def _slice(kind: str, f: dict[str, Any]) -> dict[str, Any]:
     when an hour passes (`waiting`) or the order moves (`rank`), so they are not written again every hour."""
     if kind == "brief":
         return f
-    return {
+    out: dict[str, Any] = {
         "decisions": [{k: v for k, v in d.items() if k not in ("waiting", "rank")} for d in f["decisions"]]
     }
+    if kind == "merges":
+        out["kept_apart"] = f["kept_apart"]  # keeping a pair apart makes the proposal stale at once
+    return out
 
 
 # -- the prompt -----------------------------------------------------------------------------------------------------------
@@ -161,7 +235,8 @@ _ASK = {
         '"grounds": "<a sentence or null>"}]}'
     ),
     "merges": (
-        "Find pairs of open decisions that ask the person the same thing in different words (a near duplicate), if any. "
+        "Find pairs of open decisions that ask the person the same thing in different words (a near duplicate), if any, "
+        "leaving out every pair in kept_apart. "
         'Propose them; a person confirms. JSON: {"merges": [{"keep": "<id>", "merge": "<id>", "why": "<one sentence>"}]} '
         "(an empty list when there are none)"
     ),
@@ -251,12 +326,29 @@ def _numbers(f: Any) -> set[str]:
     return set(_NUM.findall(json.dumps(f, ensure_ascii=False)))
 
 
+# Number words checked like digits (the onloop lead's ruling, step 5): zero to twenty, "twice", "three times". "one" is
+# left out: in prose it is mostly a pronoun ("the one before"). Beyond these a spelled number is not checked.
+_WORDS = {
+    w: str(i)
+    for i, w in enumerate(
+        "zero _ two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
+        "seventeen eighteen nineteen twenty".split()
+    )
+    if w != "_"
+}
+_WORD = re.compile(r"\b(" + "|".join(_WORDS) + r"|twice)\b", re.I)
+
+
 def _prose_numbers_ok(texts: list[str], f: dict[str, Any]) -> str | None:
     known = _numbers(f)
     for t in texts:
         for n in _NUM.findall(t or ""):
             if n not in known and n.replace(",", "") not in known:
                 return f"the number {n} is not in the facts"
+        for w in _WORD.findall(t or ""):
+            n = "2" if w.lower() == "twice" else _WORDS[w.lower()]
+            if n not in known:
+                return f"the number {w} ({n}) is not in the facts"
     return None
 
 
@@ -314,6 +406,8 @@ def check(kind: str, output: Any, f: dict[str, Any]) -> list[str]:
                 return ["each merge is {keep, merge, why}"]
             if m["keep"] not in ids or m["merge"] not in ids or m["keep"] == m["merge"]:
                 problems.append(f"a merge names {m['keep']!r} and {m['merge']!r}: not two open decisions")
+            elif sorted((m["keep"], m["merge"])) in f.get("kept_apart", []):
+                problems.append(f"{m['keep']} and {m['merge']} are kept apart by the person")
             bad = _prose_numbers_ok([m["why"] or ""], f)
             if bad:
                 problems.append(bad)
@@ -415,6 +509,15 @@ def refresh(
             out[kind] = "waiting"
             continue
         base = {"kind": kind, "facts_hash": fh, "prompt_version": PROMPT_VERSION}
+        hits = denylist_hits(prompt(kind, f))
+        if hits:
+            reason = "denylist unreadable" if hits < 0 else "denylist"
+            with g():
+                ledger.append(
+                    _event(kind, "text.rejected", {**base, "reasons": [reason], "hits": max(hits, 0)})
+                )
+            out[kind] = "rejected"
+            continue
         try:
             got = generate(kind, f, run, claude)
         except Failed as e:
@@ -454,3 +557,152 @@ def for_pages(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
             "stale": hit is None and last is not None,  # a text exists, but for other facts: "updating"
         }
     return out
+
+
+# -- ⌘K: ask onloop -------------------------------------------------------------------------------------------------------
+
+ASK_CAP = 30  # questions answered by the model per day; past it, ⌘K searches
+ASK_MAX_Q = 300
+
+
+class Off(Exception):
+    """The question is not answered by the model: smart is off, the cap is reached, or the question is not one."""
+
+
+def ask_facts(ledger: Any, now: str, end: str | None = None) -> dict[str, Any]:
+    """What an answer may use: the brief's facts, each unusual item with its id, and each role's week."""
+    from . import agents, home
+
+    f = facts(ledger, now, end)
+    h = home.build(ledger, now, end)
+    a = agents.cards(ledger, now, end)
+    return {
+        **f,
+        "unusual": [
+            {"id": u["id"], "title": derive.coarse_text(u["title"]), "detail": derive.coarse_text(u["text"])}
+            for u in h["unusual"][:5]
+        ],
+        "agents": [
+            {
+                "id": f"agent:{c['role']}",
+                "role": c["role"],
+                "state": c["state"],
+                "turns_this_week": c["turns"],
+                "turns_week_before": c["turns_before"],
+                "tokens_this_week": f"{round(c['tokens'] / 1000)}k" if c["tokens"] >= 1000 else c["tokens"],
+                "changes_merged": c["delivered"],
+                "open_asks": c["open_asks"],
+            }
+            for c in a["agents"]
+        ],
+    }
+
+
+def _ask_prompt(q: str, f: dict[str, Any]) -> str:
+    return (
+        f"{_RULES}\n\nAnswer the person's question in 1 to 3 sentences, only from the facts. When the facts do not "
+        "answer it, say so in one sentence and cite nothing. Cite every fact you used by its id: a decision's id, an "
+        'unusual item\'s id, an agent\'s id ("agent:<role>"), or "numbers" for the week\'s figures. JSON: '
+        '{"answer": "...", "cites": ["<id>", ...]}\n\n'
+        f"Question: {json.dumps(q, ensure_ascii=False)}\n\nFacts:\n{json.dumps(f, ensure_ascii=False, indent=1)}\n"
+    )
+
+
+def ask_ids(f: dict[str, Any]) -> set[str]:
+    return (
+        {d["id"] for d in f["decisions"]}
+        | {u["id"] for u in f["unusual"]}
+        | {a["id"] for a in f["agents"]}
+        | {"numbers"}
+    )
+
+
+def check_ask(output: Any, f: dict[str, Any]) -> list[str]:
+    if not isinstance(output, dict) or set(output) != {"answer", "cites"}:
+        return ["expected exactly the keys answer and cites"]
+    if not isinstance(output["answer"], str) or not output["answer"].strip() or len(output["answer"]) > 700:
+        return ["the answer is 1 to 3 sentences"]
+    if not isinstance(output["cites"], list) or not all(isinstance(c, str) for c in output["cites"]):
+        return ["cites is a list of ids"]
+    problems = [f"{c!r} is no fact's id" for c in output["cites"] if c not in ask_ids(f)]
+    bad = _prose_numbers_ok([output["answer"]], f)
+    if bad:
+        problems.append(bad)
+    return problems
+
+
+def _ask_key(q: str, fh: str) -> str:
+    return hashlib.sha256(f"{' '.join(q.lower().split())}\x1f{fh}".encode()).hexdigest()[:16]
+
+
+def ask(
+    ledger: Any,
+    now: str,
+    q: str,
+    run: Runner | None = None,
+    claude: str | Sequence[str] = "claude",
+    end: str | None = None,
+    guard: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """⌘K's question, answered from the facts with its citations: {answer, cites, facts_hash, cached}. Raises Off (the
+    page then searches). Every answer is checked as the texts are, and cached in the ledger by question and facts."""
+    if not enabled():
+        raise Off("onloop's smart layer is off (smart: off)")
+    q = " ".join(str(q or "").split())
+    if not q or len(q) > ASK_MAX_Q:
+        raise Off(f"a question is 1 to {ASK_MAX_Q} characters")
+    g = guard or contextlib.nullcontext
+    with g():
+        f = ask_facts(ledger, now, end)
+        fh = facts_hash(f)
+        key = _ask_key(q, fh)
+        rows = ledger.select(
+            "SELECT payload FROM events WHERE kind = 'text.generated' AND subject_ref = 'text:ask' "
+            "AND json_extract(payload, '$.ask_key') = ? ORDER BY seq DESC LIMIT 1",
+            (key,),
+        )
+        today = _today_count(ledger, "ask", now)
+    if rows:
+        p = rows[0]["payload"] if isinstance(rows[0]["payload"], dict) else json.loads(rows[0]["payload"])
+        return {**p["output"], "facts_hash": fh, "cached": True}
+    if today >= ASK_CAP:
+        raise Off(f"onloop answered {ASK_CAP} questions today; it searches until tomorrow")
+    base = {"kind": "ask", "facts_hash": fh, "ask_key": key, "prompt_version": PROMPT_VERSION}
+    hits = denylist_hits(_ask_prompt(q, f))
+    if hits:
+        with g():
+            reason = "denylist unreadable" if hits < 0 else "denylist"
+            ledger.append(_event("ask", "text.rejected", {**base, "reasons": [reason], "hits": max(hits, 0)}))
+        raise Off("onloop does not send these facts to the model (the denylist)")
+    prefix = [claude] if isinstance(claude, str) else list(claude)
+    prefix[0] = shutil.which(prefix[0]) or prefix[0]
+    argv = [*prefix, "-p", "--output-format", "json", "--tools", "", "--model", "sonnet"]
+    started = time.monotonic()
+    try:
+        with tempfile.TemporaryDirectory(prefix="onloop-ask-") as empty:
+            code, out, err = (run or _run)(argv, _ask_prompt(q, f), _env(), empty, TIMEOUT_S)
+        if code != 0:
+            raise Failed(f"claude exited {code}: {(err or out)[:200]}")
+        wrapper = json.loads(out)
+        m = re.search(r"\{.*\}", wrapper.get("result") or "", re.S)
+        output = json.loads(m.group(0) if m else wrapper.get("result") or "")
+    except Exception as e:  # noqa: BLE001 - no answer: logged, and the page searches
+        with g():
+            ledger.append(_event("ask", "text.failed", {**base, "reason": f"{type(e).__name__}: {e}"[:300]}))
+        raise Off("onloop could not answer just now") from e
+    ms = int((time.monotonic() - started) * 1000)
+    problems = check_ask(output, f)
+    with g():
+        if problems:
+            ledger.append(_event("ask", "text.rejected", {**base, "reasons": problems[:5], "ms": ms}))
+        else:
+            ledger.append(
+                _event(
+                    "ask",
+                    "text.generated",
+                    {**base, "question": q, "output": output, "model": "sonnet", "ms": ms},
+                )
+            )
+    if problems:
+        raise Off("onloop's answer did not hold up against the facts")
+    return {**output, "facts_hash": fh, "cached": False, "ms": ms}

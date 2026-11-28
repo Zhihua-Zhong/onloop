@@ -73,7 +73,8 @@ the week before. On a frozen copy (a read-only server whose ledger nothing write
 - **Today's brief:** written by onloop over this page's facts (the smart layer, below), else the facts themselves,
   marked "facts only": what waits on you, how many of those asks say what they change and the first in order; what was
   merged; the most unusual thing. Every number in it is one the page shows. Its one button opens the first decision,
-  named by its written short title when there is one.
+  named by its written short title in full when it fits on the button, else "Decide the first of N": never cut. Beside
+  it, Morning digest opens the digest's preview.
 - **Three numbers against last week:** Delivered (changes merged), Waited on you (each ask's own open time in the week,
   summed), and Cost per delivery (the week's tokens, without cache reads, divided by Delivered), each with its seven
   days as a sparkline. With less than two weeks of data there is no week before, and the page says so instead of a
@@ -148,9 +149,18 @@ hash of the facts it was written from.
   when the ask recorded options, the suggested answer with its grounds, which is the one primary button (the other
   options are outline, Decline is plain); and near-duplicate merge proposals between open decisions.
 - **What it never writes:** a number that is not in the facts, an option the ask did not record, the order, "Do first".
-- **The checks:** a text is taken only when it is the JSON asked for, every digit run in it is one of its facts, every
-  suggestion is one of its decision's options, and every id is an open decision's. Otherwise it is logged as
-  `text.rejected` with the reason, and the page shows the facts.
+- **The checks:** a text is taken only when it is the JSON asked for, every digit run in it is one of its facts, and
+  so is every number word from "two" to "twenty", "twice" and "three times"; every suggestion is one of its decision's
+  options, every id an open decision's, and the decisions' texts cover each open decision once. Otherwise it is logged
+  as `text.rejected` with the reason, and the page shows the facts. "one" is not checked (in prose it is mostly a
+  pronoun), nor is a number spelled beyond twenty: that limit is accepted.
+- **The facts in buckets:** ages go to the model as "under an hour", "hours", "over a day" or "N days", and this
+  week's running figures as "over 400" or "about 300k", so a text is rewritten when a bucket changes, not every hour.
+  The exact figures stay on the page, outside the written text.
+- **The denylist:** before every call, the whole prompt (the facts, and ⌘K's question) is scanned against the files
+  named by `smart_denylist` in onloopd.yaml and by ONLOOP_DENYLIST: one regular expression per line, the
+  confidentiality scan's format. On any hit there is no call: `text.rejected` with reason "denylist" and the number of
+  hits, never the match, and the page shows the facts. A denylist that cannot be read stops every call.
 - **The cache is the ledger:** an accepted text is a `text.generated` event keyed by its facts' hash. When the facts
   change (an answer, a new ask, the brief's numbers) the page shows the facts at once, marked "facts · updating", and
   the new text when it is written. A decision's texts and the merges are written from the decisions alone, without
@@ -163,8 +173,38 @@ hash of the facts it was written from.
   times out, is rejected or capped, every page shows the facts, as before 0.7.0's step 5: the brief's facts with
   "facts only", the decisions' own titles, every option outline, no merge card.
 - **Merges are the person's:** a proposal shows both decisions and why; Merge closes the second into the first as
-  superseded, with its asks counted in the first (`task.merged`); Keep apart hides it in this browser. Nothing merges by
-  itself.
+  superseded, with its asks counted in the first (`task.merged`), and is undone from the toast for 9 s, or from
+  Decisions · Done until either decision is answered (`task.unmerged`). Keep apart is logged (`task.kept_apart`), so
+  the proposal stops in every browser and is never proposed again; its toast undoes it. Nothing merges by itself.
+
+### ⌘K: go anywhere, or ask
+
+Ctrl K (⌘K on a Mac), or the header's search box: one input for "Search, jump, or ask a question".
+
+- **Go to:** Home, Decisions, Agents, Timeline, the morning digest and each Details view; every open decision (by its
+  written title) opens it in Decisions (`#/decisions?id=`); every agent opens its page.
+- **Ask:** a question goes to `POST /ui/ask`. onloop answers it in 1 to 3 sentences from this week's facts only (the
+  brief's facts, each unusual item, each role's week), under the same checks as the texts, and cites every fact it
+  used; each citation opens where the fact is. Answers are cached in the ledger by question and facts, and capped at
+  30 a day.
+- **When it does not answer** (smart off, the cap, a failed or rejected answer, the denylist, a read-only copy), it
+  says why and searches instead; with nothing matching, it offers the pages.
+- **It never fades in:** only the dim behind it does; the dialog is opaque from its first frame, at every width
+  (e2e/overlays.spec.ts checks it at 390, 640, 768, 800, 1024, 1280 and 1536 px).
+
+### The header
+
+Search (⌘K), the bell, the theme and the account, as in prototype F. The bell lists the decisions new since your last
+visit (`GET /api/digest`, read only) and links to the digest; it is shown here only, nothing is sent to you. The account
+says what is true today: you are a local user, your answers are not verified, and sign-in and team settings come
+later (marked so, not clickable).
+
+### The morning digest (a preview)
+
+`#/digest`: what to open first today. The brief, the first three decisions with their suggested answers, what changed
+since your last visit (counted), what came out in the last day and what is unusual. It is marked "Preview · not sent
+anywhere yet": where a digest goes (a Windows notification, Slack, email) is the project lead's choice (plan,
+section 5), and nothing is delivered until then.
 
 What 0.6's Now showed on the first screen and Home does not: the constraint in the system's words (Details · Map and
 Rule alerts), the log since the last visit, the asks with no effect stated, the turns that ended without a valid outcome
@@ -248,7 +288,16 @@ cursor stays there.
 0.7.0 gave every view a new address. An old link opens the same view, and the address is rewritten in place (no new
 history entry), keeping the rest of the link: `#/now` and `#/tasks` become `#/decisions`, `#/team` `#/agents`, `#/replay` `#/timeline`
 (or `#/details/replay` when it names a moment with `t=` or `to=`), and
-`#/map/...`, `#/outcome`, `#/conversation`, `#/schedules` and `#/audit?...` become `#/details/...`.
+`#/map/...`, `#/outcome`, `#/conversation`, `#/schedules` and `#/audit?...` become `#/details/...`. A link that names a
+task (`#/tasks?id=t-...`) opens that decision. `web/test/retired.test.ts` holds the whole table against 0.6.1's views.
+
+| 0.6.1 link | 0.7.0 |
+|---|---|
+| `#/now`, `#/tasks` | `#/decisions` |
+| `#/team`, `#/team/<role>` | `#/agents`, `#/agents/<role>` |
+| `#/replay` | `#/timeline`; with `t=` or `to=`: `#/details/replay` |
+| `#/map`, `#/outcome`, `#/conversation`, `#/schedules`, `#/audit` | `#/details/<same>` |
+| `#/flow`, `#/activity` (retired in 0.6.0) | `#/details/map`, `#/timeline` |
 
 ### Retired: Flow and Activity
 

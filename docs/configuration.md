@@ -423,6 +423,16 @@ never with ANTHROPIC_API_KEY, at most 8 briefs, 20 decision texts and 6 merge pr
 smart: off
 ```
 
+`smart_denylist` names one file, or a list of files, of patterns no prompt may match (one regular expression per line,
+case-insensitive, `#` a comment). Before each call onloopd scans the whole prompt against them; on any hit it makes no
+call, logs `text.rejected` with reason "denylist" (the number of hits, never the match) and the page shows the facts.
+A file that cannot be read stops every call. ONLOOP_DENYLIST (paths separated by `;` on Windows, `:` elsewhere) adds
+files.
+
+```yaml
+smart_denylist: C:/path/outside/the/repo/denylist.txt
+```
+
 ### The carrier
 
 Optional. The session carrier ([carrier.md](carrier.md), [decision 0010](decisions/0010-session-lease-and-delivery.md)):
@@ -578,6 +588,7 @@ Notes:
 | the variable named by `apps.<identity>.key_env` | as-app | Path of the App's private key file. |
 | `GH_TOKEN` | the `gh` CLI | Used by `gh` for the gate, the audit and the watchdog. In the audit workflow it is the workflow's own token. |
 | `ONLOOP_SMART` | onloopd | `off` turns the smart layer off, as `smart: off` in onloopd.yaml. |
+| `ONLOOP_DENYLIST` | onloopd | More denylist files for the smart layer, as `smart_denylist`. |
 
 ## Extension points
 

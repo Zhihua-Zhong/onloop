@@ -2,9 +2,9 @@
 // history and operations one click down under Details (`#/details/map`, `#/details/audit?kind=pr.merged`). A view is
 // still named by its 0.6.0 key inside the code, so the views link to each other with `href(view)` as before. Imports
 // nothing, so node's test runner reads it as is.
-export const VIEWS = ["now", "decisions", "team", "timeline", "replay", "map", "outcome", "conversation", "schedules", "audit", "rules"] as const;
+export const VIEWS = ["now", "decisions", "team", "timeline", "replay", "map", "outcome", "conversation", "schedules", "audit", "rules", "digest"] as const;
 export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", decisions: "Decisions", timeline: "Timeline", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
+export const VIEW_LABEL: Record<View, string> = { now: "Now", decisions: "Decisions", timeline: "Timeline", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts", digest: "Morning digest" };
 
 /** Each view's address, after `#/`. */
 export const ADDRESS: Record<View, string> = {
@@ -19,6 +19,7 @@ export const ADDRESS: Record<View, string> = {
   schedules: "details/schedules",
   audit: "details/audit",
   rules: "details/rules",
+  digest: "digest", // the morning digest's preview (0.7.0 plan, section 5): nothing is sent yet
 };
 export const DETAILS: readonly View[] = ["map", "replay", "outcome", "conversation", "schedules", "audit", "rules"];
 

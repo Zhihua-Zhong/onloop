@@ -43,10 +43,10 @@ test("what is not an address opens the first screen, and an old link is the same
   for (const h of ["#/nowhere", "#/details", "#/details/nothing", "#/decision"]) assert.equal(parse(h).view, "now", h);
   assert.equal(parse("#/decisions").view, "decisions");
   // the eight views 0.6 had (Rule alerts is new in 0.7.0, so it never had an old address)
-  for (const v of VIEWS.filter((x) => !["rules", "decisions", "now", "timeline", "replay"].includes(x))) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
+  for (const v of VIEWS.filter((x) => !["rules", "decisions", "now", "timeline", "replay", "digest"].includes(x))) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
   assert.equal(parse(retiredTo("#/replay?k=1") ?? "").view, "timeline");
   assert.equal(parse(retiredTo("#/replay?t=1") ?? "").view, "replay");
   assert.equal(parse(retiredTo("#/now?k=1") ?? "").view, "decisions"); // Now is Decisions now
   // nothing in the shell is left at an old address
-  for (const v of VIEWS.filter((x) => !["decisions", "rules", "timeline"].includes(x))) assert.notEqual(ADDRESS[v], v); // 0.6's views all moved
+  for (const v of VIEWS.filter((x) => !["decisions", "rules", "timeline", "digest"].includes(x))) assert.notEqual(ADDRESS[v], v); // 0.6's views all moved
 });

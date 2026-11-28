@@ -62,13 +62,28 @@ export function useAnswers() {
     }
   };
 
-  // a merge the smart layer proposed and the person confirms (0.7.0 plan, section 4.3): `merge` closes into `keep`
+  // a merge the smart layer proposed and the person confirms (0.7.0 plan, section 4.3): `merge` closes into `keep`.
+  // Undone from the toast, or from Decisions · Done, until the decision it went into is answered.
+  const unmerge = async (id: string) => {
+    setBusy(id);
+    try {
+      await uiPost("/ui/tasks/unmerge", { id });
+      setError(null);
+      toast("Merge undone: two decisions again.");
+    } catch (e) {
+      setError({ id, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
   const merge = async (keep: string, gone: string) => {
     setBusy("merge");
     try {
       await uiPost("/ui/tasks/merge", { keep, merge: gone });
       setError(null);
-      toast("Merged: one decision now, with every ask counted in it.");
+      toast("Merged: one decision now, with every ask counted in it.", () => void unmerge(gone));
     } catch (e) {
       setError({ id: "merge", text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -77,5 +92,20 @@ export function useAnswers() {
     }
   };
 
-  return { answer, withdraw, tidy, merge, busy, error };
+  // "not one decision": logged, so the proposal stops in every browser; the toast undoes it
+  const keepApart = async (a: string, b: string, apart = true) => {
+    setBusy("merge");
+    try {
+      await uiPost("/ui/tasks/keep_apart", { a, b, apart });
+      setError(null);
+      if (apart) toast("Kept apart: onloop will not propose merging these two again.", () => void keepApart(a, b, false));
+    } catch (e) {
+      setError({ id: "merge", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
+  return { answer, withdraw, tidy, merge, unmerge, keepApart, busy, error };
 }

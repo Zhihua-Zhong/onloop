@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ElementType, type ReactNode } from "react";
-import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert, History } from "lucide-react";
+import { Activity, Bell, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert, History, UserRound } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
-import { agentsApi, homeApi } from "@/lib/api";
+import { agentsApi, homeApi, tasksApi } from "@/lib/api";
 import { useRoleColor } from "@/lib/useRoleColor";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHeartbeat } from "@/lib/heartbeat";
@@ -15,7 +15,9 @@ import { Loading } from "@/components/kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/menu";
+import { CommandProvider, SearchButton } from "@/components/CommandMenu";
+import { decisionText, useTexts } from "@/lib/texts";
 import { Toaster } from "@/components/ui/toast";
 import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
 import { HomeView } from "@/views/Home";
@@ -28,6 +30,7 @@ import { OutcomeView } from "@/views/details/Outcome";
 import { SchedulesView } from "@/views/details/Schedules";
 import { AuditView } from "@/views/details/Audit";
 import { ConversationView } from "@/views/details/Conversation";
+import { DigestView } from "@/views/Digest";
 
 // The map carries React Flow, so it loads when the map is first opened.
 const MapView = lazy(retrying(() => import("@/views/details/Map")));
@@ -81,6 +84,73 @@ function useTheme(): [Theme, boolean, (t: Theme) => void] {
     }
   };
   return [choice, dark, choose];
+}
+
+// The bell (prototype F): what is new for you since your last visit, from GET /api/digest (read only). It is shown here
+// only: nothing is sent to you anywhere yet (the digest's channel waits on the project lead, plan section 5).
+function BellMenu() {
+  const q = useQuery({ queryKey: ["digest"], queryFn: tasksApi.digest, refetchInterval: 60_000 });
+  const decisions = useQuery({ queryKey: ["decisions"], queryFn: homeApi.decisions, refetchInterval: 60_000 });
+  const t = useTexts();
+  const fresh = new Set((q.data?.added ?? []).map((a) => a.id));
+  const items = (decisions.data?.open ?? []).filter((d) => fresh.has(d.id)).slice(0, 6);
+  return (
+    <DropdownMenu>
+      <Tooltip content="New for you">
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="relative" aria-label={`New for you: ${items.length}`} data-testid="bell">
+            <Bell aria-hidden />
+            {items.length > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-wait" data-testid="bell-dot" />}
+          </Button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent className="w-[300px] max-w-[calc(100vw-24px)]" data-testid="bell-menu">
+        <DropdownMenuLabel>New since your last visit</DropdownMenuLabel>
+        {items.length ? (
+          items.map((d) => (
+            <DropdownMenuItem key={d.id} onSelect={() => (window.location.hash = href("decisions", { id: d.id }).slice(1))} data-testid="bell-item">
+              <Inbox aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{decisionText(t, d)?.title ?? d.title}</span>
+            </DropdownMenuItem>
+          ))
+        ) : (
+          <p className="px-2 pb-2 text-sm text-muted">Nothing new since your last visit.</p>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => (window.location.hash = href("digest").slice(1))} data-testid="bell-digest">
+          Morning digest
+        </DropdownMenuItem>
+        <p className="px-2 pb-1.5 pt-1 text-xs text-muted">Shown here only: nothing is sent to you yet.</p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// The account (prototype F). onloop has no accounts yet: a write from this page is a local user's, not verified
+// (decision 0011). Sign-in comes with project setup (plan, section 7b), so the menu says so and offers nothing more.
+function AccountMenu() {
+  return (
+    <DropdownMenu>
+      <Tooltip content="Account">
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Account: local user, not signed in" data-testid="account">
+            <UserRound aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent className="w-[260px]" data-testid="account-menu">
+        <DropdownMenuLabel>Local user on this machine</DropdownMenuLabel>
+        <p className="px-2 pb-2 text-sm text-muted">Your answers here are recorded as a local user's, not verified.</p>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled data-testid="account-signin">
+          Sign in and team settings
+          <Badge tone="soon" className="ml-auto">
+            later
+          </Badge>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function ThemeMenu({ theme, dark, choose }: { theme: Theme; dark: boolean; choose: (t: Theme) => void }) {
@@ -217,6 +287,7 @@ const DETAIL_ICON: Record<string, ElementType> = { map: MapIcon, replay: History
 const DETAIL_LABEL: Record<string, string> = { map: "Map", replay: "Replay", outcome: "Outcome", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
 
 function pageOf(view: View): { label: string; interim?: string; details: boolean } {
+  if (view === "digest") return { label: "Morning digest", details: false };
   const main = MAIN.find((p) => p.view === view);
   if (main) return { label: main.label, interim: main.interim, details: false };
   return { label: DETAIL_LABEL[view] ?? view, details: true };
@@ -327,6 +398,7 @@ export default function App() {
   return (
     <TooltipProvider delayDuration={300}>
       <Toaster>
+        <CommandProvider>
         <div className="flex h-full">
           <aside className="hidden w-[232px] shrink-0 border-r border-line bg-sidebar lg:block" data-testid="sidebar">
             <Sidebar view={route.view} />
@@ -361,10 +433,18 @@ export default function App() {
                 {page.details && <span className="font-normal text-muted">Details · </span>}
                 {page.label}
               </p>
-              <div className="ml-auto flex shrink-0 items-center gap-3 max-[420px]:gap-2">
+              <div className="hidden min-w-0 lg:block">
+                <SearchButton />
+              </div>
+              <div className="ml-auto flex shrink-0 items-center gap-2 max-[420px]:gap-1">
                 <LiveBadge live={live} />
                 <ReadOnly view={route.view} />
+                <div className="lg:hidden">
+                  <SearchButton compact />
+                </div>
+                <BellMenu />
                 <ThemeMenu theme={theme} dark={dark} choose={choose} />
+                <AccountMenu />
               </div>
             </header>
             {live.state === "stale" && (
@@ -381,7 +461,8 @@ export default function App() {
             )}
             <main className={cn("min-h-0 flex-1", route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
               {route.view === "now" && <HomeView />}
-              {route.view === "decisions" && <DecisionsView />}
+              {route.view === "decisions" && <DecisionsView params={route.params} />}
+              {route.view === "digest" && <DigestView />}
               {route.view === "rules" && <RuleAlertsView />}
               {route.view === "map" && (
                 <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>
@@ -398,6 +479,7 @@ export default function App() {
             </main>
           </div>
         </div>
+        </CommandProvider>
       </Toaster>
     </TooltipProvider>
   );

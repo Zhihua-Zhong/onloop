@@ -920,7 +920,7 @@ CREATE UNIQUE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref
 CREATE UNIQUE INDEX one_open_decision_per_subject ON human_tasks(subject_key) WHERE stage <> 'resolved' AND subject_key IS NOT NULL;
 CREATE UNIQUE INDEX one_open_task_per_wait ON human_tasks(wait_id) WHERE stage <> 'resolved' AND wait_id IS NOT NULL;
 CREATE INDEX human_tasks_open ON human_tasks(stage) WHERE stage <> 'resolved';
-CREATE TRIGGER human_tasks_stay_resolved BEFORE UPDATE OF stage ON human_tasks WHEN OLD.stage = 'resolved' AND NEW.stage <> 'resolved' AND NOT (OLD.resolved_by = 'human' AND OLD.delivered_at IS NULL AND OLD.resolution IN ('done', 'declined', 'dismissed')) BEGIN SELECT RAISE(ABORT, 'a resolved task stays resolved, but for the person withdrawing an answer that has not reached its asker'); END;
+CREATE TRIGGER human_tasks_stay_resolved BEFORE UPDATE OF stage ON human_tasks WHEN OLD.stage = 'resolved' AND NEW.stage <> 'resolved' AND NOT (OLD.resolved_by = 'human' AND OLD.delivered_at IS NULL AND OLD.resolution IN ('done', 'declined', 'dismissed')) AND NOT (OLD.resolved_by = 'human' AND OLD.resolution = 'superseded' AND OLD.evidence LIKE 'human:merge:%') BEGIN SELECT RAISE(ABORT, 'a resolved task stays resolved, but for the person withdrawing an answer that has not reached its asker, or undoing a merge'); END;
 
 CREATE TABLE task_asks (
   id          TEXT PRIMARY KEY,
@@ -938,6 +938,8 @@ CREATE INDEX task_asks_task ON task_asks(task_id, at)
 KINDS_11 = {
     "task.unresolved": "answer withdrawn",
     "task.merged": "decisions merged",
+    "task.unmerged": "merge undone",
+    "task.kept_apart": "decisions kept apart",
     "hook.prompt_submit": "prompt submitted",
 }
 

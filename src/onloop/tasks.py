@@ -6,7 +6,7 @@
     card(task, now) -> dict                          what a view shows for a task, days computed now
     open_tasks(ledger, now) -> [card]                every task not resolved, in order
     digest(ledger, since, now) -> dict               added, resolved (and resolved without you), returned, since
-    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit|withdraw|tidy|merge>
+    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit|withdraw|tidy|merge|unmerge|keep_apart>
 
 The order (decision 0013): weight bands (critical, supporting, unweighted, skippable, then incomplete); in a band, a
 cost of delay with a date first, by the days left (a date passed is 0, "costing now"), then a cost not known, then
@@ -165,6 +165,58 @@ def merge_event(ledger: Any, keep: Any, merge: Any, *, channel: str) -> dict[str
     return _event(
         channel, "task.merged", b["id"], {"id": b["id"], "keep": a["id"], "merge": b["id"], "by": "human"}
     )
+
+
+def merge_of(ledger: Any, tid: str) -> dict[str, Any] | None:
+    """The merge that closed `tid`, while it can be undone: {keep, merge_event}, or None."""
+    t = get(ledger, tid)
+    ev_ = str((t or {}).get("evidence") or "")
+    if (
+        not t
+        or t["stage"] != "resolved"
+        or t["resolution"] != "superseded"
+        or not ev_.startswith("human:merge:")
+    ):
+        return None
+    keep = str(t.get("superseded_by") or "").removeprefix("task:")
+    k = get(ledger, keep)
+    if k is None or k["stage"] == "resolved":
+        return None  # the decision it went into is answered: the merge stands
+    return {"keep": keep, "merge_event": ev_.removeprefix("human:merge:")}
+
+
+def unmerge_event(ledger: Any, tid: Any, *, channel: str) -> dict[str, Any]:
+    """Undo a merge, from the toast or from Decisions · Done, until the decision it went into is answered."""
+    m = merge_of(ledger, str(tid or ""))
+    if m is None:
+        raise AskError(
+            "no merge to undo: either it was never merged, or the decision it went into is answered"
+        )
+    return _event(channel, "task.unmerged", str(tid), {"id": str(tid), **m, "by": "human"})
+
+
+def keep_apart_event(ledger: Any, a: Any, b: Any, apart: Any, *, channel: str) -> dict[str, Any]:
+    """The person says two decisions the smart layer proposed to merge are not one: the proposal stops, in every
+    browser. `apart: false` undoes it."""
+    x, y = get(ledger, str(a or "")), get(ledger, str(b or ""))
+    if x is None or y is None or x["id"] == y["id"]:
+        raise AskError("keep_apart names two decisions: a and b")
+    pair = sorted((x["id"], y["id"]))
+    return _event(
+        channel,
+        "task.kept_apart",
+        pair[0],
+        {"id": pair[0], "a": pair[0], "b": pair[1], "apart": bool(apart), "by": "human"},
+    )
+
+
+def kept_apart(ledger: Any) -> set[tuple[str, str]]:
+    """The pairs the person keeps apart now (the last word per pair)."""
+    last: dict[tuple[str, str], bool] = {}
+    for r in ledger.select("SELECT payload FROM events WHERE kind = 'task.kept_apart' ORDER BY seq"):
+        p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"])
+        last[(p["a"], p["b"])] = bool(p.get("apart", True))
+    return {k for k, v in last.items() if v}
 
 
 def tidy_events(ledger: Any, ids: Iterable[str], *, channel: str) -> list[dict[str, Any]]:
@@ -434,6 +486,12 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
             )
         elif action == "merge":
             event = merge_event(ledger, body.get("keep"), body.get("merge"), channel=channel)
+        elif action == "unmerge":
+            event = unmerge_event(ledger, body.get("id"), channel=channel)
+        elif action == "keep_apart":
+            event = keep_apart_event(
+                ledger, body.get("a"), body.get("b"), body.get("apart", True), channel=channel
+            )
         elif action == "tidy":
             ids = body.get("ids")
             if not isinstance(ids, list) or not ids or len(ids) > 500:
@@ -467,8 +525,8 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
         else:
             raise Refused(
                 404,
-                "a task write is /tasks/ask, /tasks/resolve, /tasks/keep, /tasks/visit, /tasks/withdraw, /tasks/tidy "
-                "or /tasks/merge",
+                "a task write is /tasks/ask, /tasks/resolve, /tasks/keep, /tasks/visit, /tasks/withdraw, /tasks/tidy, "
+                "/tasks/merge, /tasks/unmerge or /tasks/keep_apart",
             )
     except AskError as e:
         raise Refused(422, str(e)) from e

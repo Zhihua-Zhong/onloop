@@ -93,6 +93,7 @@ def main() -> int:
             token=secrets.token_urlsafe(32),
             carrier=lambda: None if off.exists() else cfg,
             descriptions=demo_ledger.DESCRIPTIONS,  # as a team's onloop.yaml would say them
+            asker=demo_ledger.asker(path),  # ⌘K: the recorded answer, never the model
         )
         stop = threading.Event()
 

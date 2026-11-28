@@ -135,7 +135,20 @@ def answered(ledger: Any, now: str, days: int = DONE_DAYS) -> list[dict[str, Any
         (ev.shift_ts(now, -days * 86400),),
     )
     asks = _asks(ledger, [r["id"] for r in rows])
-    return [card({**r, "default": r.get("default_text")}, asks.get(r["id"], []), now) for r in rows]
+    from . import tasks
+
+    out = []
+    for r in rows:
+        c = card({**r, "default": r.get("default_text")}, asks.get(r["id"], []), now)
+        m = tasks.merge_of(ledger, r["id"]) if r.get("resolution") == "superseded" else None
+        c["merged_into"] = (
+            str(r.get("superseded_by") or "").removeprefix("task:") or None
+            if c["answer_text"] == "Merged"
+            else None
+        )
+        c["can_unmerge"] = m is not None
+        out.append(c)
+    return out
 
 
 def view(ledger: Any, now: str) -> dict[str, Any]:
