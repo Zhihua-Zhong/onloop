@@ -114,6 +114,7 @@ def test_now_lists_what_waits_on_the_human_as_the_task_list(led):
         ("supporting", "adapter", 4),
         ("unweighted", "pause", None),
         ("skippable", "cli", None),
+        ("skippable", "cli", None),  # the near duplicate of the palette ask, under its own subject
         ("incomplete", "wait", 0),
         ("incomplete", "node", 2),
         ("incomplete", "cli", None),
@@ -256,8 +257,14 @@ def test_events_latest_first_pages_back_with_next_before(led):
     assert seqs == sorted(seqs, reverse=True) and len(seqs) == 10 and first["next_before"] == seqs[-1]
     second = views.events_query(led, q(latest=1, limit=10, before=first["next_before"]))
     assert max(r["seq"] for r in second["events"]) < seqs[-1]
-    everything = views.events_query(led, q(latest=1, limit=500))
-    assert everything["next_before"] is None
+    pages, before = 0, None  # paging back reaches the start, a page at a time
+    while True:
+        page = views.events_query(led, q(latest=1, limit=500, **({"before": before} if before else {})))
+        pages += 1
+        before = page["next_before"]
+        if before is None:
+            break
+    assert pages >= 2
 
 
 def test_the_plain_page_is_unchanged(led):
@@ -378,3 +385,16 @@ def test_the_events_command_opens_the_ledger_read_only(demo_path, tmp_path, caps
     assert demo_path.read_bytes() == before
     assert cli.main(["events", "--ledger", str(tmp_path / "none.db")]) == 1
     assert not (tmp_path / "none.db").exists()
+
+
+def test_home_and_rule_alerts_answer_and_agree(served):
+    """0.7.0: GET /api/home and GET /api/rules. A server with no writer, whose ledger nothing writes, reads it as a
+    frozen copy, up to its last event."""
+    s, _ = served
+    code, h = get(s, "/api/home")
+    assert code == 200 and h["frozen"] is True
+    code, r = get(s, "/api/rules")
+    assert code == 200
+    assert h["decisions"]["count"] + h["decisions"]["rule_asks"] == h["decisions"]["waiting_on_you"]
+    assert r["asks_missing"]["count"] == h["decisions"]["rule_asks"]
+    assert get(s, "/api/now")[1]["waiting_on_you"].__len__() == h["decisions"]["waiting_on_you"]

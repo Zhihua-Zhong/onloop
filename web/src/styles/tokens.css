@@ -1,62 +1,117 @@
 /*
  * The design tokens: the ONLY place a colour, radius or font is chosen. Everything else (tailwind.config.ts, the components) reads these by name.
- * Values are HSL channels ("H S% L%") so Tailwind can add alpha. A restyle edits this file; the project lead picks the look from the prototype,
- * then this file freezes it.
+ * Values are HSL channels ("H S% L%") so Tailwind can add alpha.
  *
- * State colours carry meaning and are the only saturated colours on the canvas: blue open, red blocked, amber waiting on the human,
- * violet waiting on someone else, magenta stalled (a turn that ended with nobody holding the next step), green done, grey cancelled
- * or missing.
+ * 0.7.0 takes prototype F's design system (shadcn/ui's neutral palette, light and dark). The names stay onloop's, so the
+ * views under Details keep working; shadcn's name for each is in the comment:
+ *   bg (background), surface (card), popover, raised (muted: a quiet fill), hover (accent: a row or item under the pointer),
+ *   line (border), input, fg (foreground), muted (muted-foreground: secondary text), primary and primary-fg, ring (focus),
+ *   sidebar, accent (links and the selected thing).
+ *
+ * Colour only for meaning, and the only saturated colours on the canvas: blue work, amber waits on you, green delivered,
+ * red a worse trend or a failure. The map's and Replay's states keep their names and take the same four; violet waits on
+ * someone else, magenta stalled, grey cancelled or missing.
  */
 :root {
-  --bg: 210 25% 97%;
+  --bg: 0 0% 100%;
   --surface: 0 0% 100%;
-  --raised: 210 30% 99%;
-  --line: 214 20% 87%;
-  --fg: 222 30% 14%;
-  --muted: 218 12% 42%;
-  --accent: 221 83% 48%;
-  --zone: 214 40% 94%;
+  --popover: 0 0% 100%;
+  --raised: 240 5% 96%;
+  --hover: 240 5% 95%;
+  --line: 240 6% 91%;
+  --input: 240 6% 88%;
+  --fg: 240 10% 9%;
+  --muted: 240 4% 44%;
+  --primary: 240 6% 12%;
+  --primary-fg: 0 0% 98%;
+  --ring: 230 70% 56%;
+  --accent: 228 76% 52%;
+  --sidebar: 240 5% 97.5%;
+  --zone: 240 5% 96%;
 
-  --state-open: 217 85% 52%;
-  --state-blocked: 358 75% 52%;
-  --state-human: 32 95% 46%;
+  --work: 228 76% 58%;
+  --wait: 36 88% 50%;
+  --done: 152 56% 38%;
+  --danger: 4 72% 52%;
+
+  --state-open: var(--work);
+  --state-blocked: var(--danger);
+  --state-human: 32 95% 46%; /* the amber of text on white: --wait is for fills and dots */
   --state-external: 262 55% 56%;
   --state-stall: 326 72% 46%;
-  --state-done: 150 45% 38%;
-  --state-void: 218 10% 62%;
+  --state-done: var(--done);
+  --state-void: 240 5% 64%;
   --state-idle: 358 35% 62%; /* parked or abandoned: open, no move for a week; drawn hatched, never as jammed */
 
+  --radius: 10px;
   --radius-node: 10px;
   --radius-zone: 16px;
   --radius-ui: 8px;
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+  color-scheme: light;
+}
+
+/* Dark, chosen (data-theme="dark", set by the theme menu or by the system's preference while nothing is chosen). The
+   same values are in the media query below, so a first paint before the script runs is already right. */
+[data-theme="dark"] {
+  --bg: 240 6% 7%;
+  --surface: 240 6% 9%;
+  --popover: 240 6% 10%;
+  --raised: 240 5% 14%;
+  --hover: 240 5% 15%;
+  --line: 240 5% 16%;
+  --input: 240 5% 20%;
+  --fg: 0 0% 95%;
+  --muted: 240 5% 62%;
+  --primary: 0 0% 96%;
+  --primary-fg: 240 6% 10%;
+  --ring: 228 80% 68%;
+  --accent: 228 82% 70%;
+  --sidebar: 240 6% 8%;
+  --zone: 240 6% 10%;
+
+  --work: 228 82% 68%;
+  --wait: 38 90% 56%;
+  --done: 152 50% 52%;
+  --danger: 4 80% 62%;
+
+  --state-human: 38 92% 58%;
+  --state-external: 262 70% 72%;
+  --state-stall: 326 78% 68%;
+  --state-void: 240 5% 50%;
+  --state-idle: 358 30% 48%;
+
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: 224 24% 9%;
-    --surface: 224 22% 13%;
-    --fg: 210 25% 94%;
+    --bg: 240 6% 7%;
+    --surface: 240 6% 9%;
+    --popover: 240 6% 10%;
+    --raised: 240 5% 14%;
+    --hover: 240 5% 15%;
+    --line: 240 5% 16%;
+    --input: 240 5% 20%;
+    --fg: 0 0% 95%;
+    --muted: 240 5% 62%;
+    --primary: 0 0% 96%;
+    --primary-fg: 240 6% 10%;
+    --ring: 228 80% 68%;
+    --accent: 228 82% 70%;
+    --sidebar: 240 6% 8%;
+    --zone: 240 6% 10%;
+    --work: 228 82% 68%;
+    --wait: 38 90% 56%;
+    --done: 152 50% 52%;
+    --danger: 4 80% 62%;
+    --state-human: 38 92% 58%;
+    --state-external: 262 70% 72%;
+    --state-stall: 326 78% 68%;
+    --state-void: 240 5% 50%;
     --state-idle: 358 30% 48%;
+    color-scheme: dark;
   }
-}
-
-[data-theme="dark"] {
-  --bg: 224 24% 9%;
-  --surface: 224 22% 13%;
-  --raised: 224 22% 16%;
-  --line: 222 16% 24%;
-  --fg: 210 25% 94%;
-  --muted: 215 14% 66%;
-  --accent: 217 90% 66%;
-  --zone: 224 22% 12%;
-
-  --state-open: 217 90% 64%;
-  --state-blocked: 358 80% 64%;
-  --state-human: 36 95% 58%;
-  --state-external: 262 70% 72%;
-  --state-stall: 326 78% 68%;
-  --state-done: 150 50% 52%;
-  --state-void: 218 10% 52%;
 }

@@ -1,32 +1,18 @@
 import { useEffect, useState } from "react";
-import { RETIRED, retiredTo } from "./retired";
+import { retiredTo } from "./retired";
+import { href, parse, type View } from "./address";
 
-// The views are hash routes (#/now, #/replay, #/audit?kind=pr.merged), so a reload or a shared link opens the same view
-// and onloopd serves one index.html for all of them.
-export const VIEWS = ["now", "replay", "map", "outcome", "team", "conversation", "schedules", "audit"] as const;
-export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
-
-// `path` is what follows the view: the map's levels, `#/map/<goal>/<stage>` (decision 0018).
-export interface Route { view: View; params: URLSearchParams; path: string[] }
-
-function parse(hash: string): Route {
-  const raw = hash.replace(/^#\/?/, "");
-  const [where, query = ""] = raw.split("?");
-  const [given, ...rest] = where.split("/");
-  const first = RETIRED[given] ?? given;
-  const known = (VIEWS as readonly string[]).includes(first);
-  const view = known ? (first as View) : "now";
-  const path = known ? rest.filter(Boolean).map((s) => decodeURIComponent(s)) : [];
-  return { view, params: new URLSearchParams(query), path };
-}
+// The views are hash routes, so a reload or a shared link opens the same view and onloopd serves one index.html for
+// all of them. The addresses are in address.ts; an old link (0.6.0's `#/now`, `#/map`, `#/replay`) is rewritten to its
+// new address in place (retired.ts).
+export { ADDRESS, DETAILS, VIEWS, VIEW_LABEL, href, parse, type Route, type View } from "./address";
 
 function canonical(): void {
   const to = retiredTo(window.location.hash);
   if (to) window.history.replaceState(window.history.state, "", to); // no new history entry: Back skips the old link
 }
 
-export function useRoute(): Route {
+export function useRoute(): ReturnType<typeof parse> {
   const [route, setRoute] = useState(() => {
     canonical();
     return parse(window.location.hash);
@@ -42,12 +28,12 @@ export function useRoute(): Route {
   return route;
 }
 
-export function href(view: View, params?: Record<string, string | undefined>, path: string[] = []): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params ?? {})) if (v) q.set(k, v);
-  const s = q.toString();
-  const tail = path.map((p) => `/${encodeURIComponent(p)}`).join("");
-  return `#/${view}${tail}${s ? `?${s}` : ""}`;
+/** Rewrite the address in place (no history entry) to `view` with `params`, but only while the address still names
+ * that view. A view that keeps its state in the address (Replay's cursor and speed) writes it from timers and effects;
+ * one of those writes landing after the person followed a link would pull them back to the view they left. */
+export function keepParams(view: View, params: Record<string, string | undefined>): void {
+  if (parse(window.location.hash).view !== view) return;
+  window.history.replaceState(null, "", href(view, params));
 }
 
 export function setParams(view: View, params: Record<string, string | undefined>): void {

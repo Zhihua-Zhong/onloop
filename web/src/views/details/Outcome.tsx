@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { tasksApi, type GoalKpi, type KpiModel, type Spread } from "@/lib/api";
 import { Card, Empty, Loading, Meta, Problem, Section } from "@/components/kit";
 import { cn } from "@/lib/utils";
+import { href } from "@/lib/route";
 
 // The outcome KPIs (decision 0014): progress per unit of work, not a count of units. Every number on this page is shown
 // with what it is counted over and when that was set, so a split piece of work shows as a cost and is never rewarded.
@@ -136,7 +137,7 @@ export function OutcomeView({ params }: { params: URLSearchParams }) {
         {q.data && <p className="text-[13px] text-muted" data-testid="window">{day(q.data.since)} to {day(q.data.until)}, {q.data.merged_prs} merged PRs</p>}
         <nav className="ml-auto flex gap-1" aria-label="Window">
           {WINDOWS.map((w) => (
-            <a key={w} href={`#/outcome?window=${w}`} className={cn("rounded-ui px-2.5 py-1 text-[13px]", w === window ? "bg-raised font-medium" : "text-muted hover:bg-raised")}>
+            <a key={w} href={href("outcome", { window: w })} className={cn("rounded-ui px-2.5 py-1 text-[13px]", w === window ? "bg-raised font-medium" : "text-muted hover:bg-raised")}>
               {w}
             </a>
           ))}

@@ -558,6 +558,29 @@ def _asks(s: _Story) -> None:
         goal="demo/7",
         default="nothing merges",
         cost_given="cost_from",
+        options=["Approve", "Approve, import paused", "Wait for the review"],  # 0.7.0: the answers it offers
+    )
+    # 0.7.0, one decision, one ask: the reviewer asks about the same change two hours later; it joins the decision
+    s.step(
+        3 * HOUR,
+        lambda led: led.append(
+            {
+                "id": "demo-ask-reviewer-204",
+                "source": "cli",
+                "kind": "task.opened",
+                "subject_ref": "task:t-demo-rev204",
+                "actor": "reviewer",
+                "payload": {
+                    "id": "t-demo-rev204",
+                    "origin": "cli",
+                    "origin_ref": "demo-ask-reviewer-204",
+                    "author_role": "reviewer",
+                    "ref": "PR#204",
+                    "title": "The schema change waits on approval",
+                    "ask": {"effect": "approve the schema change, so the import can run on real data"},
+                },
+            }
+        ),
     )
     ask(
         26 * HOUR,
@@ -626,6 +649,7 @@ def _asks(s: _Story) -> None:
         goal="demo/8",
         effect="decide whether the export ships in this release, so the plan stops carrying both branches",
         holds="the release plan",
+        options=["Ship it in this release", "Hold it for the next"],
     )
     # what changed since the visit: one resolved by the person, one closed by its author without them
     done = ask(
@@ -635,6 +659,7 @@ def _asks(s: _Story) -> None:
         "Approve the dashboard copy",
         weight="skippable",
         effect="approve the dashboard copy, so the page can ship",
+        options=["Approve the copy", "Rewrite the headline"],
     )
     gone = ask(
         4 * DAY + HOUR,
@@ -648,7 +673,13 @@ def _asks(s: _Story) -> None:
         30 * HOUR,
         "task.resolved",
         f"task:{done}",
-        {"id": done, "resolution": "done", "evidence": "human:ui", "by": "human"},
+        {
+            "id": done,
+            "resolution": "done",
+            "evidence": "human:ui",
+            "by": "human",
+            "answer": "Approve the copy",
+        },
     )
     s.event(
         2 * DAY,
@@ -921,6 +952,288 @@ def _telemetry(s: _Story) -> None:
     requests("builder", "s-builder", 9 * MIN + 30, 30, 30, 1100)
 
 
+# Each demo role's `description`, as a team's onloop.yaml would give it (0.7.0, the line under its name on Agents)
+DESCRIPTIONS = {
+    "builder": "Builds the features",
+    "reviewer": "Reviews the changes",
+    "lead": "Plans and ships",
+    "designer": "Designs the screens",
+    "data-eng": "Keeps the data flowing",
+    "operator": "Runs the jobs",
+}
+
+
+def _history(s: _Story) -> None:
+    """0.7.0: two weeks of the team's rhythm before the story's last days, so Home has a week to compare with, the
+    sparklines have days, and "Unusual this week" has norms. Generic and deterministic (a fixed seed):
+    - each role ends a few turns a day (valid outcome lines, no refs, so nothing in the story changes), each with a model
+      request; the builder's tokens spike three days ago;
+    - the operator works every day until four days ago, then goes quiet;
+    - five changes merged the week before, each with the role that opened it;
+    - three of the lead's asks, answered by the person within hours (its usual wait);
+    - two days ago the builder asks about the lead's open decision on the plan: one decision, asked twice.
+    The roles' last two days are the story's own (except the data engineer's and the designer's quieter days)."""
+    import random
+
+    rng = random.Random(70)
+    per_day = {"builder": 7, "reviewer": 4, "lead": 3, "designer": 3, "data-eng": 3, "operator": 4}
+    first_day = {"builder": 2, "reviewer": 2, "lead": 2, "designer": 1, "data-eng": 1, "operator": 4}
+    n = [0]
+    for role, k in per_day.items():
+        for d in range(first_day[role], 16):
+            for t in range(k):
+                ago = d * DAY - rng.randint(1 * HOUR, 11 * HOUR)
+                n[0] += 1
+                s.stop(ago, role, f"h-{role}-{n[0]}", "Worked through the plan.\n\noutcome: done")
+                spike = 12 if role == "builder" and d == 3 and t == 0 else 1  # one heavy turn
+                for j in range(spike):
+                    s.event(
+                        ago + 60 + j * 30,
+                        "cost.request",
+                        f"session:s-{role}",
+                        {
+                            "session_id": f"s-{role}",
+                            "role": role,
+                            "prompt_id": f"h-{role}-{n[0]}",
+                            "model": "claude-demo",
+                            "input_tokens": 300 + rng.randint(0, 200),
+                            "output_tokens": 1500 + rng.randint(0, 900),
+                            "cache_read_tokens": 20_000,
+                            "cache_creation_tokens": 6_000
+                            + rng.randint(0, 3_000)
+                            + (40_000 if spike > 1 else 0),
+                            "duration_ms": 9_000,
+                            "request_id": f"h-req-{n[0]}-{j}",
+                            "query_source": "repl_main_thread",
+                            "cost_usd": 0.02,
+                            "sequence": 10_000 + n[0] * 20 + j,
+                        },
+                        source="otel",
+                        actor=role,
+                    )
+    # five changes merged the week before, each with the role that opened it
+    for num, days_ago, by in (
+        (180, 12.4, "builder"),
+        (181, 11.1, "designer"),
+        (182, 10.2, "builder"),
+        (183, 9.3, "data-eng"),
+        (184, 8.2, "builder"),
+    ):
+        pr = f"pr#{num}"
+        opened, merged = s.ts(-(days_ago * DAY + 6 * HOUR)), s.ts(-days_ago * DAY)
+        s.step(
+            days_ago * DAY + 6 * HOUR,
+            lambda led, pr=pr, opened=opened, by=by: [
+                led.append(
+                    {
+                        "id": f"demo-{pr}-o",
+                        "source": "github",
+                        "kind": "pr.opened",
+                        "subject_ref": pr,
+                        "at": opened,
+                        "payload": {"title": f"{by}: change {pr}"},
+                    }
+                ),
+                led.append(
+                    {
+                        "id": f"demo-{pr}-a",
+                        "source": "github",
+                        "kind": "pr.author",
+                        "subject_ref": pr,
+                        "at": opened,
+                        "payload": {"by": by},
+                    }
+                ),
+            ],
+        )
+        s.step(
+            days_ago * DAY,
+            lambda led, pr=pr, at=merged: led.append(
+                {
+                    "id": f"demo-{pr}-m",
+                    "source": "github",
+                    "kind": "pr.merged",
+                    "subject_ref": pr,
+                    "at": at,
+                    "payload": {},
+                }
+            ),
+        )
+    # who opened the week's merged changes (the story's), as a team's export says
+    for num, by in (
+        (211, "builder"),
+        (212, "builder"),
+        (213, "designer"),
+        (214, "builder"),
+        (215, "data-eng"),
+        (216, "builder"),
+        (217, "builder"),
+    ):
+        s.step(
+            0.9 * DAY,
+            lambda led, num=num, pr=f"pr#{num}", by=by: led.append(
+                {
+                    "id": f"demo-pr#{num}-a",
+                    "source": "github",
+                    "kind": "pr.author",
+                    "subject_ref": pr,
+                    "payload": {"by": by},
+                }
+            ),
+        )
+    # the lead's usual wait: three asks the person answered within hours
+    for i, (days_ago, hours) in enumerate(((12.5, 6), (10.6, 9), (9.4, 4))):
+        tid, eid = f"t-demo-h{i}", f"demo-ask-h{i}"
+        payload = {
+            "id": tid,
+            "origin": "cli",
+            "origin_ref": eid,
+            "author_role": "lead",
+            "ref": f"docs/review-{i}.md",
+            "title": f"Review note {i}",
+            "ask": {
+                "effect": f"approve review note {i}, so the plan can move on",
+                "options": ["Approve", "Revise"],
+            },
+        }
+        s.step(
+            days_ago * DAY,
+            lambda led, eid=eid, tid=tid, payload=payload: led.append(
+                {
+                    "id": eid,
+                    "source": "cli",
+                    "kind": "task.opened",
+                    "subject_ref": f"task:{tid}",
+                    "actor": "lead",
+                    "payload": payload,
+                }
+            ),
+        )
+        s.event(
+            days_ago * DAY - hours * HOUR,
+            "task.resolved",
+            f"task:{tid}",
+            {"id": tid, "resolution": "done", "evidence": "human:ui", "by": "human", "answer": "Approve"},
+        )
+    # one decision, asked twice: the builder asks about the plan the lead's open decision is on
+    s.step(
+        2 * DAY,
+        lambda led: led.append(
+            {
+                "id": "demo-ask-builder-plan",
+                "source": "cli",
+                "kind": "task.opened",
+                "subject_ref": "task:t-demo-bplan",
+                "actor": "builder",
+                "payload": {
+                    "id": "t-demo-bplan",
+                    "origin": "cli",
+                    "origin_ref": "demo-ask-builder-plan",
+                    "author_role": "builder",
+                    "ref": "docs/plan.md",
+                    "title": "The export decision",
+                    "ask": {
+                        "effect": "decide whether the export ships in this release, so the plan stops carrying both branches"
+                    },
+                },
+            }
+        ),
+    )
+    # a near duplicate under another subject: the builder asks the operator's palette question in its own words. The
+    # subject keys differ, so they stay two decisions until a person merges them (the smart layer proposes it)
+    s.step(
+        1 * DAY,
+        lambda led: led.append(
+            {
+                "id": "demo-ask-builder-colours",
+                "source": "cli",
+                "kind": "task.opened",
+                "subject_ref": "task:t-demo-dcolours",
+                "actor": "builder",
+                "payload": {
+                    "id": "t-demo-dcolours",
+                    "origin": "cli",
+                    "origin_ref": "demo-ask-builder-colours",
+                    "author_role": "builder",
+                    "ref": "docs/report-colours.md",
+                    "title": "Choose the colours for the report charts",
+                    "ask": {
+                        "weight": "skippable",
+                        "goal": "none",
+                        "effect": "pick the report charts' colours, so the pages stop showing the placeholder ones",
+                    },
+                },
+            }
+        ),
+    )
+
+
+RECORDED = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "brief"
+
+
+def asker(path: pathlib.Path) -> Callable[[object], dict]:
+    """⌘K for the demo: its one recorded question (tests/fixtures/brief/ask.json, a real answer over this demo's facts)
+    is answered from the recording, after the same check against today's facts; any other question is not answered,
+    and the page searches, as it does when the smart layer is off. The model is never called."""
+    import json
+
+    from onloop import brief
+
+    rec = json.loads((RECORDED / "ask.json").read_text(encoding="utf-8"))
+
+    def answer(q: object) -> dict:
+        if " ".join(str(q or "").lower().split()).rstrip("?") != rec["question"].lower().rstrip("?"):
+            raise brief.Off("the demo answers only its recorded question")
+        with Ledger(path, readonly=True) as led:
+            f = brief.ask_facts(led, ev.now_ts())
+        if brief.check_ask(rec["output"], f):
+            raise brief.Off("the recorded answer no longer fits today's facts")
+        return {**rec["output"], "facts_hash": brief.facts_hash(f), "cached": True}
+
+    return answer
+
+
+def texts(path: pathlib.Path, now: str | None = None) -> dict[str, str]:
+    """Log the smart layer's recorded texts for the demo (tests/fixtures/brief: real `claude -p` answers over this demo's
+    facts, generic data), as onloopd logs a text it generated, so the pages and the browser tests show them without a
+    call to the model. Each is checked against today's facts first, as a generated one is; one that no longer fits is
+    left out, and its page shows the facts."""
+    from onloop import brief
+
+    now = ev.norm_ts(now) if now else ev.now_ts()
+    out: dict[str, str] = {}
+    with Ledger(path) as led:
+        f = brief.facts(led, now)
+        for kind in brief.KINDS:
+            rec = RECORDED / f"{kind}.json"
+            if not rec.exists():
+                continue
+            r = json.loads(rec.read_text(encoding="utf-8"))
+            problems = brief.check(kind, r["output"], f)
+            if problems:
+                out[kind] = f"left out: {problems[0]}"
+                continue
+            led.append(
+                {
+                    "id": f"demo-text-{kind}",
+                    "source": brief.SOURCE,
+                    "kind": "text.generated",
+                    "subject_ref": f"text:{kind}",
+                    "actor": "onloopd",
+                    "payload": {
+                        "kind": kind,
+                        "facts_hash": brief.facts_hash(brief._slice(kind, f)),
+                        "prompt_version": r["prompt_version"],
+                        "model": r["model"],
+                        "output": r["output"],
+                        "recorded": True,
+                    },
+                }
+            )
+            out[kind] = "logged"
+    return out
+
+
 def build(path: pathlib.Path, now: str | None = None) -> str:
     """Write the demo ledger at `path`, which must not exist yet. Returns the `now` it was built against."""
     now = ev.norm_ts(now) if now else ev.now_ts()
@@ -930,6 +1243,7 @@ def build(path: pathlib.Path, now: str | None = None) -> str:
     _story(story)
     _carrier(story)
     _asks(story)
+    _history(story)
     repo = _demo_repo(path, now)
     story.repo = str(repo) if repo else None
     _telemetry(story)

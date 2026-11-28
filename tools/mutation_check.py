@@ -1578,8 +1578,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a task may close without evidence",
         "src/onloop/overlay/schema.py",
-        "  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),",
-        "  CHECK (resolution IS NULL OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),",
+        # the current table (schema 11): the line is followed by checks only it has
+        "  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),\n"
+        "  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),\n"
+        "  CHECK (answer IS NULL",
+        "  CHECK (resolution IS NULL OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),\n"
+        "  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),\n"
+        "  CHECK (answer IS NULL",
         ["tests/test_human_tasks.py::test_a_task_is_never_closed_without_a_resolution_and_evidence"],
     ),
     (
@@ -1592,8 +1597,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "two open tasks for one ask are allowed",
         "src/onloop/overlay/schema.py",
-        "CREATE UNIQUE INDEX one_open_task_per_ask ON",
-        "CREATE INDEX one_open_task_per_ask ON",
+        # the current table (schema 11): its index is followed by the subject's, which only it has
+        "CREATE UNIQUE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' "
+        "AND ref IS NOT NULL AND author_role IS NOT NULL;\nCREATE UNIQUE INDEX one_open_decision_per_subject",
+        "CREATE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' "
+        "AND ref IS NOT NULL AND author_role IS NOT NULL;\nCREATE UNIQUE INDEX one_open_decision_per_subject",
         ["tests/test_human_tasks.py::test_one_open_task_per_ask_is_the_database_s"],
     ),
     (
@@ -2003,11 +2011,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
         ],
     ),
     (
-        "an old #/flow link keeps its address while the map shows, so a copied link names a retired view",
+        "an old link (#/flow, #/map/..., #/audit?...) keeps its address while its view shows, so a copied link names an old place",
         "web/src/lib/retired.ts",
-        "  return to ? `#/${to}${m![2]}` : null;",
+        "  return `#/${to}${rest}`;",
         "  return null;",
-        ["tests/test_web_units.py::test_an_old_link_to_a_retired_view_is_rewritten_to_where_its_parts_moved"],
+        ["tests/test_web_units.py::test_an_old_link_is_rewritten_to_where_its_view_lives_in_the_shell"],
     ),
     (
         "a resumed run's telemetry is keyed on session and sequence, so its records are dropped as an earlier run's",

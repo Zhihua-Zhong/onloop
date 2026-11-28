@@ -361,3 +361,107 @@ def ev_shift(ts, s):
     from onloop import events as ev
 
     return ev.shift_ts(ts, s)
+
+
+# -- Home (0.7.0): its numbers are the views' one click down ------------------------------------------------------------
+
+
+def _home(led, now):
+    from onloop import home
+
+    as_of = derive.data_as_of(led)
+    return home.build(led, now, min(now, as_of) if as_of else None), home.rule_alerts(led, now)
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_homes_waiting_count_is_the_one_count_and_its_two_parts_add_up(which, demo_path, replay_path):
+    """Home lists the asks that say what they change and counts the rest under Details · Rule alerts: the two add up
+    to the one "waiting on you" count that Now's list, the map and the task list show."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, rules = _home(led, now)
+        c = _counts(led, now)
+    d = h["decisions"]
+    assert {d["waiting_on_you"], *c.values()} == {c["task_list"]}, (d, c)
+    assert d["count"] + d["rule_asks"] == d["waiting_on_you"]
+    assert rules["asks_missing"]["count"] == d["rule_asks"]
+    assert len(d["items"]) == min(d["count"], 25)
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_homes_delivered_its_flags_and_the_maps_merged_stage_count_the_same_changes(
+    which, demo_path, replay_path
+):
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, _ = _home(led, now)
+        merged_stage = {lf["id"] for lf in derive._merged(led, now)}
+    d = h["numbers"]["delivered"]
+    assert d["value"] == len(d["items"]) == sum(d["by_day"])
+    assert {i["ref"] for i in d["items"]} == merged_stage
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_homes_lanes_are_the_timelines_and_its_wait_covers_the_persons_wait(which, demo_path, replay_path):
+    """The lanes count each role's turns as the Timeline does; the hours waited (each ask's own time, summed) are never
+    less than the union of those times that Now and Replay show as the share of the window."""
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, _ = _home(led, now)
+        start, end = h["from"], h["to"]
+        per_role = derive.turns_per_role(led, start, end)
+        union = derive.your_wait(led, start, end, end)["waited_s"] / 3600
+    assert {L["role"]: L["turn_count"] for L in h["lanes"]["lanes"] if L["turn_count"]} == per_role
+    assert h["numbers"]["waited_h"]["value"] >= union - 1e-6
+    assert abs(sum(h["numbers"]["waited_h"]["by_day"]) - h["numbers"]["waited_h"]["value"]) < 0.01
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_decisions_count_is_homes_and_both_add_up_to_the_one_count(which, demo_path, replay_path):
+    """0.7.0 step 3: the Decisions page, Home's list and the sidebar badge (which reads the Decisions count) are one
+    number; with the asks counted under Rule alerts they make the one "waiting on you" count."""
+    from onloop import decisions
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, rules = _home(led, now)
+        v = decisions.view(led, now)
+        c = _counts(led, now)
+    assert v["count"] == h["decisions"]["count"] == len(v["open"])
+    assert [d["id"] for d in v["open"]][: len(h["decisions"]["items"])] == [
+        d["id"] for d in h["decisions"]["items"]
+    ]
+    assert v["count"] + v["rule_asks"] == v["waiting_on_you"] == c["task_list"]
+    assert v["rule_asks"] == rules["asks_missing"]["count"]
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_agents_the_timeline_and_home_count_the_same_tokens_and_turns(which, demo_path, replay_path):
+    """0.7.0 step 4: the Agents cards' tokens, the Timeline's figures and Home's Cost per delivery (its numerator) are one
+    sum over the week; and each role's turns are the same on Agents, the Timeline, Home's lanes and the one derivation."""
+    from onloop import agents, timeline_page
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, _ = _home(led, now)
+        end = h["to"]
+        a = agents.cards(led, now, end if end != now else None)
+        timeline_page._CACHE.clear()
+        t = timeline_page.build(led, now, 7, end if end != now else None)
+        per_role = derive.turns_per_role(led, h["from"], end)
+    tokens = {
+        "agents": a["tokens"],
+        "agent_cards": sum(c["tokens"] for c in a["agents"]),
+        "timeline": sum(f["tokens"] for f in t["figures"]),
+        "home": h["numbers"]["cost_per_delivery"]["tokens"],
+    }
+    assert len(set(tokens.values())) == 1, tokens
+    turns_agents = {c["role"]: c["turns"] for c in a["agents"] if c["turns"]}
+    turns_timeline = {f["role"]: f["turns"] for f in t["figures"] if f["turns"]}
+    turns_home = {L["role"]: L["turn_count"] for L in h["lanes"]["lanes"] if L["turn_count"]}
+    assert turns_agents == turns_timeline == turns_home == per_role, (
+        turns_agents,
+        turns_timeline,
+        turns_home,
+        per_role,
+    )

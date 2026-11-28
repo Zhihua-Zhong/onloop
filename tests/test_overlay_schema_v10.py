@@ -32,7 +32,7 @@ def test_a_version_9_ledger_migrates_to_version_10_and_keeps_every_event(tmp_pat
             before = [tuple(r) for r in led.conn.execute("SELECT * FROM events ORDER BY seq")]
             uid = led.instance()
     with Ledger(path, clock=lambda: T0) as led:
-        assert led.version() == len(schema.MIGRATIONS) == 10
+        assert led.version() == len(schema.MIGRATIONS) >= 10
         assert [tuple(r) for r in led.conn.execute("SELECT * FROM events ORDER BY seq")] == before
         assert led.instance() == uid
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
@@ -72,3 +72,12 @@ def test_each_new_kind_is_the_ocel_event_type_decision_0019_names():
         for k, o in zip(re.findall(r"`([a-z.]+)`", kinds), re.findall(r"`([a-z ]+)`", ocel), strict=True):
             rows[k] = o
     assert rows == schema.KINDS_10, (rows, schema.KINDS_10)
+
+
+def test_the_kinds_schema_11_brings_are_the_ocel_event_types_decision_0020_names():
+    adr = (ROOT / "docs" / "decisions" / "0020-one-decision-one-ask.md").read_text(encoding="utf-8")
+    rows = {}
+    for kinds, ocel in re.findall(r"^\| ((?:`[a-z._]+`(?:, )?)+) \| ((?:`[a-z ]+`(?:, )?)+) \|", adr, re.M):
+        for k, o in zip(re.findall(r"`([a-z._]+)`", kinds), re.findall(r"`([a-z ]+)`", ocel), strict=True):
+            rows[k] = o
+    assert rows == schema.KINDS_11, (rows, schema.KINDS_11)

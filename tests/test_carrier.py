@@ -604,7 +604,7 @@ def test_onloop_writes_the_role_hooks_file_it_resumes_with(tmp_path):
     argv = c.command(c.cfg.role("builder"))
     settings = pathlib.Path(argv[argv.index("--settings") + 1])
     hooks = json.loads(settings.read_text(encoding="utf-8"))["hooks"]
-    assert set(hooks) == {"Stop", "SessionStart"}
+    assert set(hooks) == {"Stop", "SessionStart", "UserPromptSubmit"}  # 0.7.0: the decisions reach the role
     assert "daemon hook --event stop --role builder" in hooks["Stop"][0]["hooks"][0]["command"]
     for flag in ("--resume", "--restricted", "--replay-user-messages", "dontAsk", "--strict-mcp-config"):
         assert flag in argv

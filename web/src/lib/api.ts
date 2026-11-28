@@ -286,7 +286,10 @@ export const tasksApi = {
 };
 
 // The page's task writes (decision 0013): evidence from a local user, never an approval. Same rules as a message.
-export async function uiPost(path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/visits", body: Record<string, unknown>): Promise<unknown> {
+export async function uiPost(
+  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/tasks/merge" | "/ui/tasks/unmerge" | "/ui/tasks/keep_apart" | "/ui/ask" | "/ui/visits",
+  body: Record<string, unknown>,
+): Promise<unknown> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const r = await fetch(path, {
       method: "POST",
@@ -310,3 +313,138 @@ export async function uiPost(path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui
   }
   throw new ApiError(403, "Not taken: reload the page");
 }
+
+// -- 0.7.0: Home and Details · Rule alerts (src/onloop/home.py) -------------------------------------------------------
+
+export interface HomeDecision {
+  id: string;
+  title: string;
+  asked_by: string | null;
+  askers: string[];
+  asks: number;
+  ask_log: { at: string; by: string | null; new_fact: boolean }[];
+  effect_text: string | null;
+  opened_at: string;
+  options: string[];
+  resolution: string | null;
+  answer: string | null;
+  answer_text: string | null;
+  resolved_at: string | null;
+  delivered_at: string | null;
+  can_withdraw: boolean;
+  can_unmerge?: boolean; // merged into another decision, still open: the merge can be undone
+  merged_into?: string | null;
+  age_s: number;
+  weight: string | null;
+  band: string;
+  holds: string | null;
+  default: string | null;
+  cost_text: string | null;
+  days_left: number | null;
+  ref: string | null;
+  goal: string | null;
+  origin: string;
+  action: string;
+}
+
+export interface HomeUnusual { id: string; kind: "quiet" | "tokens" | "wait"; role: string; value: number; norm: number; title: string; text: string; at: string }
+
+export interface HomeLane { role: string; segments: [string, string, string][]; turns: string[]; turn_count: number }
+
+export interface HomeModel {
+  now: string;
+  from: string;
+  to: string;
+  frozen: boolean;
+  young: boolean;
+  brief: { facts: string[]; generated: null | { text: string } };
+  numbers: {
+    delivered: { value: number; last_week: number; delta: number | null; by_day: number[]; recorded: boolean; items: { ref: string; title: string; at: string }[] };
+    waited_h: { value: number; last_week: number; delta: number | null; by_day: number[] };
+    cost_per_delivery: { value: number | null; tokens: number; last_week: number | null; delta_pct: number | null; by_day: number[] };
+  };
+  decisions: { waiting_on_you: number; oldest_s: number | null; count: number; items: HomeDecision[]; rule_asks: number };
+  unusual: HomeUnusual[];
+  lanes: { from: string; to: string; lanes: HomeLane[] };
+}
+
+export interface RulesModel {
+  now: string;
+  asks_missing: { count: number; by_role: Record<string, number>; missing: Record<string, number>; ids: string[] };
+  alerts: { detector: string; words: string; count: number; by_role: Record<string, number> }[];
+  since_visit: { since: string | null; added: number; resolved: number; resolved_without_you: number; returned: number; gaps: number };
+  constraint: { on: string | null; waiters: number } | null;
+  expiring: number;
+  health: { failing: number; late: number; ok: number; total: number; dead_man: { configured: boolean; schedule?: string; state?: string } };
+}
+
+export interface DecisionsModel {
+  now: string;
+  open: HomeDecision[];
+  count: number;
+  rule_asks: number;
+  waiting_on_you: number;
+  done: HomeDecision[];
+  asks_per_decision: number | null;
+}
+
+export const homeApi = {
+  home: () => get<HomeModel>("/api/home"),
+  rules: () => get<RulesModel>("/api/rules"),
+  decisions: () => get<DecisionsModel>("/api/decisions"),
+};
+
+// -- 0.7.0: Agents and the Timeline (src/onloop/agents.py, src/onloop/timeline_page.py) ------------------------------
+
+export type AgentState = "working" | "waiting" | "idle" | "paused" | "stopped";
+
+export interface AgentCard {
+  role: string;
+  description: string | null;
+  state: AgentState;
+  words: string;
+  command?: string;
+  since?: string;
+  on_now: string | null;
+  model: string | null;
+  turns: number;
+  turns_before: number;
+  tokens: number;
+  tokens_before: number;
+  delivered: number;
+  open_asks: number;
+  turns_by_day: number[];
+}
+
+export interface AgentsModel { now: string; from: string; to: string; frozen: boolean; agents: AgentCard[]; tokens: number; turns: number }
+
+export interface AgentDetailModel {
+  now: string;
+  from: string;
+  to: string;
+  card: AgentCard;
+  by_day: { from: string; turns: number; tokens: number }[];
+  delivered: { ref: string; title: string; at: string }[];
+  decisions: { open: HomeDecision[]; answered: HomeDecision[] };
+  lane: HomeLane | null;
+  flags: { ref: string; title: string; at: string }[];
+}
+
+export interface TimelineModel {
+  now: string;
+  from: string;
+  to: string;
+  days: number;
+  frozen: boolean;
+  lanes: HomeLane[];
+  flags: { ref: string; title: string; at: string }[];
+  callouts: { n: number; id: string; role: string; at: string; title: string; text: string }[];
+  figures: { role: string; working_s: number; waiting_s: number; turns: number; tokens: number }[];
+  your_wait: { count: number; oldest_s: number | null; share: number; waited_s: number };
+}
+
+export const agentsApi = {
+  all: () => get<AgentsModel>("/api/agents"),
+  one: (role: string) => get<AgentDetailModel>(`/api/agents/${encodeURIComponent(role)}`),
+  timeline: (days: number) => get<TimelineModel>(`/api/timeline?days=${days}`),
+};

@@ -50,8 +50,17 @@ LAYERS = {
         "contract",
         "derive",
         "timeline",
+        "home",
+        "decisions",
+        "agents",
+        "timeline_page",
     },
-    3: {"supervisor", "daemon", "carrier"},
+    3: {
+        "supervisor",
+        "daemon",
+        "carrier",
+        "brief",
+    },  # brief: the smart layer spawns claude as the carrier does
     4: {"cli", "__main__"},
 }
 LAYER_OF = {name: n for n, names in LAYERS.items() for name in names}

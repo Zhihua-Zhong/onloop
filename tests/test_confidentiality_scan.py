@@ -302,3 +302,94 @@ def test_cli_a_lockfile_integrity_value_does_not_fail_but_a_term_beside_it_does(
     lock.write_text('{\n  "integrity": "' + SRI + '",\n  "name": "' + CHANCE + '"\n}\n', encoding="utf-8")
     assert scan.main(["--root", str(repo), "--denylist", str(deny)]) == 1
     assert "package-lock.json:3" in capsys.readouterr().out
+
+
+# --- one exact public package name in web/package-lock.json --------------------------------------------------------------------------
+# A denylist term can also sit by chance inside a public package's name. Only a name listed in tools/scan_allow_packages.txt passes,
+# only in web/package-lock.json, only on its three line forms, and only after it is masked and the rest of the line is scanned.
+# The placeholder name stands in for the real one; the real pattern is never read here.
+PKG = f"@scope/pkg-{CHANCE.lower()}-inside"
+PKG_BASE = PKG.split("/")[1]
+PKG_FORMS = [
+    f'    "node_modules/{PKG}": {{',
+    f'        "{PKG}": "1.3.0",',
+    f'        "{PKG}": "~1.3.0"',
+    f'      "resolved": "https://registry.npmjs.org/{PKG}/-/{PKG_BASE}-1.3.0.tgz",',
+]
+WORD = [scan.Pattern("denylist pattern #1", scan.re.compile(CHANCE, scan.re.IGNORECASE), show_excerpt=False)]
+
+
+def pkg_hits(rel: str, line: str, names: list[str] | None = None) -> list:
+    return scan.scan_text(line, WORD, mask=scan.lockfile_package_mask(rel, [PKG] if names is None else names))
+
+
+@pytest.mark.parametrize("line", PKG_FORMS)
+def test_an_allowed_name_passes_on_its_three_line_forms(line: str) -> None:
+    assert pkg_hits("web/package-lock.json", line) == []
+
+
+@pytest.mark.parametrize(
+    "rel",
+    ["package-lock.json", "web/package.json", "web/src/a.ts", "docs/notes.md", "web/package-lock.json.bak"],
+)
+def test_the_same_name_in_any_other_file_is_caught(rel: str) -> None:
+    assert all(pkg_hits(rel, line) for line in PKG_FORMS)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f'  "description": "{PKG}",',
+        f'  "name": "{PKG}",',
+        f'    "node_modules/{PKG}/node_modules/x": {{',
+        f'        "{PKG}": "file:../x",',
+        f'        "{PKG}": "latest",',
+        f'      "resolved": "https://example.org/{PKG}/-/{PKG_BASE}-1.3.0.tgz",',
+        f'      "resolved": "https://registry.npmjs.org/{PKG}/-/other-{CHANCE}-1.3.0.tgz",',
+        f'      "resolved": "https://registry.npmjs.org/{PKG}/-/{PKG_BASE}-1.3.0.tgz?x=1",',
+    ],
+)
+def test_the_name_in_any_other_line_form_is_caught(line: str) -> None:
+    assert pkg_hits("web/package-lock.json", line)
+
+
+@pytest.mark.parametrize(
+    "other", [f"@scope/{CHANCE}-elsewhere", f"{PKG}-too", f"@other/pkg-{CHANCE.lower()}-inside"]
+)
+def test_another_name_with_the_same_term_is_caught(other: str) -> None:
+    assert pkg_hits("web/package-lock.json", f'    "node_modules/{other}": {{')
+    assert pkg_hits("web/package-lock.json", f'        "{other}": "1.3.0",')
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f'        "{PKG}": "1.3.0", "{CHANCE}": "1.0.0"',
+        f'        "{PKG}": "1.3.0-{CHANCE}",',
+        f'      "resolved": "https://registry.npmjs.org/{PKG}/-/{PKG_BASE}-1.3.0-{CHANCE}.tgz",',
+    ],
+)
+def test_a_second_hit_on_an_allowed_line_is_caught(line: str) -> None:
+    assert pkg_hits("web/package-lock.json", line)
+
+
+def test_an_empty_list_changes_nothing() -> None:
+    assert scan.lockfile_package_mask("web/package-lock.json", []) is None
+    assert all(pkg_hits("web/package-lock.json", line, names=[]) for line in PKG_FORMS)
+
+
+def test_a_line_that_is_not_an_npm_name_is_refused(tmp_path: Path) -> None:
+    bad = tmp_path / "allow.txt"
+    bad.write_text("# reviewed\nnot a name\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="line 2"):
+        scan.load_allowed_packages(bad)
+
+
+# The reviewed list. Adding a name to tools/scan_allow_packages.txt needs the project lead's yes and this list updated with it.
+REVIEWED = [
+    "@radix-ui/react-use-controllable-state",  # scan:allow  the project lead, 2026-11-28 (0.7.0, Radix UI)
+]
+
+
+def test_the_allowlist_is_exactly_the_reviewed_list() -> None:
+    assert scan.load_allowed_packages() == REVIEWED

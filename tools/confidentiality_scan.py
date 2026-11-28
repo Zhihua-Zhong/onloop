@@ -50,6 +50,78 @@ def lockfile_integrity_line(rel_path: str) -> Callable[[str], bool] | None:
     return lambda line: _SRI_LINE.match(line) is not None
 
 
+# A denylist pattern can also match by chance inside a public package's name, which a JSON lockfile cannot mark either.
+# The exception is narrow: only the exact names listed in tools/scan_allow_packages.txt (each a reviewed edit), only in
+# web/package-lock.json, and only on three line forms: the "node_modules/<name>" key, a "<name>": "<version>"
+# dependency line, and the "resolved" URL https://registry.npmjs.org/<name>/-/<basename>-<version>.tgz. On such a line
+# the name (and, in the URL, its tarball's basename) is masked and the rest of the line is scanned as usual, so a hit
+# anywhere else on it still counts. Any other line, file or name is scanned in full; an empty list changes nothing.
+ALLOW_PACKAGES = Path(__file__).resolve().with_name("scan_allow_packages.txt")
+LOCKFILE = "web/package-lock.json"
+_NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
+_VERSION = r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?"
+_MASK = "_"
+
+
+def load_allowed_packages(path: Path = ALLOW_PACKAGES) -> list[str]:
+    """The reviewed names, one per line; text after "#" is a comment. A name that is not an npm name is an error."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    names: list[str] = []
+    for number, line in enumerate(raw.splitlines(), start=1):
+        name = line.split("#", 1)[0].strip()
+        if not name:
+            continue
+        if not _NPM_NAME.match(name):
+            raise ValueError(f"{path.name}: line {number} is not an npm package name")
+        names.append(name)
+    return names
+
+
+def _package_forms(name: str) -> list[re.Pattern[str]]:
+    n = re.escape(name)
+    base = re.escape(name.rsplit("/", 1)[-1])
+    return [
+        re.compile(r'^(\s*"node_modules/)(?P<n>' + n + r')(":\s*\{\s*)$'),
+        re.compile(r'^(\s*")(?P<n>' + n + r')(":\s*"[\^~]?' + _VERSION + r'",?\s*)$'),
+        re.compile(
+            r'^(\s*"resolved":\s*"https://registry\.npmjs\.org/)(?P<n>'
+            + n
+            + r")(/-/)(?P<b>"
+            + base
+            + r")(-"
+            + _VERSION
+            + r'\.tgz",?\s*)$'
+        ),
+    ]
+
+
+def lockfile_package_mask(rel_path: str, names: Iterable[str]) -> Callable[[str], str | None] | None:
+    """For web/package-lock.json and a non-empty list: a function that returns the line with the allowed name masked
+    when the line is one of the three forms, else None. For any other file, or no names: None."""
+    names = list(names)
+    if rel_path != LOCKFILE or not names:
+        return None
+    forms = [f for name in names for f in _package_forms(name)]
+
+    def mask(line: str) -> str | None:
+        for form in forms:
+            m = form.match(line)
+            if m is None:
+                continue
+            out = line
+            for group in ("b", "n"):  # the later span first, so the earlier one stays where it is
+                if group in form.groupindex:
+                    a, z = m.span(group)
+                    out = out[:a] + _MASK + out[z:]
+            return out
+        return None
+
+    return mask
+
+
 @dataclass(frozen=True)
 class Pattern:
     kind: str
@@ -123,13 +195,23 @@ def load_denylist(path: Path, index: int = 1) -> list[Pattern]:
     return patterns
 
 
-def scan_text(text: str, patterns: Iterable[Pattern], skip: Callable[[str], bool] | None = None) -> list[Hit]:
-    """Return one hit per (line, pattern). Lines carrying the opt-out marker are flagged allowed."""
+def scan_text(
+    text: str,
+    patterns: Iterable[Pattern],
+    skip: Callable[[str], bool] | None = None,
+    mask: Callable[[str], str | None] | None = None,
+) -> list[Hit]:
+    """Return one hit per (line, pattern). Lines carrying the opt-out marker are flagged allowed. `mask`, when given,
+    may return the line with an allowed package name masked; the masked line is scanned instead."""
     patterns = list(patterns)
     hits: list[Hit] = []
     for number, line in enumerate(text.splitlines(), start=1):
         if skip is not None and skip(line):
             continue
+        if mask is not None:
+            masked = mask(line)
+            if masked is not None:
+                line = masked
         allowed = ALLOW_MARKER in line
         for pattern in patterns:
             if not pattern.regex.search(line):
@@ -177,14 +259,20 @@ def list_files(root: Path) -> list[Path]:
 
 
 def scan_root(
-    root: Path, patterns: list[Pattern], skipped: list[int] | None = None
+    root: Path,
+    patterns: list[Pattern],
+    skipped: list[int] | None = None,
+    packages: Iterable[str] = (),
+    masked: list[int] | None = None,
 ) -> tuple[list[tuple[str, Hit]], int, int]:
     """Return (hits, allowed_count, files_scanned). Allowed hits are not in the hit list.
 
-    If `skipped` is a one-element list, the number of lockfile integrity lines that were not scanned is added to it."""
+    If `skipped` is a one-element list, the number of lockfile integrity lines that were not scanned is added to it;
+    if `masked` is, the number of lockfile lines on which an allowed package name was masked."""
     found: list[tuple[str, Hit]] = []
     allowed = 0
     scanned = 0
+    packages = list(packages)
     for path in list_files(root):
         text = read_scannable(path)
         if text is None:
@@ -194,7 +282,10 @@ def scan_root(
         skip = lockfile_integrity_line(rel)
         if skip is not None and skipped is not None:
             skipped[0] += sum(1 for line in text.splitlines() if skip(line))
-        for hit in scan_text(text, patterns, skip):
+        mask = lockfile_package_mask(rel, packages)
+        if mask is not None and masked is not None:
+            masked[0] += sum(1 for line in text.splitlines() if mask(line) is not None)
+        for hit in scan_text(text, patterns, skip, mask):
             if hit.allowed:
                 allowed += 1
             else:
@@ -257,6 +348,48 @@ def self_test() -> int:
     check(
         "other-file-not-skipped",
         lockfile_integrity_line("package.json") is None and bool(scan_text(sri_line, chance)),
+    )
+
+    # The package-name exception, with placeholder words: the name is allowed only on its three line forms in
+    # web/package-lock.json; another file, another line form, another name with the same substring, or a second hit
+    # on an allowed line is still caught; an empty list changes nothing.
+    word = [Pattern("denylist pattern #1", re.compile("qx7z", re.IGNORECASE), show_excerpt=False)]
+    name = "@scope/pkg-with-qx7z-inside"
+    forms = [
+        '    "node_modules/@scope/pkg-with-qx7z-inside": {',
+        '        "@scope/pkg-with-qx7z-inside": "1.3.0",',
+        '        "@scope/pkg-with-qx7z-inside": "^1.3.0"',
+        '      "resolved": "https://registry.npmjs.org/@scope/pkg-with-qx7z-inside/-/pkg-with-qx7z-inside-1.3.0.tgz",',
+    ]
+    mask = lockfile_package_mask(LOCKFILE, [name])
+    check("package-forms-allowed", all(not scan_text(f, word, mask=mask) for f in forms))
+    check(
+        "package-other-file-caught",
+        lockfile_package_mask("package-lock.json", [name]) is None
+        and lockfile_package_mask("web/package.json", [name]) is None
+        and all(scan_text(f, word) for f in forms),
+    )
+    other_forms = [
+        '  "description": "@scope/pkg-with-qx7z-inside",',
+        '    "node_modules/@scope/pkg-with-qx7z-inside/node_modules/x": {',
+        '      "resolved": "https://example.org/@scope/pkg-with-qx7z-inside/-/pkg-with-qx7z-inside-1.3.0.tgz",',
+        '      "resolved": "https://registry.npmjs.org/@scope/pkg-with-qx7z-inside/-/other-qx7z-1.3.0.tgz",',
+        '        "@scope/pkg-with-qx7z-inside": "file:../qx7z",',
+    ]
+    check("package-other-line-form-caught", all(scan_text(f, word, mask=mask) for f in other_forms))
+    check(
+        "package-other-name-caught",
+        bool(scan_text('    "node_modules/@scope/qx7z-elsewhere": {', word, mask=mask))
+        and bool(scan_text('        "@scope/pkg-with-qx7z-inside-too": "1.3.0",', word, mask=mask)),
+    )
+    check(
+        "package-extra-hit-caught",
+        bool(scan_text('        "@scope/pkg-with-qx7z-inside": "1.3.0", "qx7z": "1.0.0"', word, mask=mask))
+        and bool(scan_text('        "@scope/pkg-with-qx7z-inside": "1.3.0-qx7z",', word, mask=mask)),
+    )
+    check(
+        "package-empty-list-unchanged",
+        lockfile_package_mask(LOCKFILE, []) is None and all(scan_text(f, word, mask=None) for f in forms),
     )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -324,15 +457,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    skipped = [0]
-    found, allowed, scanned = scan_root(root, patterns, skipped)
+    try:
+        packages = load_allowed_packages()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    skipped, masked = [0], [0]
+    found, allowed, scanned = scan_root(root, patterns, skipped, packages, masked)
     for rel, hit in found:
         suffix = f" | {hit.excerpt}" if hit.excerpt else ""
         print(f"{rel}:{hit.line}: {hit.kind}{suffix}")
     if not args.quiet:
         print(
             f"scanned {scanned} files: {len(found)} hits, {allowed} lines opted out with {ALLOW_MARKER}, "
-            f"{skipped[0]} lockfile integrity lines not scanned"
+            f"{skipped[0]} lockfile integrity lines not scanned, "
+            f"{masked[0]} lockfile lines with an allowed package name masked ({ALLOW_PACKAGES.name})"
         )
     return 1 if found else 0
 

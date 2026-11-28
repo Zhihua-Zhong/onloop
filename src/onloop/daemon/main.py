@@ -33,6 +33,7 @@ from .. import __version__, fsutil, gitutil, goals, localday, procs, sqlitedb
 from .. import events as ev
 from ..adapters import EventProbe, set_registry
 from ..adapters import load as load_adapters
+from ..carrier.config import CarrierConfig
 from ..detect import core as detect
 from ..detect import event_fired, no_outcome, pr_expiry, reconcile, same_goal, schedules, wakers
 from ..ingest import github as github_ingest
@@ -253,6 +254,76 @@ def _read_beat(state: pathlib.Path) -> dict[str, Any] | None:
         return None
 
 
+class SmartLayer:
+    """The smart layer on onloopd's tick (brief.py): at most one pass at a time, in a thread of its own, since a call to
+    the model takes tens of seconds and the tick must not wait. The pass reads and writes the ledger under onloopd's one
+    writer lock, never while it waits on the model. Off with `smart: off` in onloopd.yaml or ONLOOP_SMART=off; without
+    a `claude` CLI every call fails over to the facts, logged and debounced (brief.DEBOUNCE_S)."""
+
+    def __init__(self, ledger: Any, lock: Any, claude: tuple[str, ...], on: bool, say: Callable[[str], None]):
+        self.ledger, self.lock, self.claude, self.on, self.say = ledger, lock, claude, on, say
+        self._thread: threading.Thread | None = None
+
+    def tick(self, now: str) -> None:
+        from .. import brief
+
+        if not self.on or not brief.enabled() or (self._thread is not None and self._thread.is_alive()):
+            return
+
+        def one_pass() -> None:
+            try:
+                done = brief.refresh(self.ledger, now, claude=self.claude, guard=lambda: self.lock)
+                made = {k: v for k, v in done.items() if v in ("generated", "rejected", "failed")}
+                if made:
+                    self.say(f"onloopd: smart layer: {made}")
+            except Exception as e:  # noqa: BLE001 - the smart layer failing leaves the facts on every page
+                self.say(f"onloopd: smart layer: {type(e).__name__}: {e}"[:300])
+
+        self._thread = threading.Thread(target=one_pass, name="onloopd-smart", daemon=True)
+        self._thread.start()
+
+
+class Asker:
+    """⌘K's questions (POST /ui/ask) to the smart layer: the ledger read and written under onloopd's writer lock, the
+    model called outside it. Off with `smart: off` or ONLOOP_SMART=off."""
+
+    def __init__(self, ledger: Any, lock: Any, claude: tuple[str, ...], on: bool):
+        self.ledger, self.lock, self.claude, self.on = ledger, lock, claude, on
+
+    def __call__(self, q: Any) -> dict[str, Any]:
+        from .. import brief
+
+        if not self.on:
+            raise brief.Off("onloop's smart layer is off (smart: off)")
+        return brief.ask(self.ledger, ev.now_ts(), str(q or ""), claude=self.claude, guard=lambda: self.lock)
+
+
+class RoleDescriptions:
+    """Each role's `description` from onloop.yaml, for Agents (0.7.0): the policy file the GitHub ingest reads, else the
+    onloop.yaml beside the ledger's `.onloop` folder. Read again only when the file changes; a file that does not load
+    gives none (onloopd's own checks report it), and nothing is ever made up."""
+
+    def __init__(self, cfg: Any, state: pathlib.Path):
+        github = getattr(cfg.watch, "github", None)
+        given = getattr(github, "policy", None) if github else None
+        self.path = pathlib.Path(given) if given else state.parent / "onloop.yaml"
+        self._seen: tuple[float, dict[str, str]] | None = None
+
+    def __call__(self) -> dict[str, str]:
+        from .. import policy as pol
+
+        try:
+            mtime = self.path.stat().st_mtime
+        except OSError:
+            return {}
+        if self._seen is None or self._seen[0] != mtime:
+            try:
+                self._seen = (mtime, pol.descriptions(pol.load(self.path)))
+            except Exception:  # noqa: BLE001 - a policy that does not load gives no descriptions here
+                self._seen = (mtime, {})
+        return dict(self._seen[1])
+
+
 def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
     """Run onloopd in the foreground until a stop request, a console interrupt or `max_ticks`. Returns an exit code."""
     host = srv.check_host(cfg.host)
@@ -335,6 +406,13 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
             heartbeat=state / HEARTBEAT_FILE,
             carrier=cfg.watch.carrier,
             tick_s=cfg.tick_s,
+            descriptions=RoleDescriptions(cfg, state),
+            asker=Asker(
+                ledger,
+                write_lock,
+                cfg.watch.carrier.claude if cfg.watch.carrier is not None else CarrierConfig().claude,
+                cfg.watch.smart,
+            ),
         )
     except srv.PortInUse as e:
         say(f"onloopd: does not start: {e}")
@@ -361,6 +439,16 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
         carrier_thread.start()
     fsutil.write_atomic(pid_path, f"{os.getpid()}\n", newline="\n")
     say(f"onloopd {__version__}: listening on http://{host}:{port}, ledger {cfg.ledger}, pid {os.getpid()}")
+    from .. import brief
+
+    brief.set_denylist(cfg.watch.smart_denylist)  # no prompt that matches it is sent (brief.denylist_hits)
+    smart = SmartLayer(
+        ledger,
+        write_lock,
+        cfg.watch.carrier.claude if cfg.watch.carrier is not None else CarrierConfig().claude,
+        cfg.watch.smart,
+        say,
+    )
     ticks = 0
     last_tick = ledger.now()
     try:
@@ -379,6 +467,7 @@ def run(cfg: DaemonConfig, *, say: Callable[[str], None] = print) -> int:
                     hook_receiver.ingest_spool(ledger, state)
                     res = tick(ledger, cfg, ingest_sources)
                     last_tick = ledger.now()
+                smart.tick(last_tick)  # outside the lock: it takes the lock for each of its own writes
                 for err in res.errors:
                     say(f"onloopd: ingest: {err}")
                 with write_lock:

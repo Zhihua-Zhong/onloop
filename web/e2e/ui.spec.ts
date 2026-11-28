@@ -24,58 +24,107 @@ test.afterEach(async ({ page }) => {
 
 const isPhone = (name: string) => name === "phone";
 
-test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }, info) => {
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
-  // with tasks waiting, the constraint is one line above the list (vision round 3)
-  await expect(page.getByTestId("next-text")).toHaveText(/^Merge the change only you may merge: it holds merge-check/);
-  await expect(page.getByTestId("next-link")).toHaveAttribute("href", /\/pull\/99$/);
-  const waiting = page.getByTestId("col-waiting");
-  const rows = waiting.getByTestId("task-rows").locator("li");
-  await expect(rows).toHaveCount(10); // the task list (decision 0013), one row each, in its one order
-  await expect(rows.first().getByTestId("row-effect")).toHaveText("approve the schema change, so the import can run on real data");
-  await expect(rows.first().getByTestId("row-cost")).toHaveText("costing now");
-  // every task on the first screen; on a phone the first screen holds five (the next test), and a person scrolls on
-  if (isPhone(info.project.name)) await rows.last().scrollIntoViewIfNeeded();
-  await expect(rows.last()).toBeInViewport();
-  await rows.first().locator("button").first().click(); // a row opens to its card, with the default and the actions
-  await expect(waiting).toContainText("If nobody answers: nothing merges");
-  await expect(waiting.getByTestId("mark-done")).toBeVisible();
-  const stalls = page.getByTestId("col-stalls");
-  // the demo's four stalls, and its one item expiring within a day, which 0.6.0 lists in the same column
-  await expect(stalls.locator('article[data-testid^="stall-"]')).toHaveCount(4);
-  await expect(stalls.getByTestId("expiring").locator("article")).toHaveCount(1);
-  await expect(stalls.locator("article")).toHaveCount(5);
-  await expect(stalls.getByTestId("would").first()).toContainText("would wake (observe only)");
-  await expect(stalls.getByTestId("ack").first()).toHaveText("not acknowledged");
-  const health = page.getByTestId("col-health");
-  await expect(health.getByTestId("health-nightly-verify")).toContainText("failing");
-  await expect(health.getByTestId("health-dependency-scan")).toContainText("overdue");
-  await expect(health.getByTestId("dead-man")).toContainText("dead-man switch OK");
-  await expect(health.getByTestId("health-ok")).toContainText("4 other schedules within their period");
+// 0.7.0's shell (plan, section 1, step 1): the sidebar on a wide screen, the same list in a drawer on a phone.
+const nav = (page: Page, key: string) => page.getByTestId("sidebar").getByTestId(`nav-${key}`);
+async function go(page: Page, key: string, phone: boolean) {
+  const details = ["map", "replay", "outcome", "conversation", "schedules", "audit", "rules"].includes(key);
+  if (phone) await page.getByTestId("menu").click();
+  const box = phone ? page.getByTestId("drawer") : page.getByTestId("sidebar");
+  if (details && (await box.getByTestId("details-toggle").getAttribute("aria-expanded")) === "false") await box.getByTestId("details-toggle").click();
+  await box.getByTestId(`nav-${key}`).click();
+  if (phone) await expect(page.getByTestId("drawer")).toHaveCount(0);
+}
+async function chooseTheme(page: Page, theme: "light" | "dark" | "system") {
+  await page.getByTestId("theme").click();
+  await page.getByTestId(`theme-${theme}`).click();
+}
+
+test("Home answers what needs me, how it went and what came out, and lists no rule alert", async ({ page }) => {
+  await page.goto("/#/");
+  // the demo serves the smart layer's recorded brief (tests/fixtures/brief), marked as written, with its facts' hash
+  await expect(page.getByTestId("brief-written")).toContainText("Seven decisions wait on you");
+  await expect(page.getByTestId("brief").getByTestId("written-by")).toContainText(/Written by onloop from this week's data · facts [0-9a-f]{7}/);
+  await expect(page.getByTestId("kpi-delivered").getByTestId("kpi-value")).toHaveText("7");
+  await expect(page.getByTestId("kpi-waited").getByTestId("kpi-value")).toHaveText(/^\d+ h$/);
+  await expect(page.getByTestId("decisions-count")).toHaveText("7");
+  const rows = page.getByTestId("decision");
+  await expect(rows).toHaveCount(5); // the first five in the one order, collapsed
+  await expect(rows.first().getByTestId("decision-title")).toHaveText("Approve the schema change for the import");
+  await page.getByTestId("decisions-all").click();
+  await expect(rows).toHaveCount(7);
+  // the asks that do not say what they change are counted, with where they are; none is listed
+  await expect(page.getByTestId("rule-asks")).toContainText("4 more asks do not say what they change");
+  const text = await page.getByTestId("view-home").innerText();
+  for (const word of ["An ask with no effect stated", "outcome line", "Constraint", "Since you", "Stalled", "merge-check holds"]) expect(text).not.toContain(word);
+  // the brief's one button has a short label that is never cut, and opens the first decision to its facts and the
+  // answers its ask offered (no options recorded: Done and Decline)
+  await expect(page.getByTestId("decide-first")).toHaveText(test.info().project.name === "phone" ? "Decide the first of 7" : "Decide: Approve the schema change for the import");
+  await expect(page.getByTestId("decision-facts")).toHaveCount(0);
+  await page.getByTestId("decide-first").click();
+  await expect(rows.first().getByTestId("decision-facts")).toContainText("If nobody answers");
+  await expect(rows.first().getByTestId("decision-facts")).toContainText("nothing merges");
+  await expect(rows.first().getByTestId("option")).toHaveText(["Approve", "Approve, import paused", "Wait for the review"]);
+  await expect(rows.first().getByTestId("suggested-answer")).toHaveText("Approve");
+  await expect(page.getByTestId("kpi-waited")).toContainText("summed");
+  // the evidence: one lane per role, a flag per change merged this week
+  await expect(page.getByTestId("lane-names")).toContainText("builder");
+  await expect(page.getByTestId("lanes").getByTestId("flag")).toHaveCount(7);
+  await expect(page.getByTestId("unusual")).toBeVisible();
 });
 
-test("Now's first screen holds the banner and the first card of each question", async ({ page }, info) => {
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeInViewport();
-  // the list comes first, after a one-line constraint and the one-line band; on a phone, at least five rows show
-  const rows = page.getByTestId("task-rows").locator("li");
-  await expect(rows.nth(4)).toBeInViewport();
-  if (!isPhone(info.project.name)) {
-    await expect(page.getByTestId("col-stalls").locator("article").first()).toBeInViewport();
-  }
+test("Home's first screen holds the brief, the three numbers and the first decision", async ({ page }, info) => {
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeInViewport();
+  await expect(page.getByTestId("numbers")).toBeInViewport();
+  if (!isPhone(info.project.name)) await expect(page.getByTestId("decision").first()).toBeInViewport();
 });
 
-test("Team shows one lane per role, who needs you first", async ({ page }) => {
-  await page.goto("/#/team");
-  const lanes = page.locator('[data-testid^="lane-"]');
-  await expect(lanes).toHaveCount(6);
-  await expect(lanes.first()).toHaveAttribute("data-testid", "lane-reviewer");
-  await expect(page.getByTestId("lane-reviewer")).toContainText("paused by you");
-  await expect(page.getByTestId("lane-reviewer").getByTestId("command")).toContainText("onloop role resume reviewer");
-  await expect(page.getByTestId("lane-builder")).toContainText("stalled");
-  await expect(page.getByTestId("lane-operator")).toContainText("working");
-  await expect(page.getByTestId("lane-data-eng")).toContainText("waiting on operator");
+test("Details · Rule alerts counts what Home does not list, and says where the rows are", async ({ page }) => {
+  await page.goto("/#/details/rules");
+  await expect(page.getByTestId("rule-asks-missing").getByTestId("count")).toHaveText("4");
+  await expect(page.getByTestId("rule-no_outcome").getByTestId("count")).toHaveText("3");
+  await expect(page.getByTestId("rule-no_outcome")).toContainText("turns that ended without a valid outcome line");
+  await expect(page.getByTestId("rule-expiring").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("rule-constraint")).toContainText("waits on merge-check");
+  await expect(page.getByTestId("since-visit")).toBeVisible();
+  // Now's health card moved here: the failing and overdue jobs, and the dead-man switch
+  await expect(page.getByTestId("health-failing").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("health-late").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("dead-man")).toContainText("is OK");
+  await expect(nav(page, "rules")).toHaveAttribute("aria-current", "page");
+});
+
+test("Agents shows each role's state in plain words, its week and its cost; a format-rule break is never stuck", async ({ page }) => {
+  await page.goto("/#/team"); // 0.6's Team is Agents
+  await expect(page).toHaveURL(/#\/agents$/);
+  const view = page.getByTestId("view-agents");
+  const card = (role: string) => view.getByTestId(`agent-${role}`);
+  await expect(view.locator('a[data-testid^="agent-"]')).toHaveCount(6);
+  await expect(card("reviewer").getByTestId("agent-state")).toHaveText("paused by you");
+  await expect(card("reviewer").getByTestId("command")).toContainText("onloop role resume reviewer");
+  await expect(card("builder").getByTestId("agent-state")).toHaveText("working");
+  await expect(card("builder").getByTestId("on-now")).toHaveText("on task t-cred");
+  await expect(card("operator").getByTestId("agent-state")).toHaveText("waits on you");
+  // the lead's, the builder's and the reviewer's turns broke a format rule: counted under Rule alerts, never "stopped"
+  await expect(view.locator('[data-testid="agent-state"][data-state="stopped"]')).toHaveCount(0);
+  await expect(card("lead").getByTestId("on-now")).toContainText("its last turn ended");
+  // the sidebar's "Agents now" lists the same roles
+  await expect(page.getByTestId("sidebar").getByTestId("agents-now").locator("a")).toHaveCount(6);
+  await card("operator").click();
+  await expect(page).toHaveURL(/#\/agents\/operator$/);
+  await expect(page.getByTestId("agent-decisions")).toContainText("approve the schema change");
+  await expect(page.getByTestId("agent-lane")).toBeVisible();
+});
+
+test("the Timeline shows who worked when, the merges and each role's figures, and links to Replay", async ({ page }) => {
+  await page.goto("/#/timeline");
+  await expect(page.getByTestId("timeline-lanes").getByTestId("lane-row")).toHaveCount(6);
+  await expect(page.getByTestId("timeline-lanes").getByTestId("flag")).toHaveCount(7);
+  await expect(page.getByTestId("figure-builder").getByTestId("figure-turns")).toHaveText("44"); // the 14-day demo's builder, in the Timeline's window
+  await expect(page.getByTestId("figures")).toContainText("11 asks wait on you");
+  await page.getByTestId("to-replay").click();
+  await expect(page).toHaveURL(/#\/details\/replay\?hours=168/);
+  await expect(page.getByTestId("replay")).toBeVisible();
 });
 
 test("Schedules lists every job, failing first, and opens a log tail", async ({ page }) => {
@@ -115,68 +164,156 @@ test("Audit filters the timeline by kind and by subject, and pages back", async 
 
 test("when the event stream drops, the page says so and keeps what it read", async ({ page }) => {
   await page.route("**/api/stream**", (r) => r.abort());
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeVisible();
   await expect(page.getByTestId("stale")).toBeVisible({ timeout: 12_000 });
   await expect(page.getByTestId("stale")).toContainText("Live updates stopped");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await expect(page.getByTestId("brief")).toBeVisible();
 });
 
 test("under a dark system theme the page is dark, and the toggle still wins", async ({ browser }) => {
   // A fresh context, so nothing is stored: the system's preference decides.
   const ctx = await browser.newContext({ colorScheme: "dark" });
   const page = await ctx.newPage();
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const bg = () => page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await bg()).toBe("rgb(17, 20, 28)"); // --bg in dark: hsl(224 24% 9%)
-  await page.getByTestId("theme").click();
+  expect(await bg()).toBe("rgb(17, 17, 19)"); // --bg in dark: hsl(240 6% 7%), F's background
+  await chooseTheme(page, "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light"); // the person's choice is kept
+  await chooseTheme(page, "system"); // "System" forgets the choice: the system's dark decides again
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
   await ctx.close();
   const fresh = await browser.newContext({ colorScheme: "light" });
   const p2 = await fresh.newPage();
-  await p2.goto("/#/now");
+  await p2.goto("/#/");
   await expect(p2.locator("html")).toHaveAttribute("data-theme", "light");
   await p2.emulateMedia({ colorScheme: "dark" }); // the system theme changes while the page is open
   await expect(p2.locator("html")).toHaveAttribute("data-theme", "dark");
   await fresh.close();
 });
 
-test("the map's zoom 0 opens into Replay", async ({ page }) => {
-  await page.goto("/#/map");
+test("the map's zoom 0 opens into the Timeline", async ({ page }) => {
+  await page.goto("/#/details/map");
   await page.getByTestId("map-to-replay").click();
-  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/replay\?hours=24/);
-  await expect(page.getByTestId("replay")).toBeVisible();
+  await expect(nav(page, "timeline")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#\/timeline\?days=1$/);
+  await expect(page.getByTestId("view-timeline")).toBeVisible();
 });
 
-test("an old Flow or Activity link opens where its parts moved", async ({ page }) => {
-  await page.goto("/#/flow");
-  await expect(page.getByTestId("nav-map")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/map$/); // the address names the view on screen
-  await page.goto("/#/activity");
-  await expect(page.getByTestId("nav-replay")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/replay/);
+test("an old link opens where its view lives now, and the address names it", async ({ page }) => {
+  for (const [old, key, now] of [
+    ["/#/flow", "map", /#\/details\/map$/],
+    ["/#/activity", "timeline", /#\/timeline(\?|$)/], // Replay adds its own speed to the address
+    ["/#/now", "decisions", /#\/decisions$/], // 0.6's Now and its task list are Decisions
+    ["/#/tasks", "decisions", /#\/decisions$/],
+    ["/#/team", "agents", /#\/agents$/],
+    ["/#/replay?hours=24", "timeline", /#\/timeline\?hours=24$/],
+    ["/#/replay?hours=24&t=5", "replay", /#\/details\/replay\?hours=24&(.*&)?t=5(&|$)/], // a moment: playback, under Details (Replay adds its own to= and speed=)
+    ["/#/map/changes", "map", /#\/details\/map\/changes$/],
+    ["/#/audit?kind=role.paused", "audit", /#\/details\/audit\?kind=role\.paused$/],
+  ] as const) {
+    await page.goto(old);
+    await expect(nav(page, key)).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL(now);
+  }
 });
 
-test("the theme toggles and the navigation reaches every view", async ({ page }) => {
-  await page.goto("/?theme=light#/now");
+test("leaving Replay is never undone by Replay writing its own address", async ({ page }) => {
+  // Replay keeps its cursor and speed in the address from timers; one write landing after a link was followed used to
+  // pull the page back to it (found by this spec, 0.7.0 step 2)
+  for (let i = 0; i < 6; i++) {
+    await page.goto("/#/details/replay?hours=24");
+    await expect(page.getByTestId("replay")).toBeVisible();
+    await page.goto("/#/details/audit");
+    await expect(nav(page, "audit")).toHaveAttribute("aria-current", "page");
+    await page.waitForTimeout(400);
+    await expect(page).toHaveURL(/#\/details\/audit$/);
+    await expect(nav(page, "audit")).toHaveAttribute("aria-current", "page");
+  }
+});
+
+test("the theme menu switches, and the navigation reaches every view, Details one click down", async ({ page }, info) => {
+  const phone = isPhone(info.project.name);
+  await page.goto("/?theme=light#/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByTestId("theme").click();
+  await chooseTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  // Now, Replay and the map first, then the rest (decision 0019); Flow and Activity are gone from the bar
-  const order = await page.locator('nav[aria-label="Views"] a').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
-  expect(order.slice(0, 3)).toEqual(["nav-now", "nav-replay", "nav-map"]);
-  expect(order).not.toContain("nav-flow");
-  expect(order).not.toContain("nav-activity");
-  const root: Record<string, string> = { replay: "replay", map: "map-level" };
-  for (const v of ["replay", "map", "team", "schedules", "audit", "now"]) {
-    await page.getByTestId(`nav-${v}`).click();
+  // F's order: Home, Decisions (with its count), Agents, Timeline; then Details, folded
+  const order = await page.getByTestId("sidebar").locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => `${e.tagName}:${e.getAttribute("data-testid")}`));
+  expect(order.slice(0, 4)).toEqual(["A:nav-home", "A:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
+  await expect(nav(page, "decisions").getByTestId("decisions-badge")).toHaveText("7");
+  if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
+  const root: Record<string, string> = { home: "brief", replay: "replay", map: "map-level" };
+  for (const v of ["decisions", "timeline", "map", "replay", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
+    await go(page, v, phone);
     await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
-    await expect(page.getByTestId(`nav-${v}`)).toHaveAttribute("aria-current", "page");
+    await expect(nav(page, v)).toHaveAttribute("aria-current", "page");
+  }
+  // Home is 0.7.0's own page; a page still shown by its 0.6 view says so until its 0.7.0 page lands
+  await expect(page.getByTestId("interim")).toHaveCount(0);
+  await go(page, "agents", phone);
+  await expect(page.getByTestId("interim")).toHaveCount(0); // every main page is 0.7.0's own now
+});
+
+test("every overlay's content is opaque the moment it opens, inside the window, and Escape closes it", async ({ page }, info) => {
+  const phone = isPhone(info.project.name);
+  await page.goto("/#/details/schedules");
+  await expect(page.getByTestId("schedule-nightly-verify")).toBeVisible();
+  // the product of every ancestor's opacity, read in the first animation frame the overlay is there (plan, section 7)
+  const opacity = (testid: string) =>
+    page
+      .waitForFunction(
+        (id) => {
+          const el = document.querySelector(`[data-testid="${id}"]`);
+          if (!el) return null;
+          let o = 1;
+          for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+          return o;
+        },
+        testid,
+        { polling: "raf" },
+      )
+      .then((h) => h.jsonValue());
+  const inside = (testid: string) =>
+    page.getByTestId(testid).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
+    });
+  if (phone) {
+    await page.getByTestId("menu").click();
+    expect(await opacity("drawer")).toBe(1);
+    await expect.poll(() => inside("drawer")).toBe(true);
+    await expect(page.getByTestId("drawer").getByTestId("nav-schedules")).toBeFocused(); // it opens where you are
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("drawer")).toHaveCount(0);
+  }
+  await page.getByTestId("theme").click();
+  expect(await opacity("theme-menu")).toBe(1);
+  await expect.poll(() => inside("theme-menu")).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("theme-menu")).toHaveCount(0);
+  await expect(page.getByTestId("theme")).toBeFocused();
+});
+
+test("Home's one primary button is never cut: the short title in full where it fits, else the count", async ({ page }) => {
+  for (const [w, h] of [[1440, 900], [1024, 800], [390, 844]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto("/#/");
+    const btn = page.getByTestId("decide-first");
+    await expect(btn).toBeVisible();
+    await expect(btn).toHaveText(/^(Decide: Approve the schema change for the import|Decide the first of 7)$/);
+    const clipped = await btn.evaluate((el) => {
+      const label = el.querySelector("[data-label]") as HTMLElement;
+      const box = el.getBoundingClientRect();
+      return el.scrollWidth > el.clientWidth || label.scrollWidth > label.clientWidth + 1 || box.right > window.innerWidth;
+    });
+    expect(clipped, `${w} px`).toBe(false);
   }
 });

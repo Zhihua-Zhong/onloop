@@ -196,7 +196,11 @@ class Carrier:
                     ]
                 }
             ]
-            for name, ev_ in (("Stop", "stop"), ("SessionStart", "session-start"))
+            for name, ev_ in (
+                ("Stop", "stop"),
+                ("SessionStart", "session-start"),
+                ("UserPromptSubmit", "prompt-submit"),
+            )
         }
         text = json.dumps({"hooks": hooks}, indent=2, sort_keys=True) + "\n"
         if not path.exists() or path.read_text(encoding="utf-8") != text:

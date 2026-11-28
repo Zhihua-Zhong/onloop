@@ -62,6 +62,9 @@ def main() -> int:
     try:
         path = tmp / "ledger.db"
         demo_ledger.build(path)
+        # the smart layer's recorded texts (no call to the model); ONLOOP_DEMO_TEXTS=off shows the facts-only pages
+        if os.environ.get("ONLOOP_DEMO_TEXTS", "on") != "off":
+            demo_ledger.texts(path)
         beat = demo_ledger.heartbeat(path, ev.now_ts())
         reader = daemon.LockedReader(path)
         writer_ledger = Ledger(path)
@@ -89,6 +92,8 @@ def main() -> int:
             writer=routes,
             token=secrets.token_urlsafe(32),
             carrier=lambda: None if off.exists() else cfg,
+            descriptions=demo_ledger.DESCRIPTIONS,  # as a team's onloop.yaml would say them
+            asker=demo_ledger.asker(path),  # ⌘K: the recorded answer, never the model
         )
         stop = threading.Event()
 

@@ -1,0 +1,11 @@
+# Public npm package names that tools/confidentiality_scan.py lets through in web/package-lock.json, and nowhere else.
+#
+# A denylist pattern (kept outside the repository) can match by chance inside a public package's name, and a JSON
+# lockfile cannot take the scan:allow marker. Each name here is let through only on three line forms of
+# web/package-lock.json: its "node_modules/<name>" key, a "<name>": "<version>" dependency line, and its "resolved"
+# URL on registry.npmjs.org. The name is masked and the rest of the line is scanned as usual.
+#
+# Adding a name is a reviewed edit: it needs the project lead's yes, names who approved it and when, and updates the
+# reviewed list in tests/test_confidentiality_scan.py. One name per line; text after "#" is a comment. Each line here
+# carries the opt-out marker, since the name itself is what the denylist matches.
+@radix-ui/react-use-controllable-state  # scan:allow  approved by the project lead, 2026-11-28 (0.7.0, Radix UI)

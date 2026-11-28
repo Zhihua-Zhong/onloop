@@ -1,11 +1,15 @@
 """`onloop daemon hook`: what a role's Claude Code hook runs. It posts the hook's payload to onloopd and never fails.
 
-    onloop daemon hook --event stop|session-start|notification --role ROLE [--ledger FILE] [--timeout 2]
+    onloop daemon hook --event stop|session-start|prompt-submit|notification --role ROLE [--ledger FILE] [--timeout 2]
 
 It reads the hook's JSON from stdin, adds the role, and posts it to onloopd on the loopback address, using the port in
 onloopd's heartbeat and the token in `onloopd.token`, both next to the ledger. Whatever happens (onloopd down, a
 refusal, a payload it cannot read) it exits 0 within the timeout and appends one line to `hook-errors.log` there, so
 a broken onloop can never stop or slow a session beyond that.
+
+What onloopd answers as `hook_output` (0.7.0: the role's open decisions and the person's answers as context, or a
+Stop sent back once) is printed to stdout as the hook's JSON output, for Claude Code to read; anything else prints
+nothing.
 
 A payload that is not valid JSON is still posted, as `{"unreadable": "<why>"}`: the Stop then records a turn without
 a valid outcome (story 8), instead of nothing.
@@ -73,8 +77,10 @@ def spool(state: pathlib.Path, event: str, body: dict[str, Any]) -> bool:
         return False
 
 
-def post(event: str, role: str, state: pathlib.Path, stdin: BinaryIO, timeout: float = 2.0) -> int:
-    """Post one hook event. Always returns 0."""
+def post(
+    event: str, role: str, state: pathlib.Path, stdin: BinaryIO, timeout: float = 2.0, stdout: Any = None
+) -> int:
+    """Post one hook event, and print what onloopd tells the agent, if anything. Always returns 0."""
     start = time.monotonic()
     obj: dict[str, Any] | None = None
     try:
@@ -93,7 +99,13 @@ def post(event: str, role: str, state: pathlib.Path, stdin: BinaryIO, timeout: f
         )
         left = max(0.1, timeout - (time.monotonic() - start))
         with urllib.request.urlopen(req, timeout=left) as r:  # noqa: S310 - the loopback address only
-            r.read()
+            answer = r.read()
+        try:
+            told = json.loads(answer.decode("utf-8")).get("hook_output")
+        except (ValueError, AttributeError):
+            told = None
+        if isinstance(told, dict):
+            (stdout or sys.stdout).write(json.dumps(told) + "\n")
     except urllib.error.HTTPError as e:
         _log(state, f"{event} {role}: onloopd answered {e.code}: {e.read()[:200]!r}")
     except Exception as e:  # noqa: BLE001 - a hook must never fail a session

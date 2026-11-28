@@ -6,7 +6,7 @@
     card(task, now) -> dict                          what a view shows for a task, days computed now
     open_tasks(ledger, now) -> [card]                every task not resolved, in order
     digest(ledger, since, now) -> dict               added, resolved (and resolved without you), returned, since
-    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit>
+    handle(ledger, rest, body)                       onloopd's write route /tasks/<ask|resolve|keep|visit|withdraw|tidy|merge|unmerge|keep_apart>
 
 The order (decision 0013): weight bands (critical, supporting, unweighted, skippable, then incomplete); in a band, a
 cost of delay with a date first, by the days left (a date passed is 0, "costing now"), then a cost not known, then
@@ -30,6 +30,7 @@ from . import events as ev
 BANDS = ("critical", "supporting", "unweighted", "skippable", "incomplete")
 RESOLUTIONS_BY_PERSON = ("done", "declined")
 RESOLUTIONS = ("done", "declined", "superseded", "expired")
+TIDY_NOTE = "format rule, no effect stated"  # the reason a tidied ask carries (0.7.0)
 NOTE_CAP = 500
 MISSING = {"no_effect": "what it changes", "no_holds": "what waits on it"}  # an incomplete ask, in words
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
@@ -97,10 +98,22 @@ def ask_event(
 
 
 def resolve_event(
-    task: Mapping[str, Any], resolution: str, *, by: str, channel: str, note: str | None = None
+    task: Mapping[str, Any],
+    resolution: str,
+    *,
+    by: str,
+    channel: str,
+    note: str | None = None,
+    answer: str | None = None,
 ) -> dict[str, Any]:
-    if resolution not in RESOLUTIONS:
+    if resolution not in RESOLUTIONS and not (resolution == "dismissed" and note == TIDY_NOTE):
         raise AskError(f"a resolution is one of {', '.join(RESOLUTIONS)}")
+    options = _list(task.get("options"))
+    if answer is not None:
+        if resolution != "done":
+            raise AskError("an answer comes with done")
+        if answer not in options:
+            raise AskError(f"the answer is one of the ask's options: {' | '.join(options) or 'it has none'}")
     if task.get("stage") == "resolved":
         raise AskError(f"task {task['id']} is already resolved ({task.get('resolution')})")
     if task.get("origin") == "gate" and resolution == "done":
@@ -118,10 +131,106 @@ def resolve_event(
             "evidence": evidence,
             "by": by,
             "note": note,
+            "answer": answer,
             "verified": False,
             "superseded_by": f"{channel}:{by}" if resolution == "superseded" else None,
         },
     )
+
+
+def withdraw_event(task: Mapping[str, Any], *, channel: str, ledger: Any) -> dict[str, Any]:
+    """The person takes back their answer before it reached the role that asked (0.7.0 plan, section 2, Undo)."""
+    if task.get("stage") != "resolved" or task.get("resolved_by") != "human":
+        raise AskError(f"task {task['id']} has no answer of yours to withdraw")
+    if task.get("delivered_at"):
+        raise AskError(
+            f"your answer reached {task.get('author_role') or 'the asker'} at {task['delivered_at']}; "
+            "a change of mind is a new answer"
+        )
+    if task.get("subject_key") and ledger.select(
+        "SELECT 1 FROM human_tasks WHERE stage <> 'resolved' AND subject_key = ?", (task["subject_key"],)
+    ):
+        raise AskError("a newer ask on the same subject is open: answer that one")
+    return _event(channel, "task.unresolved", task["id"], {"id": task["id"], "by": "human"})
+
+
+def merge_event(ledger: Any, keep: Any, merge: Any, *, channel: str) -> dict[str, Any]:
+    """The person confirms that two open decisions are one (0.7.0 plan, section 4.3: proposed, never done by itself):
+    `merge` closes as superseded by `keep`, and its asks are counted in `keep`."""
+    a, b = get(ledger, str(keep or "")), get(ledger, str(merge or ""))
+    if a is None or b is None or a["id"] == b["id"]:
+        raise AskError("merge names two decisions: keep and merge")
+    if a["stage"] == "resolved" or b["stage"] == "resolved":
+        raise AskError("both decisions must be open to merge them")
+    return _event(
+        channel, "task.merged", b["id"], {"id": b["id"], "keep": a["id"], "merge": b["id"], "by": "human"}
+    )
+
+
+def merge_of(ledger: Any, tid: str) -> dict[str, Any] | None:
+    """The merge that closed `tid`, while it can be undone: {keep, merge_event}, or None."""
+    t = get(ledger, tid)
+    ev_ = str((t or {}).get("evidence") or "")
+    if (
+        not t
+        or t["stage"] != "resolved"
+        or t["resolution"] != "superseded"
+        or not ev_.startswith("human:merge:")
+    ):
+        return None
+    keep = str(t.get("superseded_by") or "").removeprefix("task:")
+    k = get(ledger, keep)
+    if k is None or k["stage"] == "resolved":
+        return None  # the decision it went into is answered: the merge stands
+    return {"keep": keep, "merge_event": ev_.removeprefix("human:merge:")}
+
+
+def unmerge_event(ledger: Any, tid: Any, *, channel: str) -> dict[str, Any]:
+    """Undo a merge, from the toast or from Decisions · Done, until the decision it went into is answered."""
+    m = merge_of(ledger, str(tid or ""))
+    if m is None:
+        raise AskError(
+            "no merge to undo: either it was never merged, or the decision it went into is answered"
+        )
+    return _event(channel, "task.unmerged", str(tid), {"id": str(tid), **m, "by": "human"})
+
+
+def keep_apart_event(ledger: Any, a: Any, b: Any, apart: Any, *, channel: str) -> dict[str, Any]:
+    """The person says two decisions the smart layer proposed to merge are not one: the proposal stops, in every
+    browser. `apart: false` undoes it."""
+    x, y = get(ledger, str(a or "")), get(ledger, str(b or ""))
+    if x is None or y is None or x["id"] == y["id"]:
+        raise AskError("keep_apart names two decisions: a and b")
+    pair = sorted((x["id"], y["id"]))
+    return _event(
+        channel,
+        "task.kept_apart",
+        pair[0],
+        {"id": pair[0], "a": pair[0], "b": pair[1], "apart": bool(apart), "by": "human"},
+    )
+
+
+def kept_apart(ledger: Any) -> set[tuple[str, str]]:
+    """The pairs the person keeps apart now (the last word per pair)."""
+    last: dict[tuple[str, str], bool] = {}
+    for r in ledger.select("SELECT payload FROM events WHERE kind = 'task.kept_apart' ORDER BY seq"):
+        p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"])
+        last[(p["a"], p["b"])] = bool(p.get("apart", True))
+    return {k for k, v in last.items() if v}
+
+
+def tidy_events(ledger: Any, ids: Iterable[str], *, channel: str) -> list[dict[str, Any]]:
+    """Set aside asks that broke the format rule (no effect stated): each resolved `dismissed` with the reason, never
+    given an effect onloop made up. Only an open, incomplete ask can be tidied."""
+    out = []
+    for tid in ids:
+        task = get(ledger, str(tid))
+        if task is None:
+            raise Refused(404, f"no task {tid!r}")
+        if task.get("stage") == "resolved" or not task.get("incomplete") or task.get("effect"):
+            raise AskError(f"task {tid} is not an open ask without an effect")
+        out.append(resolve_event(task, "dismissed", by="human", channel=channel, note=TIDY_NOTE))
+    return out
 
 
 def keep_event(task: Mapping[str, Any], *, reason: str, by: str, channel: str) -> dict[str, Any]:
@@ -342,9 +451,32 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
     channel = body.get("channel", "cli")
     if channel not in ("cli", "ui"):
         raise Refused(422, "channel is cli or ui")
+    events: list[dict[str, Any]] = []
     try:
         if action == "ask":
             ask = check_ask(body.get("ask") or {}, ledger.now())
+            if not ask.get("effect"):
+                raise AskError(
+                    "an ask says what it changes for the person: give effect (onloop ask --effect)"
+                )
+            from .overlay.human_tasks import subject_key
+
+            key = subject_key(body.get("ref"))
+            same = (
+                ledger.select(
+                    "SELECT id, author_role, asks FROM human_tasks WHERE stage <> 'resolved' AND subject_key = ?",
+                    (key,),
+                )
+                if key
+                else []
+            )
+            if same:
+                t = same[0]
+                raise Refused(
+                    409,
+                    f"already open as {t['id']} (asked by {t['author_role'] or 'someone'}, {t['asks']}x): "
+                    f"answer or wait on that one, or restate it with ref=task:{t['id']}",
+                )
             event = ask_event(
                 author_role=body.get("author_role") or "",
                 ref=body.get("ref"),
@@ -352,7 +484,21 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
                 title=body.get("title"),
                 source="cli",
             )
-        elif action in ("resolve", "keep"):
+        elif action == "merge":
+            event = merge_event(ledger, body.get("keep"), body.get("merge"), channel=channel)
+        elif action == "unmerge":
+            event = unmerge_event(ledger, body.get("id"), channel=channel)
+        elif action == "keep_apart":
+            event = keep_apart_event(
+                ledger, body.get("a"), body.get("b"), body.get("apart", True), channel=channel
+            )
+        elif action == "tidy":
+            ids = body.get("ids")
+            if not isinstance(ids, list) or not ids or len(ids) > 500:
+                raise AskError("tidy takes ids: the asks to set aside, at most 500")
+            events = tidy_events(ledger, ids, channel=channel)
+            event = events[0]
+        elif action in ("resolve", "keep", "withdraw"):
             task = get(ledger, str(body.get("id") or ""))
             if task is None:
                 raise Refused(404, f"no task {body.get('id')!r}")
@@ -363,18 +509,37 @@ def handle(ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
                 if channel == "ui" and body.get("resolution") not in RESOLUTIONS_BY_PERSON:
                     raise AskError("the page marks done or declined")
                 event = resolve_event(
-                    task, body.get("resolution") or "", by=by, channel=channel, note=body.get("note")
+                    task,
+                    body.get("resolution") or "",
+                    by=by,
+                    channel=channel,
+                    note=body.get("note"),
+                    answer=body.get("answer"),
                 )
+            elif action == "withdraw":
+                event = withdraw_event(task, channel=channel, ledger=ledger)
             else:
                 event = keep_event(task, reason=body.get("reason") or "", by=by, channel=channel)
         elif action == "visit":
             event = visit_event(channel)
         else:
-            raise Refused(404, "a task write is /tasks/ask, /tasks/resolve, /tasks/keep or /tasks/visit")
+            raise Refused(
+                404,
+                "a task write is /tasks/ask, /tasks/resolve, /tasks/keep, /tasks/visit, /tasks/withdraw, /tasks/tidy, "
+                "/tasks/merge, /tasks/unmerge or /tasks/keep_apart",
+            )
     except AskError as e:
         raise Refused(422, str(e)) from e
     if channel == "ui":
-        event["source"] = "ui"
+        for one in events or [event]:
+            one["source"] = "ui"
+    if action == "tidy":
+        seqs = ledger.append_batch(events)  # every ask set aside, or none
+        return {
+            "logged": sum(1 for q in seqs if q is not None),
+            "ids": [x["payload"]["id"] for x in events],
+            "verified": False,
+        }
     seq = ledger.append(event)
     return {
         "logged": seq is not None,

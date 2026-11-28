@@ -124,4 +124,4 @@ onloop import snapshot <exchange folder> --ledger <exchange folder>\onloop\ledge
 onloop daemon run --ledger <exchange folder>\onloop\ledger.db --port 8793
 ```
 
-The first command prints counts per file and never a record. Then open `http://localhost:8793/#/replay`.
+The first command prints counts per file and never a record. Then open `http://localhost:8793/#/timeline`.

@@ -783,6 +783,10 @@ def _has_table(conn: sqlite3.Connection, table: str) -> bool:
 
 def _hook_session_start(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:
     _role_row(conn, e, p["role"], session_id=p.get("session_id"), state="working")
+    if _HAS_TASKS(conn) and _has_table(
+        conn, "task_asks"
+    ):  # the hook carried the person's answers to this role (0.7.0)
+        human_tasks.mark_delivered(conn, e, p["role"])
 
 
 def _hook_notification(conn: sqlite3.Connection, e: Event, p: Mapping[str, Any]) -> None:

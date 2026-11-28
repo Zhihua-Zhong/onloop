@@ -189,6 +189,9 @@ def test_a_resolved_task_stays_resolved_and_the_first_resolution_stands(led):
         )
     (t,) = tasks(led)
     assert t["resolution"] == "done"
+    # the one way back (0.7.0) is the person withdrawing their own answer before it reached the asker; once it has,
+    # the task stays resolved
+    led.conn.execute("UPDATE human_tasks SET delivered_at = ? WHERE id = ?", (t["resolved_at"], t["id"]))
     with pytest.raises(sqlite3.IntegrityError):
         led.conn.execute("UPDATE human_tasks SET stage = 'open', resolution = NULL WHERE id = ?", (t["id"],))
 

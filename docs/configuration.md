@@ -32,6 +32,7 @@ A mapping from a role name to a mapping of settings. At least one role is requir
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `roles.<name>.charter` | string | none | Path of the role's charter. Documentation only; onloop does not read it. |
+| `roles.<name>.description` | string, at most 80 characters | none | One line on what the role does, shown under its name on its Agents card. Without it the card shows none; onloop never writes one. |
 | `roles.<name>.leads` | list of role names | `[]` | The roles this one coordinates. The stop anchor asks whether each has a next item. |
 | `roles.<name>.anchor` | `session` or `every_message` | `session` | `every_message` adds a short anchor before each incoming message (for coordinating roles). Not authority: changing it needs no approval. |
 | `roles.<name>.kpis` | list of names, or mapping of name to target | `[]` | The measures the full anchor shows this role. Not authority. |
@@ -411,6 +412,27 @@ overview:
     wait: 2h
 ```
 
+### The smart layer
+
+Optional; on by default. `smart: off` stops onloopd from writing any text with the model: every page then shows the
+facts alone. On, onloopd runs headless `claude -p` (the carrier's `claude` CLI, else `claude`) on the subscription,
+never with ANTHROPIC_API_KEY, at most 8 briefs, 20 decision texts and 6 merge proposals a day
+([ui.md](ui.md#the-smart-layer)). ONLOOP_SMART=off in onloopd's environment turns it off too.
+
+```yaml
+smart: off
+```
+
+`smart_denylist` names one file, or a list of files, of patterns no prompt may match (one regular expression per line,
+case-insensitive, `#` a comment). Before each call onloopd scans the whole prompt against them; on any hit it makes no
+call, logs `text.rejected` with reason "denylist" (the number of hits, never the match) and the page shows the facts.
+A file that cannot be read stops every call. ONLOOP_DENYLIST (paths separated by `;` on Windows, `:` elsewhere) adds
+files.
+
+```yaml
+smart_denylist: C:/path/outside/the/repo/denylist.txt
+```
+
 ### The carrier
 
 Optional. The session carrier ([carrier.md](carrier.md), [decision 0010](decisions/0010-session-lease-and-delivery.md)):
@@ -532,7 +554,7 @@ the repository `gh` finds from the current directory. They run `gh`, so `gh` mus
 | `onloop report observe` | `--since TIME` (a date or a UTC time), `--until TIME` (default now), `--json`, `--ledger FILE`: each thing onloop would have done (`would.*`), next to what happened then (the role's next turn and how it ended, or the schedule's next success), and each role's turns with how many had no valid outcome. All times are the ledger's. Also `GET /api/report/observe?since=&until=` | 0, 2 a bad time |
 | `onloop role pause` / `resume` | `ROLE`, `--ledger FILE`: pause a role, so every item it owns that is not done waits on the human (reason `paused_by_human`) until it is resumed; its own turns do not end the pause | 0 (also when it already was), 2 a bad role name |
 | `onloop item evidence` | `ID REF`, `--ledger FILE`: attach the evidence (a URL, a pull request, a log line) a follow-up such as `pr#12/post-merge/1` needs. The follow-up is then done, and its pull request too once no follow-up lacks evidence | 0, 1 no such item, no evidence asked, or evidence already attached, 2 a bad reference |
-| `onloop daemon hook` | `--event stop\|session-start\|notification`, `--role ROLE`, `--ledger FILE`, `--timeout SECONDS` (default 2): post the hook's payload (stdin) to onloopd. For a role's Claude Code hook settings. When onloopd cannot be reached, the post is spooled to `hook-spool.jsonl` and logged once when it is back | always 0; a failure is a line in `hook-errors.log` next to the ledger |
+| `onloop daemon hook` | `--event stop\|session-start\|prompt-submit\|notification`, `--role ROLE`, `--ledger FILE`, `--timeout SECONDS` (default 2): post the hook's payload (stdin) to onloopd, and print what onloopd tells the agent (0.7.0: its open decisions and the person's answers as context, or a Stop sent back once; decision 0020). For a role's Claude Code hook settings. When onloopd cannot be reached, the post is spooled to `hook-spool.jsonl` and logged once when it is back | always 0; a failure is a line in `hook-errors.log` next to the ledger |
 | `onloop carrier start` / `stop` / `status` | `--ledger FILE`: start the session carrier (it acts on what roles opted in to; removes `carrier.off`); stop it (the kill switch: writes `carrier.off`, live runs end within 5 s); show its state, roles, live leases and the last day's runs. See [carrier.md](carrier.md) | 0, 2 a ledger error |
 | `onloop role opt-in` / `opt-out` | `ROLE ACTION`, `--ledger FILE`: let the carrier act for a carried role on `message`, `event`, `corrective`, `dead_waker` or `dead_waker_wake`, or stop it at once. Opting in cannot go past onloopd.yaml's `opt_in` | 0, 2 not a carried role or not an action |
 | `onloop say` | `ROLE TEXT` (`-` reads stdin), `--step KIND:REF`, `--ledger FILE`: a message to a carried role, posted to onloopd with its write token; with `--step`, the turn that delivers it is recorded as that step (its cost is the step's by record). A request from a local user, not verified, never an approval ([decision 0011](decisions/0011-ui-write-path.md)) | 0 queued, 2 refused or onloopd not reachable |
@@ -565,6 +587,8 @@ Notes:
 | `GITHUB_REPOSITORY` | gate, audit, as-app, watchdog | Default for `--repo`. |
 | the variable named by `apps.<identity>.key_env` | as-app | Path of the App's private key file. |
 | `GH_TOKEN` | the `gh` CLI | Used by `gh` for the gate, the audit and the watchdog. In the audit workflow it is the workflow's own token. |
+| `ONLOOP_SMART` | onloopd | `off` turns the smart layer off, as `smart: off` in onloopd.yaml. |
+| `ONLOOP_DENYLIST` | onloopd | More denylist files for the smart layer, as `smart_denylist`. |
 
 ## Extension points
 
