@@ -1,3 +1,15 @@
+# onloop 0.7.1
+
+0.7.1 is the first published release of 0.7. Version 0.7.0 was tagged but never published: CI on its tag failed a
+browser test that timed the browser's frame rate rather than the app. 0.7.1 is the same product with that test fixed.
+The notes for 0.7.0 follow, and they describe this release.
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.7.1/onloop-0.7.1-py3-none-any.whl"
+onloop selftest
+onloop daemon start --ledger .onloop/ledger.db    # then open http://localhost:8790
+```
+
 # onloop 0.7.0
 
 onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop

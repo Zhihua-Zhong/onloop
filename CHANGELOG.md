@@ -4,7 +4,18 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-11-28
+## [0.7.1] - 2026-11-28
+
+0.7.0 was tagged but never published: CI on its tag failed a browser test that timed the browser's frame rate, not
+the app. 0.7.1 is 0.7.0 with that test reading the app's own time; the product is unchanged, and the notes for 0.7.0
+below describe it.
+
+### Fixed
+
+- The browser test for ⌘K now checks that the app shows the dialog within 50 ms of the key and in the first frame
+  after it, at any frame rate, and records the frame timing of each run.
+
+## [0.7.0] - 2026-11-28 (tagged, not published)
 
 0.7.0 turns onloop's page into one that answers a person's questions first: is the work going well, what needs me,
 and what came out. The views of 0.6 are still there, one click down under Details.
