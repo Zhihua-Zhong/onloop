@@ -7,6 +7,9 @@
     timeline(ledger, start, end, now) -> dict              per lane, its four kinds of time and its tokens by step
     your_wait(ledger, start, end, now) -> dict             the person's wait: the one count, each item's age, and the
                                                            share of [start, end] in which anything waited on them
+    merged(ledger, start, end) -> list                     the changes merged in [start, end): Home's Delivered
+    hours_waited(ledger, start, end) -> float              each ask's open time in [start, end), summed, in hours
+    tokens(ledger, start, end) -> dict[str, int]           tokens of the model requests in [start, end), per role
 
 Now, Flow, Activity and the map call these and count nothing on their own, so two views never disagree about the
 same thing. `tests/test_agreement.py` holds every view to that on the demo ledger, the generic replay and, on 8793, the
@@ -111,6 +114,48 @@ def your_wait(ledger: Any, start: str, end: str, now: str) -> dict[str, Any]:
             reach = b
     out["waited_s"] = round(covered, 3)
     out["share"] = round(covered / _secs(start, hi), 4)
+    return out
+
+
+def merged(ledger: Any, start: str, end: str) -> list[dict[str, Any]]:
+    """The changes merged in [start, end): one row per change (`pr`, `t` its last merge, `title`), newest first. Home's
+    Delivered, its sparkline and the lanes' flags count these; the map's merged stage reads the same events."""
+    return ledger.select(
+        "SELECT e.subject_ref AS pr, max(COALESCE(e.at, e.ts_system)) AS t, i.title FROM events e "
+        "LEFT JOIN items i ON i.id = e.subject_ref WHERE e.kind = 'pr.merged' "
+        "AND COALESCE(e.at, e.ts_system) >= ? AND COALESCE(e.at, e.ts_system) < ? "
+        "GROUP BY e.subject_ref ORDER BY t DESC",
+        (start, end),
+    )
+
+
+def hours_waited(ledger: Any, start: str, end: str) -> float:
+    """How long the person's asks waited in [start, end), in hours: each ask's own open time inside the window, summed
+    (two asks open for an hour are two hours). `your_wait`'s share is the union instead. Home's "Waited on you" and the
+    agreement test read this one figure."""
+    if not has_tasks(ledger) or end <= start:
+        return 0.0
+    rows = ledger.select(
+        "SELECT opened_at, resolved_at FROM human_tasks WHERE opened_at < ? AND (resolved_at IS NULL OR resolved_at > ?)",
+        (end, start),
+    )
+    total = sum(_secs(max(r["opened_at"], start), min(r["resolved_at"] or end, end)) for r in rows)
+    return round(total / 3600, 3)
+
+
+def tokens(ledger: Any, start: str, end: str) -> dict[str, int]:
+    """Tokens of the model requests in [start, end), per role (the request's actor), from `cost.request` telemetry:
+    input, output and cache creation, as the timeline counts them (cache reads apart, so not here)."""
+    from . import timeline as tl
+
+    out: dict[str, int] = {}
+    for r in ledger.select(
+        "SELECT actor, payload FROM events WHERE kind = 'cost.request' AND ts_system >= ? AND ts_system < ?",
+        (start, end),
+    ):
+        p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"] or "{}")
+        role = r["actor"] or "(no role)"
+        out[role] = out.get(role, 0) + tl.tokens_of(p)[0]
     return out
 
 

@@ -9,8 +9,9 @@ import { demoDir } from "./demo";
 // test-results/screens, which is not committed.
 const OUT = process.env.SCREENS_DIR ?? path.resolve(process.cwd(), "test-results/screens");
 
-const VIEWS: { id: string; ready: (p: Page) => Promise<void> }[] = [
-  { id: "now", ready: (p) => expect(p.getByTestId("constraint")).toBeVisible() },
+const VIEWS: { id: string; hash?: string; ready: (p: Page) => Promise<void> }[] = [
+  { id: "home", hash: "", ready: (p) => expect(p.getByTestId("brief")).toBeVisible() },
+  { id: "rules", hash: "details/rules", ready: (p) => expect(p.getByTestId("rule-asks-missing")).toBeVisible() },
   { id: "replay", ready: (p) => expect(p.getByTestId("lane").first()).toBeVisible() },
   { id: "map", ready: (p) => expect(p.getByTestId("map-level").first()).toBeVisible() },
   { id: "team", ready: (p) => expect(p.getByTestId("lane-reviewer")).toBeVisible() },
@@ -24,7 +25,7 @@ for (const theme of ["light", "dark"] as const) {
     test(`screen: ${v.id} ${theme}`, async ({ page }, info) => {
       fs.mkdirSync(OUT, { recursive: true });
       const w = info.project.name === "phone" ? 390 : 1440;
-      await page.goto(`/?theme=${theme}#/${v.id}`);
+      await page.goto(`/?theme=${theme}#/${v.hash ?? v.id}`);
       await v.ready(page);
       await page.mouse.move(1, 1);
       await page.screenshot({ path: path.join(OUT, `${v.id}-${w}-${theme}.png`), fullPage: v.id !== "map" });

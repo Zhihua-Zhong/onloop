@@ -310,3 +310,58 @@ export async function uiPost(path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui
   }
   throw new ApiError(403, "Not taken: reload the page");
 }
+
+// -- 0.7.0: Home and Details · Rule alerts (src/onloop/home.py) -------------------------------------------------------
+
+export interface HomeDecision {
+  id: string;
+  title: string;
+  asked_by: string | null;
+  age_s: number;
+  weight: string | null;
+  band: string;
+  holds: string | null;
+  default: string | null;
+  cost_text: string | null;
+  days_left: number | null;
+  ref: string | null;
+  goal: string | null;
+  origin: string;
+  action: string;
+}
+
+export interface HomeUnusual { id: string; kind: "quiet" | "tokens" | "wait"; role: string; value: number; norm: number; title: string; text: string }
+
+export interface HomeLane { role: string; segments: [string, string, string][]; turns: string[]; turn_count: number }
+
+export interface HomeModel {
+  now: string;
+  from: string;
+  to: string;
+  frozen: boolean;
+  young: boolean;
+  brief: { facts: string[]; generated: null | { text: string } };
+  numbers: {
+    delivered: { value: number; last_week: number; delta: number | null; by_day: number[]; recorded: boolean; items: { ref: string; title: string; at: string }[] };
+    waited_h: { value: number; last_week: number; delta: number | null; by_day: number[] };
+    cost_per_delivery: { value: number | null; tokens: number; last_week: number | null; delta_pct: number | null; by_day: number[] };
+  };
+  decisions: { waiting_on_you: number; oldest_s: number | null; count: number; items: HomeDecision[]; rule_asks: number };
+  unusual: HomeUnusual[];
+  lanes: { from: string; to: string; lanes: HomeLane[] };
+}
+
+export interface RulesModel {
+  now: string;
+  asks_missing: { count: number; by_role: Record<string, number>; missing: Record<string, number> };
+  alerts: { detector: string; words: string; count: number; by_role: Record<string, number> }[];
+  since_visit: { since: string | null; added: number; resolved: number; resolved_without_you: number; returned: number; gaps: number };
+  constraint: { on: string | null; waiters: number } | null;
+  expiring: number;
+  health: { failing: number; late: number; ok: number; total: number; dead_man: { configured: boolean; schedule?: string; state?: string } };
+}
+
+export const homeApi = {
+  home: () => get<HomeModel>("/api/home"),
+  rules: () => get<RulesModel>("/api/rules"),
+};

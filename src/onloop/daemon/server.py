@@ -28,6 +28,9 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
                                 the newest first, paged by `next_before`; a filter that is not valid is a 400
     GET /api/heartbeat          onloopd's last heartbeat, the server's clock and the tick period: what a page polls to
                                 tell a quiet onloopd from a stalled one
+    GET /api/home               Home (0.7.0): the week's three numbers against the week before, the decisions in their
+                                order, what is unusual, the lanes and the facts-only brief; reads 14 days at most
+    GET /api/rules              Details · Rule alerts: the system's own rule alerts, counted
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
     GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
@@ -518,6 +521,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body = self._liveness()
             elif url.path == "/api/now":
                 body = views.now(reader, ev.now_ts(), self._heartbeat())
+            elif url.path == "/api/home":
+                from .. import home
+
+                now = ev.now_ts()
+                frozen = self.server.writer is None and not self._written_elsewhere()
+                body = home.build(reader, now, (home.last_event(reader) or now) if frozen else None)
+            elif url.path == "/api/rules":
+                from .. import home
+
+                body = home.rule_alerts(reader, ev.now_ts())
             elif url.path == "/api/products":
                 from ..report import products
 

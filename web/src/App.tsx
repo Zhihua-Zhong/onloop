@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ElementType, type ReactNode } from "react";
-import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target } from "lucide-react";
+import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHeartbeat } from "@/lib/heartbeat";
@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/menu";
 import { Toaster } from "@/components/ui/toast";
 import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
-import { NowView } from "@/views/Now";
+import { HomeView } from "@/views/Home";
+import { RuleAlertsView } from "@/views/details/RuleAlerts";
 import { TeamView } from "@/views/Team";
 import { ReplayView } from "@/views/Replay";
 import { OutcomeView } from "@/views/details/Outcome";
@@ -203,13 +204,13 @@ function ReadOnly({ view }: { view: View }) {
 /** Each page of the shell: its label, its icon, and what it shows until its 0.7.0 page lands (null: its own page). */
 interface Page { key: string; label: string; icon: ElementType; view?: View; interim?: string }
 const MAIN: Page[] = [
-  { key: "home", label: "Home", icon: HomeIcon, view: "now", interim: "Home shows 0.6's Now view until the new Home lands." },
+  { key: "home", label: "Home", icon: HomeIcon, view: "now" },
   { key: "decisions", label: "Decisions", icon: Inbox },
   { key: "agents", label: "Agents", icon: Bot, view: "team", interim: "Agents shows 0.6's Team view until the new Agents page lands." },
   { key: "timeline", label: "Timeline", icon: Activity, view: "replay", interim: "Timeline shows 0.6's Replay view until the new Timeline lands." },
 ];
-const DETAIL_ICON: Record<string, ElementType> = { map: MapIcon, outcome: Target, conversation: MessagesSquare, schedules: CalendarClock, audit: ScrollText };
-const DETAIL_LABEL: Record<string, string> = { map: "Map", outcome: "Outcome", conversation: "Conversation", schedules: "Schedules", audit: "Audit" };
+const DETAIL_ICON: Record<string, ElementType> = { map: MapIcon, outcome: Target, conversation: MessagesSquare, schedules: CalendarClock, audit: ScrollText, rules: TriangleAlert };
+const DETAIL_LABEL: Record<string, string> = { map: "Map", outcome: "Outcome", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
 
 function pageOf(view: View): { label: string; interim?: string; details: boolean } {
   const main = MAIN.find((p) => p.view === view);
@@ -253,7 +254,7 @@ function Sidebar({ view, onNav }: { view: View; onNav?: () => void }) {
           <NavItem key={p.key} to={href(p.view)} label={p.label} icon={p.icon} active={view === p.view} testid={`nav-${p.key}`} onNav={onNav} />
         ) : (
           // not built yet: shown so the shape of 0.7.0 is visible, and marked; it is not a link
-          <Tooltip key={p.key} content="Decisions is built in a later step of 0.7.0. Until then, what waits on you is on Home.">
+          <Tooltip key={p.key} content="Decisions is built in the next step of 0.7.0. Until then, the decisions are on Home.">
             <span
               data-testid={`nav-${p.key}`}
               aria-disabled="true"
@@ -355,7 +356,8 @@ export default function App() {
               </p>
             )}
             <main className={cn("min-h-0 flex-1", route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
-              {route.view === "now" && <NowView />}
+              {route.view === "now" && <HomeView />}
+              {route.view === "rules" && <RuleAlertsView />}
               {route.view === "map" && (
                 <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>
                   <MapView params={route.params} path={route.path} />

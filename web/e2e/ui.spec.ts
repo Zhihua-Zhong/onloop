@@ -27,7 +27,7 @@ const isPhone = (name: string) => name === "phone";
 // 0.7.0's shell (plan, section 1, step 1): the sidebar on a wide screen, the same list in a drawer on a phone.
 const nav = (page: Page, key: string) => page.getByTestId("sidebar").getByTestId(`nav-${key}`);
 async function go(page: Page, key: string, phone: boolean) {
-  const details = ["map", "outcome", "conversation", "schedules", "audit"].includes(key);
+  const details = ["map", "outcome", "conversation", "schedules", "audit", "rules"].includes(key);
   if (phone) await page.getByTestId("menu").click();
   const box = phone ? page.getByTestId("drawer") : page.getByTestId("sidebar");
   if (details && (await box.getByTestId("details-toggle").getAttribute("aria-expanded")) === "false") await box.getByTestId("details-toggle").click();
@@ -39,46 +39,53 @@ async function chooseTheme(page: Page, theme: "light" | "dark" | "system") {
   await page.getByTestId(`theme-${theme}`).click();
 }
 
-test("Now answers the three questions: the constraint, what waits on you, where work stalled", async ({ page }, info) => {
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint-headline")).toContainText("merge-check holds 5 changes");
-  // with tasks waiting, the constraint is one line above the list (vision round 3)
-  await expect(page.getByTestId("next-text")).toHaveText(/^Merge the change only you may merge: it holds merge-check/);
-  await expect(page.getByTestId("next-link")).toHaveAttribute("href", /\/pull\/99$/);
-  const waiting = page.getByTestId("col-waiting");
-  const rows = waiting.getByTestId("task-rows").locator("li");
-  await expect(rows).toHaveCount(10); // the task list (decision 0013), one row each, in its one order
-  await expect(rows.first().getByTestId("row-effect")).toHaveText("approve the schema change, so the import can run on real data");
-  await expect(rows.first().getByTestId("row-cost")).toHaveText("costing now");
-  // every task on the first screen; on a phone the first screen holds five (the next test), and a person scrolls on
-  if (isPhone(info.project.name)) await rows.last().scrollIntoViewIfNeeded();
-  await expect(rows.last()).toBeInViewport();
-  await rows.first().locator("button").first().click(); // a row opens to its card, with the default and the actions
-  await expect(waiting).toContainText("If nobody answers: nothing merges");
-  await expect(waiting.getByTestId("mark-done")).toBeVisible();
-  const stalls = page.getByTestId("col-stalls");
-  // the demo's four stalls, and its one item expiring within a day, which 0.6.0 lists in the same column
-  await expect(stalls.locator('article[data-testid^="stall-"]')).toHaveCount(4);
-  await expect(stalls.getByTestId("expiring").locator("article")).toHaveCount(1);
-  await expect(stalls.locator("article")).toHaveCount(5);
-  await expect(stalls.getByTestId("would").first()).toContainText("would wake (observe only)");
-  await expect(stalls.getByTestId("ack").first()).toHaveText("not acknowledged");
-  const health = page.getByTestId("col-health");
-  await expect(health.getByTestId("health-nightly-verify")).toContainText("failing");
-  await expect(health.getByTestId("health-dependency-scan")).toContainText("overdue");
-  await expect(health.getByTestId("dead-man")).toContainText("dead-man switch OK");
-  await expect(health.getByTestId("health-ok")).toContainText("4 other schedules within their period");
+test("Home answers what needs me, how it went and what came out, and lists no rule alert", async ({ page }) => {
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief-facts")).toContainText("10 asks wait on you, 6 of them saying what they change.");
+  await expect(page.getByTestId("kpi-delivered").getByTestId("kpi-value")).toHaveText("7");
+  await expect(page.getByTestId("kpi-waited").getByTestId("kpi-value")).toHaveText(/^\d+ h$/);
+  await expect(page.getByTestId("decisions-count")).toHaveText("6");
+  const rows = page.getByTestId("decision");
+  await expect(rows).toHaveCount(5); // the first five in the one order, collapsed
+  await expect(rows.first().getByTestId("decision-title")).toHaveText("approve the schema change, so the import can run on real data");
+  await page.getByTestId("decisions-all").click();
+  await expect(rows).toHaveCount(6);
+  // the asks that do not say what they change are counted, with where they are; none is listed
+  await expect(page.getByTestId("rule-asks")).toContainText("4 more asks do not say what they change");
+  const text = await page.getByTestId("view-home").innerText();
+  for (const word of ["An ask with no effect stated", "outcome line", "Constraint", "Since you", "Stalled", "merge-check holds"]) expect(text).not.toContain(word);
+  // the brief's button opens the first decision, folded until then, to its facts and its marks
+  await expect(page.getByTestId("decision-facts")).toHaveCount(0);
+  await page.getByTestId("decide-first").click();
+  await expect(rows.first().getByTestId("decision-facts")).toContainText("If nobody answers");
+  await expect(rows.first().getByTestId("decision-facts")).toContainText("nothing merges");
+  await expect(rows.first().getByTestId("mark-done")).toBeVisible();
+  // the evidence: one lane per role, a flag per change merged this week
+  await expect(page.getByTestId("lane-names")).toContainText("builder");
+  await expect(page.getByTestId("lanes").getByTestId("flag")).toHaveCount(7);
+  await expect(page.getByTestId("unusual")).toBeVisible();
 });
 
-test("Now's first screen holds the banner and the first card of each question", async ({ page }, info) => {
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeInViewport();
-  // the list comes first, after a one-line constraint and the one-line band; on a phone, at least five rows show
-  const rows = page.getByTestId("task-rows").locator("li");
-  await expect(rows.nth(4)).toBeInViewport();
-  if (!isPhone(info.project.name)) {
-    await expect(page.getByTestId("col-stalls").locator("article").first()).toBeInViewport();
-  }
+test("Home's first screen holds the brief, the three numbers and the first decision", async ({ page }, info) => {
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeInViewport();
+  await expect(page.getByTestId("numbers")).toBeInViewport();
+  if (!isPhone(info.project.name)) await expect(page.getByTestId("decision").first()).toBeInViewport();
+});
+
+test("Details · Rule alerts counts what Home does not list, and says where the rows are", async ({ page }) => {
+  await page.goto("/#/details/rules");
+  await expect(page.getByTestId("rule-asks-missing").getByTestId("count")).toHaveText("4");
+  await expect(page.getByTestId("rule-no_outcome").getByTestId("count")).toHaveText("3");
+  await expect(page.getByTestId("rule-no_outcome")).toContainText("turns that ended without a valid outcome line");
+  await expect(page.getByTestId("rule-expiring").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("rule-constraint")).toContainText("waits on merge-check");
+  await expect(page.getByTestId("since-visit")).toBeVisible();
+  // Now's health card moved here: the failing and overdue jobs, and the dead-man switch
+  await expect(page.getByTestId("health-failing").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("health-late").getByTestId("count")).toHaveText("1");
+  await expect(page.getByTestId("dead-man")).toContainText("is OK");
+  await expect(nav(page, "rules")).toHaveAttribute("aria-current", "page");
 });
 
 test("Team shows one lane per role, who needs you first", async ({ page }) => {
@@ -130,19 +137,19 @@ test("Audit filters the timeline by kind and by subject, and pages back", async 
 
 test("when the event stream drops, the page says so and keeps what it read", async ({ page }) => {
   await page.route("**/api/stream**", (r) => r.abort());
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeVisible();
   await expect(page.getByTestId("stale")).toBeVisible({ timeout: 12_000 });
   await expect(page.getByTestId("stale")).toContainText("Live updates stopped");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await expect(page.getByTestId("brief")).toBeVisible();
 });
 
 test("under a dark system theme the page is dark, and the toggle still wins", async ({ browser }) => {
   // A fresh context, so nothing is stored: the system's preference decides.
   const ctx = await browser.newContext({ colorScheme: "dark" });
   const page = await ctx.newPage();
-  await page.goto("/#/now");
-  await expect(page.getByTestId("constraint")).toBeVisible();
+  await page.goto("/#/");
+  await expect(page.getByTestId("brief")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const bg = () => page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(await bg()).toBe("rgb(17, 17, 19)"); // --bg in dark: hsl(240 6% 7%), F's background
@@ -158,7 +165,7 @@ test("under a dark system theme the page is dark, and the toggle still wins", as
   await ctx.close();
   const fresh = await browser.newContext({ colorScheme: "light" });
   const p2 = await fresh.newPage();
-  await p2.goto("/#/now");
+  await p2.goto("/#/");
   await expect(p2.locator("html")).toHaveAttribute("data-theme", "light");
   await p2.emulateMedia({ colorScheme: "dark" }); // the system theme changes while the page is open
   await expect(p2.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -189,6 +196,20 @@ test("an old link opens where its view lives now, and the address names it", asy
   }
 });
 
+test("leaving the Timeline is never undone by the Timeline writing its own address", async ({ page }) => {
+  // Replay keeps its cursor and speed in the address from timers; one write landing after a link was followed used to
+  // pull the page back to the Timeline (found by this spec, 0.7.0 step 2)
+  for (let i = 0; i < 6; i++) {
+    await page.goto("/#/timeline?hours=24");
+    await expect(page.getByTestId("replay")).toBeVisible();
+    await page.goto("/#/details/audit");
+    await expect(nav(page, "audit")).toHaveAttribute("aria-current", "page");
+    await page.waitForTimeout(400);
+    await expect(page).toHaveURL(/#\/details\/audit$/);
+    await expect(nav(page, "audit")).toHaveAttribute("aria-current", "page");
+  }
+});
+
 test("the theme menu switches, and the navigation reaches every view, Details one click down", async ({ page }, info) => {
   const phone = isPhone(info.project.name);
   await page.goto("/?theme=light#/");
@@ -201,14 +222,16 @@ test("the theme menu switches, and the navigation reaches every view, Details on
   await expect(nav(page, "decisions")).toHaveAttribute("aria-disabled", "true");
   await expect(nav(page, "decisions")).toContainText("not built yet");
   if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
-  const root: Record<string, string> = { home: "constraint", timeline: "replay", map: "map-level", agents: "view-team" };
-  for (const v of ["timeline", "map", "agents", "schedules", "audit", "outcome", "home"]) {
+  const root: Record<string, string> = { home: "brief", timeline: "replay", map: "map-level", agents: "view-team" };
+  for (const v of ["timeline", "map", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
     await go(page, v, phone);
     await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
     await expect(nav(page, v)).toHaveAttribute("aria-current", "page");
   }
-  // a page shown by its 0.6 view says so until its 0.7.0 page lands
-  await expect(page.getByTestId("interim")).toContainText("Home shows 0.6's Now view");
+  // Home is 0.7.0's own page; a page still shown by its 0.6 view says so until its 0.7.0 page lands
+  await expect(page.getByTestId("interim")).toHaveCount(0);
+  await go(page, "agents", phone);
+  await expect(page.getByTestId("interim")).toContainText("Agents shows 0.6's Team view");
 });
 
 test("every overlay's content is opaque the moment it opens, inside the window, and Escape closes it", async ({ page }, info) => {

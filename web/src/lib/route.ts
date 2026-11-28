@@ -28,6 +28,14 @@ export function useRoute(): ReturnType<typeof parse> {
   return route;
 }
 
+/** Rewrite the address in place (no history entry) to `view` with `params`, but only while the address still names
+ * that view. A view that keeps its state in the address (Replay's cursor and speed) writes it from timers and effects;
+ * one of those writes landing after the person followed a link would pull them back to the view they left. */
+export function keepParams(view: View, params: Record<string, string | undefined>): void {
+  if (parse(window.location.hash).view !== view) return;
+  window.history.replaceState(null, "", href(view, params));
+}
+
 export function setParams(view: View, params: Record<string, string | undefined>): void {
   window.location.hash = href(view, params);
 }

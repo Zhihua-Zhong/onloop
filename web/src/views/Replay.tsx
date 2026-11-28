@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { get } from "@/lib/api";
 import { duration, plural } from "@/lib/format";
-import { href } from "@/lib/route";
+import { href, keepParams } from "@/lib/route";
 import { activityTimes, linkWindowEnd, mostWorkClose, breakdown, buildIndex, longestQuiet, perHour, quietAt, columns, frameAt, inWindow, jump, KINDS, lastAtOrBefore as lastAtOrBeforeIdx, playFrom, playhead, previous, type Kind, type LaneBreakdown, type LaneFrame, type ReplayIndex, type ReplayWindow, type WorkingNow, type Coverage, type CoverageRun } from "@/lib/replay";
 import { useNowMs } from "@/lib/clock";
 import { parse as parseMd, type Block, type Inline } from "@/lib/markdown";
@@ -190,7 +190,7 @@ function Player(p: {
   const keep = useCallback(
     (at: number, sp = speed) => {
       // not live, the link names the window on screen (`to`, its end) as well as the cursor (`t`)
-      window.history.replaceState(null, "", href("replay", { hours: String(hours), to: live ? undefined : String(Math.round(ix.to)), t: live ? undefined : String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined }));
+      keepParams("replay", { hours: String(hours), to: live ? undefined : String(Math.round(ix.to)), t: live ? undefined : String(Math.round(at)), speed: String(sp), table: table ? "1" : undefined });
     },
     [hours, speed, table, live, ix.to],
   );

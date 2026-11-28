@@ -36,7 +36,8 @@ test("every view's link opens that view, with its path and query", () => {
 
 test("what is not an address opens the first screen, and an old link is the same view once rewritten", () => {
   for (const h of ["#/nowhere", "#/details", "#/details/nothing", "#/decisions"]) assert.equal(parse(h).view, "now", h);
-  for (const v of VIEWS) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
+  // the eight views 0.6 had (Rule alerts is new in 0.7.0, so it never had an old address)
+  for (const v of VIEWS.filter((x) => x !== "rules")) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
   // nothing in the shell is left at an old address
   for (const v of VIEWS) assert.notEqual(ADDRESS[v], v);
 });
