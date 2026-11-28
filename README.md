@@ -17,7 +17,7 @@ parts GitHub does not have:
 - an identity wrapper so agents act as GitHub Apps and never as the human;
 - a ledger with pull queues, and a watchdog that reports when the loop has stalled.
 
-Status: 0.6.1 is the latest release, alpha. `main` is 0.7.0.dev0. See [CHANGELOG.md](CHANGELOG.md) and the
+Status: 0.7.0 is the latest release, alpha. See [CHANGELOG.md](CHANGELOG.md) and the
 roadmap below.
 
 ![onloop's Now view over generic demo data: the biggest constraint, what waits on the human, what has stalled, and health](docs/img/now.png)
@@ -54,7 +54,7 @@ Install the release's wheel, which carries the UI (there is no PyPI release; a `
 without the UI):
 
 ```bash
-pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.6.1/onloop-0.6.1-py3-none-any.whl"      # no clone needed
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.7.0/onloop-0.7.0-py3-none-any.whl"      # no clone needed
 onloop --version
 
 # or, to work on it:
@@ -136,7 +136,7 @@ the `apps:` block of `onloop.yaml` (see [docs/configuration.md](docs/configurati
 outside every git work tree and point an environment variable at it. Then:
 
 ```bash
-pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.6.1/onloop-0.6.1-py3-none-any.whl"   # adds cryptography, needed only for signing
+pip install "onloop[app] @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.7.0/onloop-0.7.0-py3-none-any.whl"   # adds cryptography, needed only for signing
 onloop as-app --identity agents   -- git push origin my-branch
 onloop as-app --identity agents   -- gh pr create --title "[builder] Fix the parser" --body "..."
 onloop as-app --identity reviewer -- gh pr review 12 --approve --body-file verdict.md

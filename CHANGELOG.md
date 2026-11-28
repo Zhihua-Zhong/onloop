@@ -4,87 +4,60 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-11-28
 
-### Added
+0.7.0 turns onloop's page into one that answers a person's questions first: is the work going well, what needs me,
+and what came out. The views of 0.6 are still there, one click down under Details.
 
-- **Home, the first screen (0.7.0, step 2):** is it going well, what needs me, what came out. `GET /api/home` reads
-  14 days at most.
-  - **Today's brief:** facts only, marked so, until onloop writes it.
-  - **Three numbers against last week, each with its seven days:** Delivered (changes merged), Waited on you (each
-    ask's open time, summed) and Cost per delivery.
-  - **The decisions:** in their one order, folded, each opening to its facts and Done or Decline.
-  - **Unusual this week:** each role against its own norm. Computed, never generated.
-  - **The lanes as the evidence:** waits on you amber, merges green.
-  - **Agreement:** every number agrees with the views one click down (`tests/test_agreement.py`).
-  - **A frozen copy:** a read-only copy that nothing writes is read up to its last event.
-- **⌘K, the header and the digest preview (0.7.0, step 6):**
-  - ⌘K goes to any page, decision or agent, and answers a question from this week's facts only, with every number
-    checked and every fact cited (`POST /ui/ask`); when it does not answer it says why and searches.
-  - The header has search, the bell (what is new since your last visit, shown here only) and the account (a local
-    user; sign-in later, marked).
-  - `#/digest`: the morning digest as a preview, marked as not sent anywhere.
-  - Home's button shows the short title in full or the count, never cut; a row answers with its suggested option in
-    one click, with the same undo; Unusual says "3 days ago", the exact time on hover.
-  - A merge is undone from its toast or from Done (`task.unmerged`); Keep apart is logged (`task.kept_apart`).
-  - The smart layer checks number words, sends ages and running figures in buckets, and sends nothing that matches
-    the denylist (`smart_denylist`, ONLOOP_DENYLIST): no call, `text.rejected` with reason "denylist".
-  - The retired-link table is complete and tested; every overlay is checked at seven widths, opaque at once.
-- **The smart layer (0.7.0, step 5):** onloop writes the brief, each decision's short title and subject, a suggested
-  answer from its recorded options with grounds from its facts, and near-duplicate merge proposals, over the facts it
-  computed (`src/onloop/brief.py`, `GET /api/texts`).
-  - Headless `claude -p` from onloopd, on the subscription (never ANTHROPIC_API_KEY), windowless, capped per kind per
-    day; `smart: off` in onloopd.yaml or ONLOOP_SMART=off turns it off.
-  - A text is taken only when every number in it is in its facts and every suggestion is a recorded option; it is
-    cached in the ledger (`text.generated`) by its facts' hash and shown as "Written by onloop from … · facts <hash>".
-    When it fails, times out, is rejected or stale, the page shows the facts.
-  - A merge is the person's: `POST /ui/tasks/merge` closes one decision into the other (`task.merged`).
-  - The generic demo now covers 14 days (a few hundred turns, several merges, a quiet stretch, a token spike, a
-    repeated ask and a near duplicate), with each role's `description` and its recorded texts. Each role has its own
-    colour from a fixed palette on its avatar, lane marks and sidebar dot; the Timeline shows each lane's turn count
-    and a turns-per-hour strip; a card shows the role's `description` from onloop.yaml when there is one.
-- **Agents (0.7.0, step 4):** `#/agents`, prototype F's cards over `GET /api/agents`.
-  - Each card shows the role's state in plain words: working, waits on you, paused by you, stopped, or idle. "Stopped" is a carried run with nothing done for an hour, and is the only stuck: a format-rule break never is.
-  - It also shows what the role is on, and its week by day: turns, tokens and changes merged against last week.
-  - A role's page (`#/agents/<role>`) shows its decisions with you and its lane. The sidebar lists "Agents now".
-- **The Timeline (0.7.0, step 4):** `#/timeline`, 0.6's Replay lanes restyled with F's flags and numbered callouts, over `GET /api/timeline`.
-  - It reads the window only, and each role's figures are summed from per-day figures cached in onloopd.
-  - Replay's playback, cursor and table move to Details · Replay.
-  - Agents' tokens and turns are the Timeline's and Home's (agreement test).
-- **Decisions (0.7.0, step 3; decision 0020):** `#/decisions`, prototype F's split view over `GET /api/decisions`.
-  - **One subject, one decision:** asks about one subject (its `ref`, normalised) are one decision, whoever asks. It
-    shows "asked N×" and every role that asked; M4 reads `task_asks`.
-  - **Answers:** the ask's recorded options (`options=` on the outcome line, `onloop ask --options`), else Done and
-    Decline. The answer is sent at once, with a 9-second undo, and stays withdrawable under Done until it reaches the
-    asker.
-  - **The agent is told:** a role's SessionStart and UserPromptSubmit hooks give it its open decisions and the person's
-    answers. A Stop that asks again with nothing new, or asks without an effect, is sent back once with the reason. The
-    carrier and `onloop open` install the three hooks (a new `prompt-submit` hook event); a prompt's text is never
-    kept.
-  - **`onloop ask`** needs `--effect`, and exits 3 with the open decision's id when its subject is already open.
-    `onloop decisions --mine` lists a role's open decisions and the answers to it.
-  - **The format-rule tidy:** Rule alerts sets aside the asks that say nothing of what they change, in one click, as
-    "format rule, no effect stated", with an undo.
-  - **Schema 11:** the `human_tasks` projection gains the subject key, the options, the answer, the asks count and the
-    delivery; new table `task_asks`; new kinds `task.unresolved` and `hook.prompt_submit`.
-- **Details · Rule alerts** (`GET /api/rules`): what 0.6's Now listed on the first screen, now counted, each count with
-  where its rows are. That covers the asks that do not say what they change, the turns without a valid outcome line,
-  other open alerts, the items about to expire, the scheduled jobs and the dead-man switch, what changed since the last
-  visit, and the constraint in the ledger's terms.
+### What you can do now
 
-### Changed
+- **Home** (`#/`): a short brief of the week; three numbers against the week before (changes delivered, the hours
+  work waited on you, the tokens per delivery); your decisions in one order, each with its answers; what is unusual
+  this week; and who worked when.
+- **Decisions** (`#/decisions`): every question your agents put to you, one decision per subject however often it
+  was asked. You answer with one of the answers the agent offered, or Done or Decline. An answer is sent at once, can
+  be undone for 9 seconds, and can be withdrawn until it reaches the agent that asked.
+- **Agents** (`#/agents`): each role's state in plain words (working, waits on you, paused, stopped, idle), what it is
+  on, and its week. A role's line can come from a `description` in onloop.yaml.
+- **Timeline** (`#/timeline`): who worked when, where work waited on you, and what was merged when, one lane per
+  role.
+- **Details**: the Map, Replay with its playback and table, Outcome, Conversation, Schedules, Audit, and Rule alerts
+  (the format problems Home only counts).
+- **⌘K** (Ctrl K): go to any page, decision or agent, or ask a question. onloop answers from this week's figures
+  only and shows which facts it used; when it does not answer, it says why and searches instead.
+- **The morning digest** (`#/digest`), as a preview: what to open first today. Nothing is sent anywhere yet.
+- Old links keep working: each 0.6 address opens the same view at its new address.
 
-- **A new shell for the UI, the first step of 0.7.0.**
-  - It uses prototype F's design system: shadcn/ui's neutral palette, light and dark, and the Inter typeface. Inter is self-hosted and built into the wheel, with its licence.
-  - A sidebar holds Home, Decisions, Agents and Timeline. History and operations sit one click down under Details: Map, Outcome, Conversation, Schedules and Audit.
-  - On a phone, the same list opens as a drawer.
-  - Home, Decisions, Agents and the Timeline are 0.7.0's own pages (above); 0.6's Now and Team views are retired, and Replay is under Details.
-  - The theme menu offers Light, Dark and System. System forgets a stored choice.
-- **New addresses.** Every view has one: `#/`, `#/decisions`, `#/agents`, `#/timeline`, `#/details/<view>`. An old link (`#/team`, `#/replay`, `#/map/...`, `#/audit?...`) opens the same view and its address is rewritten in place; `#/now` and `#/tasks` open Decisions.
-- **Home's header and button** (the onloop lead's step 2 review): the header keeps the clock and the Live dot, with the read-only explanation in the eye's tooltip; the brief's one button reads "Decide the first of N", never a cut sentence; "Waited on you" says its hours are summed.
-- **Overlays.** Dialogs, menus, tooltips and popovers are Radix UI's, and ⌘K's list is cmdk.
-  - An overlay's content never fades in: only the dim behind it fades, and the content moves in, fully opaque from its first frame. Under `prefers-reduced-motion` it does not move.
-  - Radix's scroll lock writes no `<style>` element, so the strict CSP stays as it is.
+### Your agents learn the answer
+
+- When you answer, the agent that asked gets the answer at its next prompt, through its Claude Code hooks. Before it
+  asks, it is told what is already open, and an ask that repeats an open one with nothing new is sent back once.
+- `onloop ask` needs `--effect` (what the act changes), and `onloop decisions --mine` lists a role's open decisions
+  and your answers to it.
+
+### The smart layer
+
+- onloop can write the brief, a short title for each decision, a suggested answer (always one of the answers the
+  agent offered, with its reasons), and a proposal to merge two decisions that ask the same thing. Only you merge,
+  and a merge can be undone.
+- Every text is checked before it is shown: each number in it must be one of the computed figures. A text that fails
+  the check, or a call that fails, leaves the page showing the figures themselves.
+- It runs `claude -p` on your Claude subscription, never with an API key. Turn it off with `smart: off` in
+  onloopd.yaml or `ONLOOP_SMART=off`.
+- **The denylist guard:** name a file of patterns with `smart_denylist` in onloopd.yaml (or `ONLOOP_DENYLIST`).
+  Before every call, onloop checks what it would send against it; on any match it sends nothing and shows the figures.
+
+### Upgrading
+
+- **Back up your ledger file first.** The first time 0.7.0 opens a 0.6 ledger to write, it moves it to schema 11: the
+  decisions are rebuilt from the events, and every event is kept. 0.6 cannot open the file afterwards.
+- A carried role, and a session started with `onloop open`, gets the new prompt-submit hook along with the other two.
+
+### New UI dependencies
+
+Exact versions, built into the wheel: `@radix-ui/react-dialog` 1.3.1, `@radix-ui/react-dropdown-menu` 2.2.1,
+`@radix-ui/react-popover` 1.3.1, `@radix-ui/react-tooltip` 1.4.1 and `cmdk` 1.1.1 (MIT), and
+`@fontsource-variable/inter` 5.3.0 (OFL 1.1, the Inter typeface, self-hosted, with its licence).
 
 ## [0.6.1] - 2026-11-28
 

@@ -1,3 +1,31 @@
+# onloop 0.7.0
+
+onloop is a toolkit for running a team of AI coding agents on a GitHub repository with a person **on** the loop
+rather than **in** it.
+
+**0.7.0 answers the person's questions first.** Home says how the week went, what waits on you and what came out.
+Decisions holds every question your agents asked you, one decision per subject, and your answer reaches the agent
+that asked. Agents and the Timeline show who is working and who worked when; 0.6's views are under Details. ⌘K goes
+anywhere and answers questions from this week's figures. A smart layer can write the brief and suggest answers, on
+your Claude subscription, checked against the figures and off with `smart: off`.
+
+## Install
+
+```bash
+pip install "onloop @ https://github.com/Zhihua-Zhong/onloop/releases/download/v0.7.0/onloop-0.7.0-py3-none-any.whl"
+onloop selftest
+onloop daemon start --ledger .onloop/ledger.db    # then open http://localhost:8790
+```
+
+## Upgrading from 0.6
+
+- **Back up your ledger file first.** The first time 0.7.0 opens a 0.6 ledger to write, it moves it to schema 11. It
+  keeps every event, and 0.6 cannot open the file afterwards.
+- The smart layer is on unless onloopd.yaml says `smart: off`. If any data must never reach a model, name a denylist
+  with `smart_denylist` before the first start.
+
+See [CHANGELOG.md](CHANGELOG.md) for the details. The notes for 0.6.1 follow.
+
 # onloop 0.6.1
 
 0.6.1 is a patch release of 0.6.0, for Windows. A console program that onloop started (git, claude, a check, a
