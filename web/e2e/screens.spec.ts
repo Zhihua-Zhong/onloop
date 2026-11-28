@@ -65,9 +65,10 @@ test("screen: a message sent, and the carrier stopped", async ({ page }, info) =
   fs.mkdirSync(OUT, { recursive: true });
   const w = info.project.name === "phone" ? 390 : 1440;
   await page.goto(`/?theme=light#/conversation?role=builder`);
-  await page.getByTestId("compose-text").fill("Please rebase on main before the review.");
+  // its own words: conversation.spec.ts sends a message to the builder in the same demo ledger earlier in the run
+  await page.getByTestId("compose-text").fill("Please update the screenshots after the rebase.");
   await page.getByTestId("compose-send").click();
-  await expect(page.getByTestId("entry-message").filter({ hasText: "rebase on main" }).getByTestId("delivery")).toContainText("queued");
+  await expect(page.getByTestId("entry-message").filter({ hasText: "update the screenshots" }).getByTestId("delivery")).toContainText("queued");
   await page.mouse.move(1, 1);
   await page.screenshot({ path: path.join(OUT, `conversation-sent-${w}-light.png`), fullPage: true });
   const kill = path.join(await demoDir(), "carrier.off");
