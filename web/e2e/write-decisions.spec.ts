@@ -150,7 +150,8 @@ test("the person confirms a proposed merge: one decision with both asks counted,
   await merged.click();
   const panel = isPhone(info.project.name) ? page.getByTestId("decision-sheet").getByTestId("decision-panel") : page.getByTestId("decision-panel");
   await panel.getByTestId("unmerge").click();
-  await expect(page.getByTestId("toast").filter({ hasText: "Merge undone" })).toBeVisible();
+  // the newest toast (toasts are appended): the first Undo's "Merge undone" can still be on screen
+  await expect(page.getByTestId("toast").last()).toContainText("Merge undone");
   if (isPhone(info.project.name)) await page.keyboard.press("Escape");
   await page.getByTestId("tab-open").click();
   await expect(page.getByTestId("tab-open")).toContainText("7");
