@@ -611,8 +611,8 @@ function Zoom0({ m, table }: { m: MapModel; table: boolean }) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
         <Breadcrumb path={[]} names={[]} table={table} />
         {/* zoom 0 opens into Replay (decision 0019, the approved navigation): from where it is jammed to who worked when */}
-        <a href={href("replay", { hours: "24" })} data-testid="map-to-replay" className="ml-auto text-[13px] font-medium text-accent hover:underline">
-          Who worked when: Replay →
+        <a href={href("timeline", { days: "1" })} data-testid="map-to-replay" className="ml-auto text-[13px] font-medium text-accent hover:underline">
+          Who worked when: Timeline →
         </a>
         <a
           href={href("map", { table: table ? undefined : "1" })}

@@ -27,7 +27,7 @@ const isPhone = (name: string) => name === "phone";
 // 0.7.0's shell (plan, section 1, step 1): the sidebar on a wide screen, the same list in a drawer on a phone.
 const nav = (page: Page, key: string) => page.getByTestId("sidebar").getByTestId(`nav-${key}`);
 async function go(page: Page, key: string, phone: boolean) {
-  const details = ["map", "outcome", "conversation", "schedules", "audit", "rules"].includes(key);
+  const details = ["map", "replay", "outcome", "conversation", "schedules", "audit", "rules"].includes(key);
   if (phone) await page.getByTestId("menu").click();
   const box = phone ? page.getByTestId("drawer") : page.getByTestId("sidebar");
   if (details && (await box.getByTestId("details-toggle").getAttribute("aria-expanded")) === "false") await box.getByTestId("details-toggle").click();
@@ -91,16 +91,37 @@ test("Details · Rule alerts counts what Home does not list, and says where the 
   await expect(nav(page, "rules")).toHaveAttribute("aria-current", "page");
 });
 
-test("Team shows one lane per role, who needs you first", async ({ page }) => {
-  await page.goto("/#/team");
-  const lanes = page.locator('[data-testid^="lane-"]');
-  await expect(lanes).toHaveCount(6);
-  await expect(lanes.first()).toHaveAttribute("data-testid", "lane-reviewer");
-  await expect(page.getByTestId("lane-reviewer")).toContainText("paused by you");
-  await expect(page.getByTestId("lane-reviewer").getByTestId("command")).toContainText("onloop role resume reviewer");
-  await expect(page.getByTestId("lane-builder")).toContainText("stalled");
-  await expect(page.getByTestId("lane-operator")).toContainText("working");
-  await expect(page.getByTestId("lane-data-eng")).toContainText("waiting on operator");
+test("Agents shows each role's state in plain words, its week and its cost; a format-rule break is never stuck", async ({ page }) => {
+  await page.goto("/#/team"); // 0.6's Team is Agents
+  await expect(page).toHaveURL(/#\/agents$/);
+  const view = page.getByTestId("view-agents");
+  const card = (role: string) => view.getByTestId(`agent-${role}`);
+  await expect(view.locator('a[data-testid^="agent-"]')).toHaveCount(6);
+  await expect(card("reviewer").getByTestId("agent-state")).toHaveText("paused by you");
+  await expect(card("reviewer").getByTestId("command")).toContainText("onloop role resume reviewer");
+  await expect(card("builder").getByTestId("agent-state")).toHaveText("working");
+  await expect(card("builder").getByTestId("on-now")).toHaveText("on task t-cred");
+  await expect(card("operator").getByTestId("agent-state")).toHaveText("waits on you");
+  // the lead's, the builder's and the reviewer's turns broke a format rule: counted under Rule alerts, never "stopped"
+  await expect(view.locator('[data-testid="agent-state"][data-state="stopped"]')).toHaveCount(0);
+  await expect(card("lead").getByTestId("on-now")).toContainText("its last turn ended");
+  // the sidebar's "Agents now" lists the same roles
+  await expect(page.getByTestId("sidebar").getByTestId("agents-now").locator("a")).toHaveCount(6);
+  await card("operator").click();
+  await expect(page).toHaveURL(/#\/agents\/operator$/);
+  await expect(page.getByTestId("agent-decisions")).toContainText("approve the schema change");
+  await expect(page.getByTestId("agent-lane")).toBeVisible();
+});
+
+test("the Timeline shows who worked when, the merges and each role's figures, and links to Replay", async ({ page }) => {
+  await page.goto("/#/timeline");
+  await expect(page.getByTestId("timeline-lanes").getByTestId("lane-row")).toHaveCount(6);
+  await expect(page.getByTestId("timeline-lanes").getByTestId("flag")).toHaveCount(7);
+  await expect(page.getByTestId("figure-builder").getByTestId("figure-turns")).toHaveText("2");
+  await expect(page.getByTestId("figures")).toContainText("10 asks wait on you");
+  await page.getByTestId("to-replay").click();
+  await expect(page).toHaveURL(/#\/details\/replay\?hours=168/);
+  await expect(page.getByTestId("replay")).toBeVisible();
 });
 
 test("Schedules lists every job, failing first, and opens a log tail", async ({ page }) => {
@@ -179,8 +200,8 @@ test("the map's zoom 0 opens into the Timeline", async ({ page }) => {
   await page.goto("/#/details/map");
   await page.getByTestId("map-to-replay").click();
   await expect(nav(page, "timeline")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/#\/timeline\?hours=24/);
-  await expect(page.getByTestId("replay")).toBeVisible();
+  await expect(page).toHaveURL(/#\/timeline\?days=1$/);
+  await expect(page.getByTestId("view-timeline")).toBeVisible();
 });
 
 test("an old link opens where its view lives now, and the address names it", async ({ page }) => {
@@ -190,7 +211,8 @@ test("an old link opens where its view lives now, and the address names it", asy
     ["/#/now", "decisions", /#\/decisions$/], // 0.6's Now and its task list are Decisions
     ["/#/tasks", "decisions", /#\/decisions$/],
     ["/#/team", "agents", /#\/agents$/],
-    ["/#/replay?hours=24", "timeline", /#\/timeline\?hours=24(&|$)/],
+    ["/#/replay?hours=24", "timeline", /#\/timeline\?hours=24$/],
+    ["/#/replay?hours=24&t=5", "replay", /#\/details\/replay\?hours=24&(.*&)?t=5(&|$)/], // a moment: playback, under Details (Replay adds its own to= and speed=)
     ["/#/map/changes", "map", /#\/details\/map\/changes$/],
     ["/#/audit?kind=role.paused", "audit", /#\/details\/audit\?kind=role\.paused$/],
   ] as const) {
@@ -200,11 +222,11 @@ test("an old link opens where its view lives now, and the address names it", asy
   }
 });
 
-test("leaving the Timeline is never undone by the Timeline writing its own address", async ({ page }) => {
+test("leaving Replay is never undone by Replay writing its own address", async ({ page }) => {
   // Replay keeps its cursor and speed in the address from timers; one write landing after a link was followed used to
-  // pull the page back to the Timeline (found by this spec, 0.7.0 step 2)
+  // pull the page back to it (found by this spec, 0.7.0 step 2)
   for (let i = 0; i < 6; i++) {
-    await page.goto("/#/timeline?hours=24");
+    await page.goto("/#/details/replay?hours=24");
     await expect(page.getByTestId("replay")).toBeVisible();
     await page.goto("/#/details/audit");
     await expect(nav(page, "audit")).toHaveAttribute("aria-current", "page");
@@ -225,8 +247,8 @@ test("the theme menu switches, and the navigation reaches every view, Details on
   expect(order.slice(0, 4)).toEqual(["A:nav-home", "A:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
   await expect(nav(page, "decisions").getByTestId("decisions-badge")).toHaveText("6");
   if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
-  const root: Record<string, string> = { home: "brief", timeline: "replay", map: "map-level", agents: "view-team" };
-  for (const v of ["decisions", "timeline", "map", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
+  const root: Record<string, string> = { home: "brief", replay: "replay", map: "map-level" };
+  for (const v of ["decisions", "timeline", "map", "replay", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
     await go(page, v, phone);
     await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
     await expect(nav(page, v)).toHaveAttribute("aria-current", "page");
@@ -234,7 +256,7 @@ test("the theme menu switches, and the navigation reaches every view, Details on
   // Home is 0.7.0's own page; a page still shown by its 0.6 view says so until its 0.7.0 page lands
   await expect(page.getByTestId("interim")).toHaveCount(0);
   await go(page, "agents", phone);
-  await expect(page.getByTestId("interim")).toContainText("Agents shows 0.6's Team view");
+  await expect(page.getByTestId("interim")).toHaveCount(0); // every main page is 0.7.0's own now
 });
 
 test("every overlay's content is opaque the moment it opens, inside the window, and Escape closes it", async ({ page }, info) => {

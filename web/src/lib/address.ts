@@ -2,16 +2,17 @@
 // history and operations one click down under Details (`#/details/map`, `#/details/audit?kind=pr.merged`). A view is
 // still named by its 0.6.0 key inside the code, so the views link to each other with `href(view)` as before. Imports
 // nothing, so node's test runner reads it as is.
-export const VIEWS = ["now", "decisions", "replay", "map", "outcome", "team", "conversation", "schedules", "audit", "rules"] as const;
+export const VIEWS = ["now", "decisions", "team", "timeline", "replay", "map", "outcome", "conversation", "schedules", "audit", "rules"] as const;
 export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", decisions: "Decisions", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
+export const VIEW_LABEL: Record<View, string> = { now: "Now", decisions: "Decisions", timeline: "Timeline", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
 
 /** Each view's address, after `#/`. */
 export const ADDRESS: Record<View, string> = {
   now: "",
   decisions: "decisions",
   team: "agents",
-  replay: "timeline",
+  timeline: "timeline",
+  replay: "details/replay",
   map: "details/map",
   outcome: "details/outcome",
   conversation: "details/conversation",
@@ -19,7 +20,7 @@ export const ADDRESS: Record<View, string> = {
   audit: "details/audit",
   rules: "details/rules",
 };
-export const DETAILS: readonly View[] = ["map", "outcome", "conversation", "schedules", "audit", "rules"];
+export const DETAILS: readonly View[] = ["map", "replay", "outcome", "conversation", "schedules", "audit", "rules"];
 
 // `path` is what follows the view's address: the map's levels, `#/details/map/<goal>/<stage>` (decision 0018).
 export interface Route { view: View; params: URLSearchParams; path: string[] }

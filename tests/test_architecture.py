@@ -52,6 +52,8 @@ LAYERS = {
         "timeline",
         "home",
         "decisions",
+        "agents",
+        "timeline_page",
     },
     3: {"supervisor", "daemon", "carrier"},
     4: {"cli", "__main__"},

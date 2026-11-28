@@ -433,3 +433,35 @@ def test_decisions_count_is_homes_and_both_add_up_to_the_one_count(which, demo_p
     ]
     assert v["count"] + v["rule_asks"] == v["waiting_on_you"] == c["task_list"]
     assert v["rule_asks"] == rules["asks_missing"]["count"]
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_agents_the_timeline_and_home_count_the_same_tokens_and_turns(which, demo_path, replay_path):
+    """0.7.0 step 4: the Agents cards' tokens, the Timeline's figures and Home's Cost per delivery (its numerator) are one
+    sum over the week; and each role's turns are the same on Agents, the Timeline, Home's lanes and the one derivation."""
+    from onloop import agents, timeline_page
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, _ = _home(led, now)
+        end = h["to"]
+        a = agents.cards(led, now, end if end != now else None)
+        timeline_page._CACHE.clear()
+        t = timeline_page.build(led, now, 7, end if end != now else None)
+        per_role = derive.turns_per_role(led, h["from"], end)
+    tokens = {
+        "agents": a["tokens"],
+        "agent_cards": sum(c["tokens"] for c in a["agents"]),
+        "timeline": sum(f["tokens"] for f in t["figures"]),
+        "home": h["numbers"]["cost_per_delivery"]["tokens"],
+    }
+    assert len(set(tokens.values())) == 1, tokens
+    turns_agents = {c["role"]: c["turns"] for c in a["agents"] if c["turns"]}
+    turns_timeline = {f["role"]: f["turns"] for f in t["figures"] if f["turns"]}
+    turns_home = {L["role"]: L["turn_count"] for L in h["lanes"]["lanes"] if L["turn_count"]}
+    assert turns_agents == turns_timeline == turns_home == per_role, (
+        turns_agents,
+        turns_timeline,
+        turns_home,
+        per_role,
+    )

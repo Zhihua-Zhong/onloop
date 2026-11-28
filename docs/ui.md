@@ -2,7 +2,8 @@
 
 onloopd serves one UI over the ledger at `http://localhost:8790` (decision 0009). Since 0.7.0 it is prototype F's
 shell: a sidebar with the main pages (Home, Decisions, Agents, Timeline) and, folded under **Details**, history and
-operations (Map, Outcome, Conversation, Schedules, Audit, Rule alerts); on a phone the same list opens as a drawer.
+operations (Map, Replay, Outcome, Conversation, Schedules, Audit, Rule alerts), and "Agents now": every role with its
+state. On a phone the same list opens as a drawer.
 Every request it makes is a GET but two: the Conversation view's compose box, a message to a role
 ([decision 0011](decisions/0011-ui-write-path.md)), and a decision's Done or Decline (decision 0013). Where a person can act otherwise, the page shows the exact
 `onloop` command with a copy button. Approvals come later, through the approval channel.
@@ -38,8 +39,9 @@ for and what to do next.
 |---|---|---|
 | **Home** (`#/`, the first screen) | Is it going well, what needs me, what came out? | `GET /api/home` |
 | **Decisions** (`#/decisions`) | What must I decide, in what order, and what did I answer? | `GET /api/decisions`; answers `POST /ui/tasks/resolve`, `/ui/tasks/withdraw` |
-| **Agents** (`#/agents`) | Who is working, idle, paused or stalled, on what, and what happens next? Shows 0.6's Team view until its 0.7.0 page lands, and says so | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
-| **Timeline** (`#/timeline`) | Who did what, how long it took, what it cost in tokens, and what each step produced? Shows 0.6's Replay view until its 0.7.0 page lands, and says so | `GET /api/replay`, `GET /api/products` |
+| **Agents** (`#/agents`, `#/agents/<role>`) | Who is working, on what, at what cost, and is anyone stuck? | `GET /api/agents`, `GET /api/agents/<role>` |
+| **Timeline** (`#/timeline?days=1\|2\|7\|14`) | Who worked when, where did work wait on me, what came out when? | `GET /api/timeline` |
+| Details · **Replay** (`#/details/replay`) | What was happening at a given moment: playback, the cursor, each step's products, the table | `GET /api/replay`, `GET /api/products` |
 | Details · **Map** (`#/details/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
 | Details · **Outcome** (`#/details/outcome`) | Do merged changes move the goals, and what does each one take to land (hours, review rounds, human touches)? ([tasks.md](tasks.md)) | `GET /api/kpi` |
 | Details · **Conversation** (`#/details/conversation?role=R`) | What did onloop send each carried role, how far did it get, and what would it send where it only observes? | `GET /api/conversation`; the compose box `POST /ui/messages` |
@@ -55,7 +57,9 @@ it is jammed (decision 0019).
 - **From Home:** Delivered opens the Timeline, Cost per delivery opens Agents, Waited on you goes to the decisions; the
   brief's "Decide" button opens the first decision; "Open the timeline" under the lanes; the count of asks that do not
   say what they change links to Details · Rule alerts.
-- **From the map:** zoom 0's "Who worked when: Replay →" opens the Timeline over the last 24 hours.
+- **From the map:** zoom 0's "Who worked when: Timeline →" opens the Timeline over the last 24 hours.
+- **From the Timeline:** "Play it back, or see it as a table" opens Details · Replay over the same window.
+- **From Agents:** a card opens that role's page: its week, its decisions with you, its lane.
 - **Waiting on you** is one count: Home's (the decisions it lists plus the asks it counts under Rule alerts), the
   map's and the task list's, from one derivation (`tests/test_agreement.py`).
 - **Jobs due** are on Details · Schedules; their count and the dead-man switch on Details · Rule alerts.
@@ -84,6 +88,36 @@ the week before. On a frozen copy (a read-only server whose ledger nothing write
 - **Who worked when:** the Timeline's lanes over 24 h, 48 h or 7 days: working time and time waiting on you per role,
   each turn's end a mark, each change merged a green flag, and the now line. The role names stay in their column while
   the picture scrolls; on a phone it opens at now.
+
+### Agents
+
+Prototype F's cards (0.7.0 plan, sections 1 and 2), one per role seen in the last two weeks:
+- **Its state, in plain words:** working (a carried run open and alive, a recorded step open, or a turn or model request
+  in the last 10 minutes), waits on you (it asked something still open), paused by you (with the command that resumes
+  it), stopped (a carried run started over an hour ago and did nothing since), or idle. "Stopped" is the only stuck: a
+  turn that broke a format rule (no outcome line, an ask with no effect) never makes a role look stuck; Rule alerts
+  counts those.
+- **What it is on:** its open step, else what its last turn said ("blocked on pr#45, 30 min ago").
+- **Its week:** turns by day, turns and tokens against the week before, and the changes merged that it opened (when the
+  code host says who opened them), with the model it ran on last.
+- **A role's page:** its week by day, its decisions with you (open, and answered with whether the answer reached it),
+  and its lane over the week.
+
+Its tokens and turns are the Timeline's and Home's (`tests/test_agreement.py`). onloop records no subagent of a session
+today; none is shown, and none is made up.
+
+### Timeline
+
+0.6's Replay lanes, restyled with prototype F's flags and callouts (0.7.0 plan, sections 1 and 7.3), over 24 h, 48 h,
+7 or 14 days:
+- **The lanes:** working time and time waiting on you per role, each turn's end a mark, each change merged a green flag,
+  and Home's "Unusual this week" as numbered callouts where each happened.
+- **So far in this window:** each role's working time, waiting time, turns and tokens, and how much of the window
+  something waited on you.
+- **Speed:** `GET /api/timeline` reads the window only. Each role's figures are summed from per-day figures cached in
+  onloopd: a past day is computed once, again only when it gains an event, and today on each read. Nothing is read from
+  the ledger's start (0.6's Replay did, and took over 10 s on the dogfood).
+- **Replay** keeps the playback, the cursor, each step's products and the table, under Details.
 
 ### Decisions
 
@@ -182,7 +216,8 @@ cursor stays there.
 ### Old links
 
 0.7.0 gave every view a new address. An old link opens the same view, and the address is rewritten in place (no new
-history entry), keeping the rest of the link: `#/now` and `#/tasks` become `#/decisions`, `#/team` `#/agents`, `#/replay` `#/timeline`, and
+history entry), keeping the rest of the link: `#/now` and `#/tasks` become `#/decisions`, `#/team` `#/agents`, `#/replay` `#/timeline`
+(or `#/details/replay` when it names a moment with `t=` or `to=`), and
 `#/map/...`, `#/outcome`, `#/conversation`, `#/schedules` and `#/audit?...` become `#/details/...`.
 
 ### Retired: Flow and Activity

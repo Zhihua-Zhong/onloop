@@ -8,3 +8,9 @@ export function roleColor(role: string): string {
   for (const ch of role) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+
+/** Who asked, in plain words: the role, or "asker unknown" when the ask named none (an adapter's, a work-graph node's). */
+export const askerName = (role: string | null | undefined): string => role ?? "asker unknown";
+/** An avatar's initial and colour: "?" in a neutral grey for an asker nobody named. */
+export const avatarOf = (role: string | null | undefined): { name: string; color: string } =>
+  role ? { name: role, color: roleColor(role) } : { name: "?", color: "#8a8f98" };

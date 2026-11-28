@@ -68,6 +68,7 @@ def card(t: dict[str, Any], asks: list[dict[str, Any]], now: str) -> dict[str, A
     return {
         "id": t["id"],
         "title": t.get("effect") or t.get("title") or t.get("ref") or t["id"],
+        "effect_text": t.get("effect"),  # the title is the effect until step 5 writes a short one
         "asked_by": t.get("author_role"),
         "askers": askers or ([t["author_role"]] if t.get("author_role") else []),
         "asks": max(1, len(asks)),

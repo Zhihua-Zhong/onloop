@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState, type ElementType, type ReactNode } from "react";
-import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert } from "lucide-react";
+import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert, History } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
-import { homeApi } from "@/lib/api";
+import { agentsApi, homeApi } from "@/lib/api";
+import { roleColor } from "@/lib/roleColor";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHeartbeat } from "@/lib/heartbeat";
 import { useNowMs } from "@/lib/clock";
@@ -20,7 +21,8 @@ import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
 import { HomeView } from "@/views/Home";
 import { DecisionsView } from "@/views/Decisions";
 import { RuleAlertsView } from "@/views/details/RuleAlerts";
-import { TeamView } from "@/views/Team";
+import { AgentDetailView, AgentsView, StateLine } from "@/views/Agents";
+import { TimelineView } from "@/views/Timeline";
 import { ReplayView } from "@/views/Replay";
 import { OutcomeView } from "@/views/details/Outcome";
 import { SchedulesView } from "@/views/details/Schedules";
@@ -208,11 +210,11 @@ interface Page { key: string; label: string; icon: ElementType; view: View; inte
 const MAIN: Page[] = [
   { key: "home", label: "Home", icon: HomeIcon, view: "now" },
   { key: "decisions", label: "Decisions", icon: Inbox, view: "decisions" },
-  { key: "agents", label: "Agents", icon: Bot, view: "team", interim: "Agents shows 0.6's Team view until the new Agents page lands." },
-  { key: "timeline", label: "Timeline", icon: Activity, view: "replay", interim: "Timeline shows 0.6's Replay view until the new Timeline lands." },
+  { key: "agents", label: "Agents", icon: Bot, view: "team" },
+  { key: "timeline", label: "Timeline", icon: Activity, view: "timeline" },
 ];
-const DETAIL_ICON: Record<string, ElementType> = { map: MapIcon, outcome: Target, conversation: MessagesSquare, schedules: CalendarClock, audit: ScrollText, rules: TriangleAlert };
-const DETAIL_LABEL: Record<string, string> = { map: "Map", outcome: "Outcome", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
+const DETAIL_ICON: Record<string, ElementType> = { map: MapIcon, replay: History, outcome: Target, conversation: MessagesSquare, schedules: CalendarClock, audit: ScrollText, rules: TriangleAlert };
+const DETAIL_LABEL: Record<string, string> = { map: "Map", replay: "Replay", outcome: "Outcome", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
 
 function pageOf(view: View): { label: string; interim?: string; details: boolean } {
   const main = MAIN.find((p) => p.view === view);
@@ -229,6 +231,25 @@ function DecisionsBadge() {
     <span className="ml-auto rounded-full bg-wait/15 px-1.5 text-xs font-medium text-state-human num" data-testid="decisions-badge" aria-label={`${n} open`}>
       {n}
     </span>
+  );
+}
+
+// F's "Agents now": every role with its state, one click from its page
+function AgentsNow({ onNav }: { onNav?: () => void }) {
+  const q = useQuery({ queryKey: ["agents"], queryFn: agentsApi.all, refetchInterval: 30_000 });
+  const list = q.data?.agents ?? [];
+  if (!list.length) return null;
+  return (
+    <div className="mt-auto space-y-0.5 pt-4" data-testid="agents-now">
+      <div className="px-2 pb-1 text-xs text-muted">Agents now</div>
+      {list.map((a) => (
+        <a key={a.role} href={href("team", {}, [a.role])} onClick={onNav} className="flex h-7 items-center gap-2 rounded-md px-2 text-sm text-muted hover:bg-hover hover:text-fg">
+          <span className="size-2 shrink-0 rounded-full" style={{ background: roleColor(a.role) }} aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{a.role}</span>
+          <StateLine a={a} />
+        </a>
+      ))}
+    </div>
   );
 }
 
@@ -284,6 +305,7 @@ function Sidebar({ view, onNav }: { view: View; onNav?: () => void }) {
           <NavItem key={d} to={href(d)} label={DETAIL_LABEL[d]} icon={DETAIL_ICON[d]} active={view === d} testid={`nav-${d}`} onNav={onNav} />
         ))}
       </div>
+      <AgentsNow onNav={onNav} />
     </nav>
   );
 }
@@ -366,8 +388,9 @@ export default function App() {
                 </Suspense>
               )}
               {route.view === "replay" && <ReplayView params={route.params} />}
+              {route.view === "timeline" && <TimelineView params={route.params} />}
               {route.view === "outcome" && <OutcomeView params={route.params} />}
-              {route.view === "team" && <TeamView />}
+              {route.view === "team" && (route.path[0] ? <AgentDetailView role={route.path[0]} /> : <AgentsView />)}
               {route.view === "conversation" && <ConversationView params={route.params} />}
               {route.view === "schedules" && <SchedulesView params={route.params} />}
               {route.view === "audit" && <AuditView params={route.params} />}

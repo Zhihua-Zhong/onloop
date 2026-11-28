@@ -31,6 +31,10 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/home               Home (0.7.0): the week's three numbers against the week before, the decisions in their
                                 order, what is unusual, the lanes and the facts-only brief; reads 14 days at most
     GET /api/rules              Details · Rule alerts: the system's own rule alerts, counted
+    GET /api/agents[/<role>]    Agents (0.7.0): each role's state, what it is on, its week and cost; one role's week by
+                                day, its decisions and its lane
+    GET /api/timeline           the Timeline (0.7.0): ?days=1|2|7|14; the lanes, the merges, the callouts and each role's
+                                figures for the window, summed from per-day figures, never read from the ledger's start
     GET /api/decisions          Decisions (0.7.0): the open decisions in the one order, each with every ask it holds and
                                 its recorded options, and the person's answers of the last 14 days
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
@@ -81,7 +85,7 @@ import sys
 import threading
 import time
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .. import __version__, sqlitedb
 from .. import events as ev
@@ -537,6 +541,35 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 now = ev.now_ts()
                 frozen = self.server.writer is None and not self._written_elsewhere()
                 body = home.build(reader, now, (home.last_event(reader) or now) if frozen else None)
+            elif url.path == "/api/agents" or url.path.startswith("/api/agents/"):
+                from .. import agents, home
+
+                now = ev.now_ts()
+                frozen = self.server.writer is None and not self._written_elsewhere()
+                end = (home.last_event(reader) or now) if frozen else None
+                role = (
+                    unquote(url.path[len("/api/agents/") :]) if url.path.startswith("/api/agents/") else None
+                )
+                if role:
+                    body = agents.detail(reader, role, now, end)
+                    if body is None:
+                        self._send_json(404, {"error": f"no role {role!r} in the last two weeks"}, head_only)
+                        return
+                else:
+                    body = agents.cards(reader, now, end)
+            elif url.path == "/api/timeline":
+                from .. import home, timeline_page
+
+                now = ev.now_ts()
+                frozen = self.server.writer is None and not self._written_elsewhere()
+                try:
+                    days = int(query.get("days", ["7"])[0])
+                    body = timeline_page.build(
+                        reader, now, days, (home.last_event(reader) or now) if frozen else None
+                    )
+                except ValueError as e:
+                    self._send_json(400, {"error": str(e)}, head_only)
+                    return
             elif url.path == "/api/decisions":
                 from .. import decisions
 

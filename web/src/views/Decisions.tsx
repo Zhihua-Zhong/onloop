@@ -6,13 +6,14 @@ import { useAnswers } from "@/lib/answers";
 import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
 import { isUrl } from "@/lib/url";
-import { roleColor } from "@/lib/roleColor";
+import { askerName, avatarOf } from "@/lib/roleColor";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, Card, Input, Skeleton } from "@/components/ui/basics";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // Decisions (0.7.0 plan, sections 1 and 4): what must I decide, in what order? Prototype F's split view: the list on
 // the left, the decision on the right (a sheet on a phone). One subject, one decision: every ask about it, from any
@@ -49,7 +50,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: boolean; onDone?: () => void }) {
   const { answer, withdraw, busy, error } = useAnswers();
-  const who = d.asked_by ?? "unattributed";
+  const who = askerName(d.asked_by);
   const open = d.resolution == null;
   const act = async (resolution: "done" | "declined", option?: string) => {
     await answer(d.id, d.asked_by, resolution, option);
@@ -59,7 +60,7 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
     <div className="flex h-full min-h-0 flex-col" data-testid="decision-panel" data-id={d.id}>
       <div className="border-b border-line px-5 py-4 pr-12">
         <div className="flex items-center gap-2 text-xs text-muted">
-          <Avatar name={who} color={roleColor(who)} size={18} />
+          <Avatar {...avatarOf(d.asked_by)} size={18} />
           {d.askers.length > 1 ? d.askers.join(", ") : who} · {open ? `waiting ${duration(d.age_s)}` : `answered ${at(d.resolved_at)}`}
         </div>
         <h2 className="mt-1.5 text-lg font-semibold leading-6" data-testid="panel-title">
@@ -93,7 +94,8 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
           </div>
         )}
         <dl className="space-y-2.5" data-testid="facts">
-          <Fact label="What it changes">{d.title}</Fact>
+          {/* the title is what it changes until step 5 writes a short title: no row that repeats it */}
+          {d.effect_text && d.effect_text !== d.title && <Fact label="What it changes">{d.effect_text}</Fact>}
           <Fact label="What waits on it">{d.holds ?? "not said"}</Fact>
           <Fact label="If nobody answers">{d.default ?? "not said"}</Fact>
           {d.cost_text && <Fact label="Cost of delay">{d.cost_text}</Fact>}
@@ -163,7 +165,7 @@ export function DecisionPanel({ d, first, onDone }: { d: HomeDecision; first: bo
 }
 
 function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on: boolean; onPick: () => void }) {
-  const who = d.asked_by ?? "unattributed";
+  const who = askerName(d.asked_by);
   return (
     <li>
       <button
@@ -174,7 +176,7 @@ function Row({ d, rank, on, onPick }: { d: HomeDecision; rank: number | null; on
         data-id={d.id}
         className={cn("flex w-full items-start gap-3 border-b border-line px-4 py-3 text-left transition-colors hover:bg-hover/60", on && "bg-hover")}
       >
-        <Avatar name={who} color={roleColor(who)} size={28} className="mt-0.5" />
+        <Avatar {...avatarOf(d.asked_by)} size={28} className="mt-0.5" />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 text-sm font-medium" data-testid="row-title">{d.title}</span>
@@ -220,6 +222,7 @@ function List({ m, show, setShow, pick, current, wide }: { m: DecisionsModel; sh
             </button>
           ))}
         </div>
+        <Tooltip content="In order: weight, then when the delay costs, then age.">
         <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
           Sort
           <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-7 rounded-md border border-line bg-bg px-1.5 text-xs text-fg">
@@ -228,6 +231,7 @@ function List({ m, show, setShow, pick, current, wide }: { m: DecisionsModel; sh
             <option value="asked">most asked</option>
           </select>
         </label>
+        </Tooltip>
         <div className="relative w-full sm:w-[200px]">
           <Search className="absolute left-2.5 top-2 size-4 text-muted" aria-hidden />
           <Input placeholder="Filter" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" aria-label="Filter decisions" />
@@ -273,7 +277,7 @@ export function DecisionsView() {
           <p className="mt-0.5 text-sm text-muted" data-testid="decisions-sub">
             {show === "done"
               ? "Your answers of the last 14 days. Each can be withdrawn until it reaches the role that asked."
-              : `In order: weight, then when the delay costs, then age. ${asksTotal(m)} ${asksTotal(m) === 1 ? "ask" : "asks"} became ${m.count} ${m.count === 1 ? "decision" : "decisions"}: one subject, one decision.`}
+              : `${asksTotal(m)} ${asksTotal(m) === 1 ? "ask" : "asks"} became ${m.count} ${m.count === 1 ? "decision" : "decisions"}: one subject, one decision.`}
             {show === "open" && m.rule_asks > 0 && (
               <>
                 {" "}

@@ -158,6 +158,7 @@ def _unusual(ledger: Any, end: str) -> list[dict[str, Any]]:
                     "id": f"quiet:{role}",
                     "kind": "quiet",
                     "role": role,
+                    "at": ends[-1],  # where the quiet began
                     "value": quiet,
                     "norm": norm,
                     "title": f"{role} quiet for {derive.plain_age(quiet)}",
@@ -186,6 +187,7 @@ def _unusual(ledger: Any, end: str) -> list[dict[str, Any]]:
                     "id": f"tokens:{role}",
                     "kind": "tokens",
                     "role": role,
+                    "at": day,
                     "value": peak,
                     "norm": norm,
                     "title": f"{role} spent {round(peak / 1000)}k tokens in a day",
@@ -201,7 +203,7 @@ def _unusual(ledger: Any, end: str) -> list[dict[str, Any]]:
         )
         by_role: dict[str, list[dict[str, Any]]] = {}
         for r in rows:
-            by_role.setdefault(r["author_role"] or "unattributed", []).append(r)
+            by_role.setdefault(r["author_role"] or "asker unknown", []).append(r)
         for role, asks in by_role.items():
             answered = [_secs(r["opened_at"], r["resolved_at"]) for r in asks if r["resolved_at"]]
             open_ = [_secs(r["opened_at"], end) for r in asks if not r["resolved_at"]]
@@ -209,12 +211,14 @@ def _unusual(ledger: Any, end: str) -> list[dict[str, Any]]:
                 continue
             norm = statistics.median(answered)
             oldest = max(open_)
+            oldest_at = min(r["opened_at"] for r in asks if not r["resolved_at"])
             if oldest >= QUIET_FLOOR_S and norm > 0 and oldest > UNUSUAL_X * norm:
                 found.append(
                     {
                         "id": f"wait:{role}",
                         "kind": "wait",
                         "role": role,
+                        "at": oldest_at,
                         "value": oldest,
                         "norm": norm,
                         "title": f"An ask from {role} has waited {derive.plain_age(oldest)}",
@@ -320,7 +324,7 @@ def rule_alerts(ledger: Any, now: str) -> dict[str, Any]:
     by_role: dict[str, int] = {}
     reasons: dict[str, int] = {}
     for c in incomplete:
-        role = c.get("author_role") or "unattributed"
+        role = c.get("author_role") or "asker unknown"
         by_role[role] = by_role.get(role, 0) + 1
         for r in c.get("incomplete_reasons") or []:
             words = tasks.MISSING.get(r, r)
@@ -339,7 +343,7 @@ def rule_alerts(ledger: Any, now: str) -> dict[str, Any]:
             key = det or "alert:" + words
         g = groups.setdefault(key, {"detector": key, "words": words, "count": 0, "by_role": {}})
         g["count"] += 1
-        g["by_role"][role or "unattributed"] = g["by_role"].get(role or "unattributed", 0) + 1
+        g["by_role"][role or "owner unknown"] = g["by_role"].get(role or "owner unknown", 0) + 1
     since = tasks.last_visit(ledger)
     d = tasks.digest(ledger, since, now)
     con = ledger.constraint(now)["constraint"]

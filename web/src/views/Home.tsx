@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { homeApi, type HomeDecision, type HomeModel } from "@/lib/api";
@@ -6,9 +6,10 @@ import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
 import { isUrl } from "@/lib/url";
 import { useAnswers } from "@/lib/answers";
-import { roleColor } from "@/lib/roleColor";
+import { askerName, avatarOf } from "@/lib/roleColor";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
+import { LanesLegend, LanesPicture, RangeTabs } from "@/components/Lanes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/components/ui/basics";
@@ -18,8 +19,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 // ledger: the brief (facts only until the smart layer lands), three numbers against last week, the decisions in their
 // one order, what is unusual this week, and the lanes as the evidence. Rule alerts are counted under Details, never
 // listed here. Every number is GET /api/home's, which agrees with the views one click down (tests/test_agreement.py).
-
-const H = 3600_000;
 
 function greeting(d: Date): string {
   const h = d.getHours();
@@ -119,7 +118,7 @@ function Numbers({ m, onWaited }: { m: HomeModel; onWaited: () => void }) {
         sub={d.recorded ? `${d.value} ${d.value === 1 ? "change" : "changes"} merged · 7 days` : "connect the code host's ingest to count merges"}
         spark={d.by_day.reduce<number[]>((acc, n) => [...acc, (acc.at(-1) ?? 0) + n], [])}
         color="hsl(var(--done))"
-        to={href("replay")}
+        to={href("timeline")}
       />
       <button type="button" onClick={onWaited} className="contents text-left">
         <Kpi
@@ -195,11 +194,11 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boolean; open: boolean; onToggle: () => void }) {
   const { answer, busy, error } = useAnswers();
-  const who = d.asked_by ?? "unattributed";
+  const who = askerName(d.asked_by);
   return (
     <li className={cn("rounded-md", open && "bg-hover/50")} data-testid="decision" data-id={d.id}>
       <button type="button" onClick={onToggle} aria-expanded={open} className="group flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-hover/60">
-        <Avatar name={who} color={roleColor(who)} size={28} />
+        <Avatar {...avatarOf(d.asked_by)} size={28} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 max-w-full truncate text-sm font-medium" data-testid="decision-title">{d.title}</span>
@@ -216,7 +215,7 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
       {open && (
         <div className="space-y-3 px-2 pb-3 pl-12" data-testid="decision-facts">
           <dl className="space-y-2">
-            <Fact label="What it changes">{d.title}</Fact>
+            {d.effect_text && d.effect_text !== d.title && <Fact label="What it changes">{d.effect_text}</Fact>}
             <Fact label="What waits on it">{d.holds ?? "not said"}</Fact>
             <Fact label="If nobody answers">{d.default ?? "not said"}</Fact>
             {d.cost_text && <Fact label="Cost of delay">{d.cost_text}</Fact>}
@@ -369,140 +368,17 @@ const RANGES = [
 
 function Lanes({ m }: { m: HomeModel }) {
   const [range, setRange] = useState<number>(168);
-  const box = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(900);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
-    ro.observe(el);
-    setWidth(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-  const narrow = width < 640;
-  useEffect(() => {
-    if (box.current && narrow) box.current.scrollLeft = box.current.scrollWidth;
-  }, [narrow, range, width]);
-  const END = Date.parse(m.to);
-  const S0 = END - range * H;
-  // the role names stay in their own column while the picture scrolls (on a phone it opens at now)
-  const NAMES = narrow ? 84 : 120;
-  const L = 6;
-  const R = 16;
-  const W = Math.max(width, narrow && range > 48 ? 560 : 0);
-  const PW = W - L - R;
-  const x = (t: number) => L + ((Math.min(Math.max(t, S0), END) - S0) / (END - S0)) * PW;
-  const ROW = 32;
-  const FLAG = 22;
-  const AX = 20;
-  const lane0 = FLAG + AX;
-  const lanes = m.lanes.lanes;
-  const height = lane0 + Math.max(1, lanes.length) * ROW + 6;
-  const step = range > 48 ? 24 : 6;
-  const ticks: number[] = [];
-  for (let t = Math.ceil(S0 / (step * H)) * step * H; t <= END; t += step * H) ticks.push(t);
-  const tickText = (t: number) => {
-    const d = new Date(t);
-    return range > 48 || (d.getHours() === 0 && d.getMinutes() === 0)
-      ? d.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })
-      : `${String(d.getHours()).padStart(2, "0")}:00`;
-  };
-  const flags = m.numbers.delivered.items.filter((f) => Date.parse(f.at) >= S0);
   return (
     <Card data-testid="lanes">
       <CardHeader>
         <CardTitle>Who worked when</CardTitle>
-        <div className="inline-flex rounded-md bg-raised p-0.5" role="tablist" aria-label="Range">
-          {RANGES.map(([v, n]) => (
-            <button key={v} type="button" role="tab" aria-selected={range === v} onClick={() => setRange(v)} className={cn("rounded px-2.5 py-0.5 text-xs font-medium text-muted transition-colors", range === v && "bg-bg text-fg shadow-sm")}>
-              {n}
-            </button>
-          ))}
-        </div>
+        <RangeTabs value={range} options={RANGES} onChange={setRange} />
       </CardHeader>
       <CardContent>
-        <div className="flex">
-        <div className="shrink-0 border-r border-line" style={{ width: NAMES, paddingTop: lane0 }} data-testid="lane-names">
-          {lanes.map((lane) => (
-            <div key={lane.role} className="flex items-center gap-1.5 truncate pr-2 text-xs" style={{ height: ROW }}>
-              <span className="size-2 shrink-0 rounded-full" style={{ background: roleColor(lane.role) }} aria-hidden />
-              <span className="truncate">{lane.role}</span>
-            </div>
-          ))}
-        </div>
-        <div ref={box} className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
-          <svg width={W} height={height} className="block" role="img" aria-label={`Who worked when, the last ${range === 168 ? "7 days" : `${range} hours`}: ${lanes.length} roles, ${flags.length} changes merged`}>
-            <defs>
-              <pattern id="home-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect width="6" height="6" fill="hsl(var(--wait))" opacity=".16" />
-                <line x1="0" y1="0" x2="0" y2="6" stroke="hsl(var(--wait))" strokeWidth="2" opacity=".75" />
-              </pattern>
-            </defs>
-            {ticks.map((t) => (
-              <g key={t}>
-                <line x1={x(t)} x2={x(t)} y1={FLAG} y2={height} stroke="hsl(var(--line))" />
-                <text x={x(t) + 4} y={FLAG + 14} className="fill-muted text-[11px]">
-                  {tickText(t)}
-                </text>
-              </g>
-            ))}
-            {flags.map((f) => (
-              <g key={f.ref + f.at}>
-                <title>{`Merged ${new Date(f.at).toLocaleString(undefined, { hour12: false })}: ${f.title}`}</title>
-                <path d={`M${x(Date.parse(f.at)) - 4.5} ${FLAG - 4} L${x(Date.parse(f.at))} ${FLAG - 14} L${x(Date.parse(f.at)) + 4.5} ${FLAG - 4} Z`} fill="hsl(var(--done))" data-testid="flag" />
-              </g>
-            ))}
-            {lanes.map((lane, r) => {
-              const y = lane0 + r * ROW;
-              const mid = y + ROW / 2;
-              return (
-                <g key={lane.role} data-testid="lane-row">
-                  <line x1={L} x2={L + PW} y1={mid} y2={mid} stroke="hsl(var(--line))" strokeDasharray="1 3" />
-                  {lane.segments
-                    .filter(([, b]) => Date.parse(b) > S0)
-                    .map(([a, b, kind], i) => (
-                      <rect
-                        key={i}
-                        x={x(Date.parse(a))}
-                        y={kind === "waiting" ? mid - 6 : mid - 4}
-                        width={Math.max(2, x(Date.parse(b)) - x(Date.parse(a)))}
-                        height={kind === "waiting" ? 12 : 8}
-                        rx={2}
-                        fill={kind === "waiting" ? "url(#home-hatch)" : "hsl(var(--work) / .55)"}
-                      >
-                        <title>{`${lane.role}: ${kind === "waiting" ? "waiting on you" : "working"}, ${duration((Date.parse(b) - Date.parse(a)) / 1000)}`}</title>
-                      </rect>
-                    ))}
-                  {lane.turns
-                    .filter((t) => Date.parse(t) >= S0)
-                    .map((t, i) => (
-                      <rect key={`t${i}`} x={x(Date.parse(t)) - 1} y={mid - 7} width={2} height={14} rx={1} fill="hsl(var(--work))">
-                        <title>{`${lane.role}: a turn ended ${new Date(t).toLocaleString(undefined, { hour12: false })}`}</title>
-                      </rect>
-                    ))}
-                </g>
-              );
-            })}
-            <line x1={x(END)} x2={x(END)} y1={FLAG} y2={height} stroke="hsl(var(--fg))" strokeWidth={1.5} />
-          </svg>
-        </div>
-        </div>
+        <LanesPicture lanes={m.lanes.lanes} flags={m.numbers.delivered.items} to={m.to} hours={range} />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted" data-testid="legend">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-0.5 rounded bg-work" aria-hidden />a turn
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-2 w-4 rounded-sm bg-work/55" aria-hidden />working
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-4 rounded-sm border border-wait/70 bg-wait/20" aria-hidden />waiting on you
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block size-0 border-x-[5px] border-b-[9px] border-x-transparent border-b-done" aria-hidden />a change merged
-            </span>
-          </div>
-          <a href={href("replay")} className="text-sm font-medium hover:underline">
+          <LanesLegend />
+          <a href={href("timeline")} className="text-sm font-medium hover:underline">
             Open the timeline
           </a>
         </div>

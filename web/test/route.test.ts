@@ -9,7 +9,10 @@ test("an old link is rewritten to where its view lives in 0.7.0's shell, keeping
   assert.equal(retiredTo("#/now?mode=you"), "#/decisions?mode=you");
   assert.equal(retiredTo("#/tasks"), "#/decisions");
   assert.equal(retiredTo("#/team"), "#/agents");
-  assert.equal(retiredTo("#/replay?hours=24&t=3"), "#/timeline?hours=24&t=3");
+  assert.equal(retiredTo("#/replay?hours=24"), "#/timeline?hours=24");
+  // a Replay link that names a moment keeps its playback and cursor: Details · Replay
+  assert.equal(retiredTo("#/replay?hours=24&t=3"), "#/details/replay?hours=24&t=3");
+  assert.equal(retiredTo("#/replay?to=9"), "#/details/replay?to=9");
   assert.equal(retiredTo("#/map/changes/opened?who=merge-check"), "#/details/map/changes/opened?who=merge-check");
   assert.equal(retiredTo("#/conversation?role=builder"), "#/details/conversation?role=builder");
   assert.equal(retiredTo("#/audit?kind=pr.merged"), "#/details/audit?kind=pr.merged");
@@ -40,8 +43,10 @@ test("what is not an address opens the first screen, and an old link is the same
   for (const h of ["#/nowhere", "#/details", "#/details/nothing", "#/decision"]) assert.equal(parse(h).view, "now", h);
   assert.equal(parse("#/decisions").view, "decisions");
   // the eight views 0.6 had (Rule alerts is new in 0.7.0, so it never had an old address)
-  for (const v of VIEWS.filter((x) => x !== "rules" && x !== "decisions" && x !== "now")) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
+  for (const v of VIEWS.filter((x) => !["rules", "decisions", "now", "timeline", "replay"].includes(x))) assert.equal(parse(retiredTo(`#/${v}?k=1`) ?? "").view, v, v);
+  assert.equal(parse(retiredTo("#/replay?k=1") ?? "").view, "timeline");
+  assert.equal(parse(retiredTo("#/replay?t=1") ?? "").view, "replay");
   assert.equal(parse(retiredTo("#/now?k=1") ?? "").view, "decisions"); // Now is Decisions now
   // nothing in the shell is left at an old address
-  for (const v of VIEWS.filter((x) => x !== "decisions" && x !== "rules")) assert.notEqual(ADDRESS[v], v); // 0.6's views all moved
+  for (const v of VIEWS.filter((x) => !["decisions", "rules", "timeline"].includes(x))) assert.notEqual(ADDRESS[v], v); // 0.6's views all moved
 });

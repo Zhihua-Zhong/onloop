@@ -323,6 +323,7 @@ export interface HomeDecision {
   askers: string[];
   asks: number;
   ask_log: { at: string; by: string | null; new_fact: boolean }[];
+  effect_text: string | null;
   opened_at: string;
   options: string[];
   resolution: string | null;
@@ -389,4 +390,58 @@ export const homeApi = {
   home: () => get<HomeModel>("/api/home"),
   rules: () => get<RulesModel>("/api/rules"),
   decisions: () => get<DecisionsModel>("/api/decisions"),
+};
+
+// -- 0.7.0: Agents and the Timeline (src/onloop/agents.py, src/onloop/timeline_page.py) ------------------------------
+
+export type AgentState = "working" | "waiting" | "idle" | "paused" | "stopped";
+
+export interface AgentCard {
+  role: string;
+  state: AgentState;
+  words: string;
+  command?: string;
+  since?: string;
+  on_now: string | null;
+  model: string | null;
+  turns: number;
+  turns_before: number;
+  tokens: number;
+  tokens_before: number;
+  delivered: number;
+  open_asks: number;
+  turns_by_day: number[];
+}
+
+export interface AgentsModel { now: string; from: string; to: string; frozen: boolean; agents: AgentCard[]; tokens: number; turns: number }
+
+export interface AgentDetailModel {
+  now: string;
+  from: string;
+  to: string;
+  card: AgentCard;
+  by_day: { from: string; turns: number; tokens: number }[];
+  delivered: { ref: string; title: string; at: string }[];
+  decisions: { open: HomeDecision[]; answered: HomeDecision[] };
+  lane: HomeLane | null;
+  flags: { ref: string; title: string; at: string }[];
+}
+
+export interface TimelineModel {
+  now: string;
+  from: string;
+  to: string;
+  days: number;
+  frozen: boolean;
+  lanes: HomeLane[];
+  flags: { ref: string; title: string; at: string }[];
+  callouts: { n: number; id: string; role: string; at: string; title: string; text: string }[];
+  figures: { role: string; working_s: number; waiting_s: number; turns: number; tokens: number }[];
+  your_wait: { count: number; oldest_s: number | null; share: number; waited_s: number };
+}
+
+export const agentsApi = {
+  all: () => get<AgentsModel>("/api/agents"),
+  one: (role: string) => get<AgentDetailModel>(`/api/agents/${encodeURIComponent(role)}`),
+  timeline: (days: number) => get<TimelineModel>(`/api/timeline?days=${days}`),
 };

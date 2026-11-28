@@ -18,6 +18,14 @@ All notable changes to this project are recorded here. The format follows
   - **The lanes as the evidence:** waits on you amber, merges green.
   - **Agreement:** every number agrees with the views one click down (`tests/test_agreement.py`).
   - **A frozen copy:** a read-only copy that nothing writes is read up to its last event.
+- **Agents (0.7.0, step 4):** `#/agents`, prototype F's cards over `GET /api/agents`.
+  - Each card shows the role's state in plain words: working, waits on you, paused by you, stopped, or idle. "Stopped" is a carried run with nothing done for an hour, and is the only stuck: a format-rule break never is.
+  - It also shows what the role is on, and its week by day: turns, tokens and changes merged against last week.
+  - A role's page (`#/agents/<role>`) shows its decisions with you and its lane. The sidebar lists "Agents now".
+- **The Timeline (0.7.0, step 4):** `#/timeline`, 0.6's Replay lanes restyled with F's flags and numbered callouts, over `GET /api/timeline`.
+  - It reads the window only, and each role's figures are summed from per-day figures cached in onloopd.
+  - Replay's playback, cursor and table move to Details · Replay.
+  - Agents' tokens and turns are the Timeline's and Home's (agreement test).
 - **Decisions (0.7.0, step 3; decision 0020):** `#/decisions`, prototype F's split view over `GET /api/decisions`.
   - **One subject, one decision:** asks about one subject (its `ref`, normalised) are one decision, whoever asks. It
     shows "asked N×" and every role that asked; M4 reads `task_asks`.
@@ -45,7 +53,7 @@ All notable changes to this project are recorded here. The format follows
   - It uses prototype F's design system: shadcn/ui's neutral palette, light and dark, and the Inter typeface. Inter is self-hosted and built into the wheel, with its licence.
   - A sidebar holds Home, Decisions, Agents and Timeline. History and operations sit one click down under Details: Map, Outcome, Conversation, Schedules and Audit.
   - On a phone, the same list opens as a drawer.
-  - Until 0.7.0's own pages land, Agents and Timeline show 0.6's Team and Replay, and each says so; Home and Decisions are 0.7.0's own (above), and 0.6's Now view is retired.
+  - Home, Decisions, Agents and the Timeline are 0.7.0's own pages (above); 0.6's Now and Team views are retired, and Replay is under Details.
   - The theme menu offers Light, Dark and System. System forgets a stored choice.
 - **New addresses.** Every view has one: `#/`, `#/decisions`, `#/agents`, `#/timeline`, `#/details/<view>`. An old link (`#/team`, `#/replay`, `#/map/...`, `#/audit?...`) opens the same view and its address is rewritten in place; `#/now` and `#/tasks` open Decisions.
 - **Home's header and button** (the onloop lead's step 2 review): the header keeps the clock and the Live dot, with the read-only explanation in the eye's tooltip; the brief's one button reads "Decide the first of N", never a cut sentence; "Waited on you" says its hours are summed.

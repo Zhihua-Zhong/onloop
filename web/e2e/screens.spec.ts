@@ -12,9 +12,11 @@ const OUT = process.env.SCREENS_DIR ?? path.resolve(process.cwd(), "test-results
 const VIEWS: { id: string; hash?: string; ready: (p: Page) => Promise<void> }[] = [
   { id: "home", hash: "", ready: (p) => expect(p.getByTestId("brief")).toBeVisible() },
   { id: "rules", hash: "details/rules", ready: (p) => expect(p.getByTestId("rule-asks-missing")).toBeVisible() },
-  { id: "replay", ready: (p) => expect(p.getByTestId("lane").first()).toBeVisible() },
+  { id: "decisions", ready: (p) => expect(p.getByTestId("decision-row").first()).toBeVisible() },
+  { id: "timeline", ready: (p) => expect(p.getByTestId("timeline-lanes")).toBeVisible() },
+  { id: "replay", hash: "details/replay", ready: (p) => expect(p.getByTestId("lane").first()).toBeVisible() },
   { id: "map", ready: (p) => expect(p.getByTestId("map-level").first()).toBeVisible() },
-  { id: "team", ready: (p) => expect(p.getByTestId("lane-reviewer")).toBeVisible() },
+  { id: "agents", ready: (p) => expect(p.getByTestId("agent-reviewer")).toBeVisible() },
   { id: "conversation", ready: (p) => expect(p.getByTestId("entry-run").first()).toBeVisible() },
   { id: "schedules", ready: (p) => expect(p.getByTestId("schedule-nightly-verify")).toBeVisible() },
   { id: "audit", ready: (p) => expect(p.getByTestId("event").first()).toBeVisible() },
