@@ -80,6 +80,7 @@ PROJECTIONS = {
     "feedback_batches": "id",  # version 9
     "feedback": "id",  # version 9
     "feedback_links": "id",  # version 9
+    "task_asks": "id",  # version 11
 }
 
 # Version 6 value sets (decision 0010).
@@ -117,6 +118,8 @@ CARRIER_PAUSES = ("kill_switch", "usage_limit", "not_logged_in", "overage")
 TASK_ORIGINS = ("outcome", "cli", "gate", "adapter", "notification", "node", "pause", "wait")
 TASK_STAGES = ("open", "returned_author", "returned_coordinator", "resolved")
 TASK_RESOLUTIONS = ("done", "declined", "superseded", "expired")
+# Version 11 (0.7.0, one decision, one ask): a format-rule ask the person tidied away (`dismissed`, with its reason).
+TASK_RESOLUTIONS_11 = (*TASK_RESOLUTIONS, "dismissed")
 WEIGHTS = ("critical", "supporting", "skippable")
 _DATE = "GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
 
@@ -847,6 +850,96 @@ KINDS_10 = {
     "session.opened": "session opened",  # `onloop open <role>`
 }
 
+# Version 11 (0.7.0 plan, section 4: one decision, one ask). `human_tasks` is a projection, so the migration drops it
+# and creates it again; the ledger rebuilds every projection from the log after a migration. New:
+# - `subject_key`: the ask's subject, normalised (case, `pr:` and `#` prefixes, a branch's `feat/` prefix). An ask whose
+#   key matches an open decision amends it, whoever asked; the decision keeps its first author.
+# - `asks`: how many asks the decision holds, each a row of `task_asks` (time, author, whether it brought a new fact).
+# - `options`: the answers the ask offered (`options=` on the outcome line, `onloop ask --options`); `answer`: the one
+#   the person gave, or NULL for Done or Decline.
+# - `delivered_at`, `delivered_by`: when the person's answer reached the role that asked (a hook's context at its next
+#   prompt). Until then the person can withdraw it: the one way a resolved task opens again.
+# - the resolution `dismissed`: a format-rule ask the person tidied away, with its reason as the note.
+SCHEMA_11 = f"""
+DROP TABLE human_tasks;
+CREATE TABLE human_tasks (
+  id                    TEXT PRIMARY KEY,
+  origin                TEXT NOT NULL CHECK ({_in("origin", TASK_ORIGINS)}),
+  origin_ref            TEXT NOT NULL,
+  author_role           TEXT,
+  owner                 TEXT NOT NULL DEFAULT 'human',
+  ref                   TEXT,
+  subject_key           TEXT,
+  wait_id               TEXT,
+  title                 TEXT,
+  effect                TEXT CHECK (effect IS NULL OR length(effect) <= 200),
+  goal_id               TEXT,
+  goal_item             INTEGER,
+  goal_none             INTEGER NOT NULL DEFAULT 0 CHECK (goal_none IN (0, 1)),
+  weight                TEXT CHECK ({_in("weight", WEIGHTS, nullable=True)}),
+  holds                 TEXT CHECK (holds IS NULL OR length(holds) <= 120),
+  cost_from             TEXT CHECK (cost_from IS NULL OR cost_from {_DATE}),
+  cost_unknown          INTEGER NOT NULL DEFAULT 0 CHECK (cost_unknown IN (0, 1)),
+  cost_given            TEXT,
+  default_text          TEXT CHECK (default_text IS NULL OR length(default_text) <= 120),
+  options               TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(options) AND json_array_length(options) <= 4),
+  asks                  INTEGER NOT NULL DEFAULT 1 CHECK (asks >= 1),
+  {_ts("opened_at", nullable=False)},
+  {_ts("clock_from", nullable=False)},
+  {_ts("return_author_at", nullable=False)},
+  {_ts("return_coordinator_at", nullable=False)},
+  stage                 TEXT NOT NULL DEFAULT 'open' CHECK ({_in("stage", TASK_STAGES)}),
+  {_ts("returned_at")},
+  incomplete            INTEGER NOT NULL CHECK (incomplete IN (0, 1)),
+  incomplete_reasons    TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(incomplete_reasons)),
+  flags                 TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(flags)),
+  kept_reason           TEXT,
+  kept_by               TEXT,
+  resolution            TEXT CHECK ({_in("resolution", TASK_RESOLUTIONS_11, nullable=True)}),
+  answer                TEXT CHECK (answer IS NULL OR length(answer) <= 40),
+  {_ts("resolved_at")},
+  resolved_by           TEXT,
+  evidence              TEXT,
+  note                  TEXT,
+  superseded_by         TEXT,
+  {_ts("delivered_at")},
+  delivered_by          TEXT,
+  {_ts("updated_at", nullable=False)},
+  last_seq              INTEGER NOT NULL,
+  CHECK (NOT (cost_from IS NOT NULL AND cost_unknown = 1)),
+  CHECK (incomplete = (effect IS NULL OR (holds IS NULL AND (cost_from IS NOT NULL OR cost_unknown = 1)))),
+  CHECK ((stage = 'resolved') = (resolution IS NOT NULL)),
+  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),
+  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),
+  CHECK (answer IS NULL OR resolution = 'done'),
+  CHECK (delivered_at IS NULL OR resolution IS NOT NULL),
+  CHECK (goal_none = 0 OR (goal_id IS NULL AND goal_item IS NULL))
+);
+CREATE UNIQUE INDEX one_task_per_origin ON human_tasks(origin, origin_ref);
+CREATE UNIQUE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' AND ref IS NOT NULL AND author_role IS NOT NULL;
+CREATE UNIQUE INDEX one_open_decision_per_subject ON human_tasks(subject_key) WHERE stage <> 'resolved' AND subject_key IS NOT NULL;
+CREATE UNIQUE INDEX one_open_task_per_wait ON human_tasks(wait_id) WHERE stage <> 'resolved' AND wait_id IS NOT NULL;
+CREATE INDEX human_tasks_open ON human_tasks(stage) WHERE stage <> 'resolved';
+CREATE TRIGGER human_tasks_stay_resolved BEFORE UPDATE OF stage ON human_tasks WHEN OLD.stage = 'resolved' AND NEW.stage <> 'resolved' AND NOT (OLD.resolved_by = 'human' AND OLD.delivered_at IS NULL AND OLD.resolution IN ('done', 'declined', 'dismissed')) BEGIN SELECT RAISE(ABORT, 'a resolved task stays resolved, but for the person withdrawing an answer that has not reached its asker'); END;
+
+CREATE TABLE task_asks (
+  id          TEXT PRIMARY KEY,
+  task_id     TEXT NOT NULL,
+  {_ts("at", nullable=False)},
+  author_role TEXT,
+  new_fact    INTEGER NOT NULL CHECK (new_fact IN (0, 1)),
+  last_seq    INTEGER NOT NULL
+);
+CREATE INDEX task_asks_task ON task_asks(task_id, at)
+"""
+
+# The kinds schema 11 brings: the person's answer withdrawn before it reached the role that asked, and the prompt a
+# role's session received (its length only, never its text), which carries the role's decisions to it.
+KINDS_11 = {
+    "task.unresolved": "answer withdrawn",
+    "hook.prompt_submit": "prompt submitted",
+}
+
 MIGRATIONS: list[str] = [
     SCHEMA_1,
     SCHEMA_2,
@@ -858,6 +951,7 @@ MIGRATIONS: list[str] = [
     SCHEMA_8,
     SCHEMA_9,
     SCHEMA_10,
+    SCHEMA_11,
 ]  # index + 1 is the version; a migration is never edited afterwards
 
 

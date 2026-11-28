@@ -414,3 +414,22 @@ def test_homes_lanes_are_the_timelines_and_its_wait_covers_the_persons_wait(whic
     assert {L["role"]: L["turn_count"] for L in h["lanes"]["lanes"] if L["turn_count"]} == per_role
     assert h["numbers"]["waited_h"]["value"] >= union - 1e-6
     assert abs(sum(h["numbers"]["waited_h"]["by_day"]) - h["numbers"]["waited_h"]["value"]) < 0.01
+
+
+@pytest.mark.parametrize("which", ["demo", "replay"])
+def test_decisions_count_is_homes_and_both_add_up_to_the_one_count(which, demo_path, replay_path):
+    """0.7.0 step 3: the Decisions page, Home's list and the sidebar badge (which reads the Decisions count) are one
+    number; with the asks counted under Rule alerts they make the one "waiting on you" count."""
+    from onloop import decisions
+
+    path, now = (demo_path, NOW) if which == "demo" else (replay_path, REPLAY_NOW)
+    with Ledger(path, readonly=True) as led:
+        h, rules = _home(led, now)
+        v = decisions.view(led, now)
+        c = _counts(led, now)
+    assert v["count"] == h["decisions"]["count"] == len(v["open"])
+    assert [d["id"] for d in v["open"]][: len(h["decisions"]["items"])] == [
+        d["id"] for d in h["decisions"]["items"]
+    ]
+    assert v["count"] + v["rule_asks"] == v["waiting_on_you"] == c["task_list"]
+    assert v["rule_asks"] == rules["asks_missing"]["count"]

@@ -18,6 +18,22 @@ All notable changes to this project are recorded here. The format follows
   - **The lanes as the evidence:** waits on you amber, merges green.
   - **Agreement:** every number agrees with the views one click down (`tests/test_agreement.py`).
   - **A frozen copy:** a read-only copy that nothing writes is read up to its last event.
+- **Decisions (0.7.0, step 3; decision 0020):** `#/decisions`, prototype F's split view over `GET /api/decisions`.
+  - **One subject, one decision:** asks about one subject (its `ref`, normalised) are one decision, whoever asks. It
+    shows "asked N×" and every role that asked; M4 reads `task_asks`.
+  - **Answers:** the ask's recorded options (`options=` on the outcome line, `onloop ask --options`), else Done and
+    Decline. The answer is sent at once, with a 9-second undo, and stays withdrawable under Done until it reaches the
+    asker.
+  - **The agent is told:** a role's SessionStart and UserPromptSubmit hooks give it its open decisions and the person's
+    answers. A Stop that asks again with nothing new, or asks without an effect, is sent back once with the reason. The
+    carrier and `onloop open` install the three hooks (a new `prompt-submit` hook event); a prompt's text is never
+    kept.
+  - **`onloop ask`** needs `--effect`, and exits 3 with the open decision's id when its subject is already open.
+    `onloop decisions --mine` lists a role's open decisions and the answers to it.
+  - **The format-rule tidy:** Rule alerts sets aside the asks that say nothing of what they change, in one click, as
+    "format rule, no effect stated", with an undo.
+  - **Schema 11:** the `human_tasks` projection gains the subject key, the options, the answer, the asks count and the
+    delivery; new table `task_asks`; new kinds `task.unresolved` and `hook.prompt_submit`.
 - **Details · Rule alerts** (`GET /api/rules`): what 0.6's Now listed on the first screen, now counted, each count with
   where its rows are. That covers the asks that do not say what they change, the turns without a valid outcome line,
   other open alerts, the items about to expire, the scheduled jobs and the dead-man switch, what changed since the last
@@ -29,9 +45,10 @@ All notable changes to this project are recorded here. The format follows
   - It uses prototype F's design system: shadcn/ui's neutral palette, light and dark, and the Inter typeface. Inter is self-hosted and built into the wheel, with its licence.
   - A sidebar holds Home, Decisions, Agents and Timeline. History and operations sit one click down under Details: Map, Outcome, Conversation, Schedules and Audit.
   - On a phone, the same list opens as a drawer.
-  - Until 0.7.0's own pages land, Agents and Timeline show 0.6's Team and Replay, and each says so; Home is 0.7.0's own (above), and 0.6's Now view is retired. Decisions is marked "not built yet" and is not a link.
+  - Until 0.7.0's own pages land, Agents and Timeline show 0.6's Team and Replay, and each says so; Home and Decisions are 0.7.0's own (above), and 0.6's Now view is retired.
   - The theme menu offers Light, Dark and System. System forgets a stored choice.
-- **New addresses.** Every view has one: `#/`, `#/agents`, `#/timeline`, `#/details/<view>`. An old link (`#/now`, `#/team`, `#/replay`, `#/map/...`, `#/audit?...`) opens the same view and its address is rewritten in place.
+- **New addresses.** Every view has one: `#/`, `#/decisions`, `#/agents`, `#/timeline`, `#/details/<view>`. An old link (`#/team`, `#/replay`, `#/map/...`, `#/audit?...`) opens the same view and its address is rewritten in place; `#/now` and `#/tasks` open Decisions.
+- **Home's header and button** (the onloop lead's step 2 review): the header keeps the clock and the Live dot, with the read-only explanation in the eye's tooltip; the brief's one button reads "Decide the first of N", never a cut sentence; "Waited on you" says its hours are summed.
 - **Overlays.** Dialogs, menus, tooltips and popovers are Radix UI's, and ⌘K's list is cmdk.
   - An overlay's content never fades in: only the dim behind it fades, and the content moves in, fully opaque from its first frame. Under `prefers-reduced-motion` it does not move.
   - Radix's scroll lock writes no `<style>` element, so the strict CSP stays as it is.

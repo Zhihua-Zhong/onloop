@@ -286,7 +286,10 @@ export const tasksApi = {
 };
 
 // The page's task writes (decision 0013): evidence from a local user, never an approval. Same rules as a message.
-export async function uiPost(path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/visits", body: Record<string, unknown>): Promise<unknown> {
+export async function uiPost(
+  path: "/ui/tasks/resolve" | "/ui/tasks/keep" | "/ui/tasks/withdraw" | "/ui/tasks/tidy" | "/ui/visits",
+  body: Record<string, unknown>,
+): Promise<unknown> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const r = await fetch(path, {
       method: "POST",
@@ -317,6 +320,17 @@ export interface HomeDecision {
   id: string;
   title: string;
   asked_by: string | null;
+  askers: string[];
+  asks: number;
+  ask_log: { at: string; by: string | null; new_fact: boolean }[];
+  opened_at: string;
+  options: string[];
+  resolution: string | null;
+  answer: string | null;
+  answer_text: string | null;
+  resolved_at: string | null;
+  delivered_at: string | null;
+  can_withdraw: boolean;
   age_s: number;
   weight: string | null;
   band: string;
@@ -353,7 +367,7 @@ export interface HomeModel {
 
 export interface RulesModel {
   now: string;
-  asks_missing: { count: number; by_role: Record<string, number>; missing: Record<string, number> };
+  asks_missing: { count: number; by_role: Record<string, number>; missing: Record<string, number>; ids: string[] };
   alerts: { detector: string; words: string; count: number; by_role: Record<string, number> }[];
   since_visit: { since: string | null; added: number; resolved: number; resolved_without_you: number; returned: number; gaps: number };
   constraint: { on: string | null; waiters: number } | null;
@@ -361,7 +375,18 @@ export interface RulesModel {
   health: { failing: number; late: number; ok: number; total: number; dead_man: { configured: boolean; schedule?: string; state?: string } };
 }
 
+export interface DecisionsModel {
+  now: string;
+  open: HomeDecision[];
+  count: number;
+  rule_asks: number;
+  waiting_on_you: number;
+  done: HomeDecision[];
+  asks_per_decision: number | null;
+}
+
 export const homeApi = {
   home: () => get<HomeModel>("/api/home"),
   rules: () => get<RulesModel>("/api/rules"),
+  decisions: () => get<DecisionsModel>("/api/decisions"),
 };

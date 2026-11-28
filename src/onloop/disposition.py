@@ -15,13 +15,15 @@ The grammar, version 2 (decision 0012 amends 0007's table):
       blocked     owner, ref  the ask keys
       handoff     owner, ref  the ask keys
       continue    ref, waker  goal
-  The ask keys: effect, goal, weight, cost_from, days, holds, default.
+  The ask keys: effect, goal, weight, cost_from, days, holds, default, options.
 - `owner` is a role name: a lowercase letter, then lowercase letters, digits, `_` or `-`, at most 40 characters.
 - `waker` is `pid:<digits>` (never 0), `cron:<id>`, `monitor:<id>`, or `event:<kind>:<locator>` for a wait outside
   the machine that a read adapter checks (a CI run, a set of checks, a review).
 - `goal` is `<goal id>/<item number>` or `none`; `weight` is critical, supporting or skippable; `cost_from` is a date
   YYYY-MM-DD; `days` is 0 to 365 or `?`; `cost_from` and `days` are not both given. `effect` is at most 200
-  characters, `holds` and `default` at most 120.
+  characters, `holds` and `default` at most 120. `options` names the answers the person can give, 1 to 4 of them
+  separated by `|`, each 1 to 40 characters and different (0.7.0: `options="Merge both|Merge one|Wait"`); the person's
+  answer is one of them, or Done or Decline when there are none.
 - A value has no whitespace and no `"`, or is written in double quotes with no `"` inside.
 
 It fails closed (story 8): a missing or empty message, one that is not a string, a last line that is not an outcome
@@ -42,7 +44,7 @@ from . import localday
 
 GRAMMAR = 2
 OUTCOMES = ("done", "idle", "in_review", "blocked", "handoff", "continue")
-ASK_KEYS = ("goal", "weight", "cost_from", "days", "effect", "holds", "default")
+ASK_KEYS = ("goal", "weight", "cost_from", "days", "effect", "holds", "default", "options")
 KEYS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {  # value -> (required, optional)
     "done": ((), ("ref", "goal", "resolves")),
     "idle": ((), ()),
@@ -87,6 +89,7 @@ class Outcome:
     holds: str | None = None
     default: str | None = None
     resolves: str | None = None
+    options: str | None = None  # as written, `|`-separated
 
     @property
     def waker_kind(self) -> str | None:
@@ -151,8 +154,34 @@ def _check_ask(keys: dict[str, str], line: str) -> ParseError | None:
     for key, cap in CAPS.items():
         if key in keys and len(keys[key]) > cap:
             return ParseError(f"{key} is longer than {cap} characters", line)
+    if "options" in keys:
+        why = options_problem(keys["options"])
+        if why:
+            return ParseError(why, line)
     if "resolves" in keys and not _TASK.match(keys["resolves"]):
         return ParseError(f"resolves {keys['resolves']!r} is not a task id", line)
+    return None
+
+
+MAX_OPTIONS = 4
+OPTION_CAP = 40
+
+
+def split_options(text: str) -> list[str]:
+    return [o.strip() for o in text.split("|")]
+
+
+def options_problem(text: str) -> str | None:
+    """Why `options=` is not a list the person can answer from, or None."""
+    opts = split_options(text)
+    if not 1 <= len(opts) <= MAX_OPTIONS:
+        return f"options names 1 to {MAX_OPTIONS} answers, separated by |"
+    if any(not o for o in opts):
+        return "options has an empty answer"
+    if any(len(o) > OPTION_CAP for o in opts):
+        return f"each of options' answers is at most {OPTION_CAP} characters"
+    if len({o.casefold() for o in opts}) != len(opts):
+        return "options names the same answer twice"
     return None
 
 
@@ -219,7 +248,9 @@ def frozen_ask(got: Outcome, now: str) -> dict[str, Any] | None:
     ask = got.ask
     if not ask:
         return None
-    out: dict[str, Any] = {k: v for k, v in ask.items() if k != "days"}
+    out: dict[str, Any] = {k: v for k, v in ask.items() if k not in ("days", "options")}
+    if got.options is not None:
+        out["options"] = split_options(got.options)
     if got.cost_from is not None:
         out["cost_given"] = f"cost_from={got.cost_from}"
     elif got.days == "?":
@@ -247,6 +278,7 @@ FORMAT_ORDER = (
     "effect",
     "holds",
     "default",
+    "options",
     "resolves",
 )
 
@@ -276,6 +308,12 @@ def self_test() -> tuple[bool, list[str]]:
         ("a valid continue", "work done\n\noutcome: continue ref=pr#4 waker=pid:42", True),
         ("an external wait", "outcome: continue ref=pr#4 waker=event:gh-run:123", True),
         ("an ask without an effect", "outcome: blocked owner=human ref=#1", True),
+        ("five options", 'outcome: blocked owner=human ref=#1 options="a|b|c|d|e"', False),
+        (
+            "an ask with options",
+            'outcome: blocked owner=human ref=#1 effect=x options="Merge both|Wait"',
+            True,
+        ),
     ]
     ok, lines = True, []
     for name, text, valid in cases:

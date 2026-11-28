@@ -109,37 +109,19 @@ def _numbers(ledger: Any, start: str, end: str, young: bool) -> dict[str, Any]:
     }
 
 
-def _decision(card: dict[str, Any]) -> dict[str, Any]:
-    """What Home shows of a task: its effect as the title, who asked, how long ago, and the facts behind it."""
-    return {
-        "id": card["id"],
-        "title": card.get("effect") or card.get("title") or card.get("ref") or card["id"],
-        "asked_by": card.get("author_role"),
-        "age_s": card["age_s"],
-        "weight": card.get("weight"),
-        "band": card["band"],
-        "holds": card.get("holds"),
-        "default": card.get("default"),
-        "cost_text": card.get("cost_text"),
-        "days_left": card.get("days_left"),
-        "ref": card.get("ref"),
-        "goal": card.get("goal"),
-        "origin": card["origin"],
-        "action": card["action"],
-    }
-
-
 def _decisions(ledger: Any, now: str) -> dict[str, Any]:
+    from . import decisions
+
     cards = derive.your_tasks(ledger, now) or []
-    complete = [c for c in cards if not c["incomplete"]]
+    opened, rule_asks = decisions.open_decisions(ledger, now)  # the one list Decisions shows, in its order
     return {
         "waiting_on_you": derive.waiting_on_you(ledger, now)["count"],
         "oldest_s": max(
             (c["age_s"] for c in cards), default=None
-        ),  # of every open ask, as "N open" counts them all
-        "count": len(complete),
-        "items": [_decision(c) for c in complete[:TOP_DECISIONS]],
-        "rule_asks": len(cards) - len(complete),
+        ),  # of every open ask: "N open" counts them all
+        "count": len(opened),
+        "items": opened[:TOP_DECISIONS],
+        "rule_asks": rule_asks,
     }
 
 
@@ -367,7 +349,14 @@ def rule_alerts(ledger: Any, now: str) -> dict[str, Any]:
     health = views._health(ledger, ledger.alerts(), now, None)  # onloopd's own heartbeat is the header's
     return {
         "now": now,
-        "asks_missing": {"count": len(incomplete), "by_role": by_role, "missing": reasons},
+        "asks_missing": {
+            "count": len(incomplete),
+            "by_role": by_role,
+            "missing": reasons,
+            # what the one-click tidy sets aside: the asks with no effect (one that only lacks `holds` says what it
+            # changes, and stays)
+            "ids": [c["id"] for c in incomplete if not c.get("effect")],
+        },
         "alerts": sorted(groups.values(), key=lambda g: (-g["count"], g["detector"])),
         "since_visit": {
             "since": d["since"],

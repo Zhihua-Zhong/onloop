@@ -11,9 +11,13 @@ A role asks with `onloop ask`, then ends its turn blocked on the task it was giv
 
 ```
 onloop ask --from builder --ref pr#45 --effect "approve the schema change, so the import can run on real data" \
-  --goal demo/14 --weight critical --days 2 --holds "the import demo waits" --default "nothing merges"
+  --goal demo/14 --weight critical --days 2 --holds "the import demo waits" --default "nothing merges" \
+  --options "Approve|Approve, import paused|Wait for the review"
 outcome: blocked owner=human ref=task:<the id onloop ask printed>
 ```
+
+Since 0.7.0 `onloop ask` needs `--effect`, and refuses a subject that is already an open decision: it prints that
+decision's id and exits 3, and nothing is asked again.
 
 The same keys may be written on the outcome line itself (version 2 of the line):
 
@@ -29,9 +33,28 @@ outcome: blocked owner=human ref=pr#45 goal=demo/14 weight=critical days=2 effec
 | `cost_from` / `days` | when the delay starts to cost: a date, or a number of days from today (0: now), or `days=?` when it costs but nobody knows from when. `days` is turned into a date once, when onloop receives it, in `kpi.timezone`; no count is ever stored |
 | `holds` | what waits on it; needed whenever a cost of delay is given |
 | `default` | what happens if nobody answers |
+| `options` | 0.7.0: the answers the person can give, 1 to 4 separated by `|`, each at most 40 characters (`options="Merge both|Wait"`). The person answers with one of them, or Done or Decline when there are none |
 
-An ask without an effect, or with a cost of delay and no `holds`, is still taken. It is listed last, marked with what it
-lacks, and returned to its author once. A `critical` ask keeps its place and is flagged.
+An ask without an effect, or with a cost of delay and no `holds`, is still taken. It is counted under Details · Rule
+alerts, not listed with the decisions, and returned to its author once. Since 0.7.0 the Stop hook also sends the turn
+back once, saying what is missing. The person can set such asks aside in one click ("format rule, no effect stated",
+with an undo); onloop never writes an effect for them.
+
+### One decision, one ask (0.7.0)
+
+Every ask carries a subject key: its `ref`, normalised (`pr:12`, `#12` and `PR#12` are `pr#12`; a branch's `feat/`
+prefix is dropped). An ask about a subject that is already open joins that decision, whoever asks: the decision keeps
+its first author, counts every ask ("asked 3×"), and takes what the new ask adds, never losing what it had.
+- **Before an ask**, a role's SessionStart and UserPromptSubmit hooks add its open decisions to its context, with their
+  age, their ask count and their default, so it does not ask again.
+- **At an ask**, a Stop whose outcome line asks about an open decision and brings nothing new is sent back once:
+  "already open as t-…, waiting 4 h, asked 2×: do not ask again".
+- **The answer reaches the asker** at its next prompt or session start, as context from its hook ("t-… answered by the
+  person: Merge both"). Until then the person can withdraw it in Decisions · Done; after that, a change of mind is a
+  new answer. `onloop decisions --mine --role <role>` lists a role's open decisions and the answers to it.
+
+Carried roles get these hooks from the carrier, and `onloop open` gives the person's session the same three for that
+run only (`--settings`); a session started any other way sees nothing. Decision 0020 records the rules.
 
 An outside wait (a CI run, checks on a commit, a review) is named as `waker=event:gh-run:<id>`,
 `waker=event:gh-checks:<sha>` or `waker=event:gh-review:pr<n>`, never as a placeholder pid. The GitHub checks behind

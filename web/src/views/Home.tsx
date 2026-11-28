@@ -5,7 +5,7 @@ import { homeApi, type HomeDecision, type HomeModel } from "@/lib/api";
 import { duration } from "@/lib/format";
 import { href } from "@/lib/route";
 import { isUrl } from "@/lib/url";
-import { marks, usePending } from "@/lib/marks";
+import { useAnswers } from "@/lib/answers";
 import { roleColor } from "@/lib/roleColor";
 import { cn } from "@/lib/utils";
 import { Problem } from "@/components/kit";
@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@/components/ui/basics";
 import { Tooltip } from "@/components/ui/tooltip";
-import { UndoStrip } from "@/views/Tasks";
 
 // Home (0.7.0 plan, sections 1 and 2): is it going well, what needs me, what came out. Prototype F's Home, on the
 // ledger: the brief (facts only until the smart layer lands), three numbers against last week, the decisions in their
@@ -128,7 +127,7 @@ function Numbers({ m, onWaited }: { m: HomeModel; onWaited: () => void }) {
           label="Waited on you"
           value={`${Math.round(w.value)} h`}
           delta={vsLastWeek(m.young, <Delta v={w.delta} good="down" unit=" h" />)}
-          sub={`${open} open${oldest != null ? ` · oldest ${duration(oldest)}` : ""}`}
+          sub={`${open} open${oldest != null ? ` · oldest ${duration(oldest)}` : ""} · summed`}
           spark={w.by_day}
           color="hsl(var(--wait))"
         />
@@ -173,8 +172,9 @@ function Brief({ m, onDecide }: { m: HomeModel; onDecide: (id: string) => void }
         </div>
         {top && (
           <div className="flex shrink-0 gap-2 md:flex-col md:items-stretch">
-            <Button onClick={() => onDecide(top.id)} data-testid="decide-first" className="max-w-full justify-between">
-              <span className="truncate">Decide: {top.title.length > 36 ? `${top.title.slice(0, 34)}…` : top.title}</span>
+            {/* one primary action, with a short label that is never cut: the generated short form comes with step 5 */}
+            <Button onClick={() => onDecide(top.id)} data-testid="decide-first" title={top.title}>
+              Decide the first of {m.decisions.count}
               <ChevronRight aria-hidden />
             </Button>
           </div>
@@ -194,7 +194,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boolean; open: boolean; onToggle: () => void }) {
-  const pending = usePending(d.id);
+  const { answer, busy, error } = useAnswers();
   const who = d.asked_by ?? "unattributed";
   return (
     <li className={cn("rounded-md", open && "bg-hover/50")} data-testid="decision" data-id={d.id}>
@@ -204,6 +204,7 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 max-w-full truncate text-sm font-medium" data-testid="decision-title">{d.title}</span>
             {first && <Badge tone="solid">Do first</Badge>}
+            {d.asks > 1 && <Badge tone="outline">asked {d.asks}×</Badge>}
             {d.days_left === 0 && <Badge tone="wait">costing now</Badge>}
           </span>
           <span className="mt-0.5 block truncate text-sm text-muted">
@@ -239,20 +240,31 @@ function DecisionRow({ d, first, open, onToggle }: { d: HomeDecision; first: boo
               <span className="text-sm text-muted">Approve it on the code host; onloop sees the approval.</span>
             ) : d.origin === "pause" ? (
               <code className="rounded bg-raised px-1.5 py-0.5 text-xs">onloop role resume {d.ref?.replace(/^role:/, "")}</code>
+            ) : d.options.length ? (
+              <>
+                {d.options.map((o) => (
+                  <Button key={o} size="sm" variant="outline" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "done", o)} data-testid="option">
+                    {o}
+                  </Button>
+                ))}
+                <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "declined")} data-testid="mark-declined">
+                  Decline
+                </Button>
+              </>
             ) : (
               <>
-                <Button size="sm" variant="outline" disabled={!!pending} onClick={() => marks.mark(d.id, "done")} data-testid="mark-done">
+                <Button size="sm" variant="outline" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "done")} data-testid="mark-done">
                   <Check aria-hidden />
                   Done
                 </Button>
-                <Button size="sm" variant="ghost" disabled={!!pending} onClick={() => marks.mark(d.id, "declined")} data-testid="mark-declined">
+                <Button size="sm" variant="ghost" disabled={busy === d.id} onClick={() => void answer(d.id, d.asked_by, "declined")} data-testid="mark-declined">
                   Decline
                 </Button>
-                <span className="text-xs text-muted">A local mark, not verified; the asker is told in a later step of 0.7.0.</span>
+                <span className="text-xs text-muted">{who} sees your answer at its next prompt.</span>
               </>
             )}
           </div>
-          {pending && <UndoStrip id={d.id} />}
+          {error?.id === d.id && <p className="text-sm text-danger" role="alert">{error.text}</p>}
         </div>
       )}
     </li>
@@ -289,14 +301,19 @@ function Decisions({ m, open, setOpen }: { m: HomeModel; open: string | null; se
             <p className="mt-1 max-w-[320px] text-sm text-muted">New decisions appear here in their one order.</p>
           </div>
         )}
-        {items.length > SHOWN && (
-          <Button variant="link" size="sm" onClick={() => setAll((a) => !a)} className="mt-1" data-testid="decisions-all">
-            {all ? "Show the first 5" : `Show all ${items.length}`}
-          </Button>
-        )}
+        <div className="mt-1 flex items-center gap-3">
+          {items.length > SHOWN && (
+            <Button variant="link" size="sm" onClick={() => setAll((a) => !a)} data-testid="decisions-all">
+              {all ? "Show the first 5" : `Show all ${items.length}`}
+            </Button>
+          )}
+          <a href={href("decisions")} className="ml-auto text-sm font-medium hover:underline" data-testid="all-decisions">
+            All decisions
+          </a>
+        </div>
         {rule_asks > 0 && (
           <p className="mt-2 border-t border-line pt-3 text-xs text-muted" data-testid="rule-asks">
-            {rule_asks} more {rule_asks === 1 ? "ask does" : "asks do"} not say what {rule_asks === 1 ? "it changes" : "they change"}: counted under{" "}
+            {rule_asks} more {rule_asks === 1 ? "ask does" : "asks do"} not say what {rule_asks === 1 ? "it changes" : "they change"} or what waits on {rule_asks === 1 ? "it" : "them"}: counted under{" "}
             <a href={href("rules")} className="text-accent hover:underline">
               Details · Rule alerts
             </a>

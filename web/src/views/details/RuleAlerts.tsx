@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { homeApi, type RulesModel } from "@/lib/api";
+import { useAnswers } from "@/lib/answers";
+import { Button } from "@/components/ui/button";
 import { href } from "@/lib/route";
 import { Loading, Problem } from "@/components/kit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/basics";
@@ -35,6 +37,20 @@ function Row({ count, words, sub, to, testid }: { count: number; words: string; 
   );
 }
 
+function Tidy({ ids }: { ids: string[] }) {
+  const { tidy, busy, error } = useAnswers();
+  if (!ids.length) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-3 pl-[52px] pb-2">
+      <Button size="sm" variant="outline" disabled={busy === "tidy"} onClick={() => void tidy(ids)} data-testid="tidy">
+        Set aside these {ids.length}
+      </Button>
+      <span className="text-xs text-muted">The asks with no effect: each is closed as "format rule, no effect stated", with an undo; onloop never writes an effect for them.</span>
+      {error?.id === "tidy" && <span className="text-xs text-danger" role="alert">{error.text}</span>}
+    </div>
+  );
+}
+
 function Body({ m }: { m: RulesModel }) {
   const s = m.since_visit;
   return (
@@ -58,6 +74,9 @@ function Body({ m }: { m: RulesModel }) {
               }
               to={href("audit", { kind: "task.opened" })}
             />
+            <li className="list-none">
+              <Tidy ids={m.asks_missing.ids} />
+            </li>
             {m.alerts.map((a) => (
               <Row key={a.detector} testid={`rule-${a.detector}`} count={a.count} words={a.words} sub={byRole(a.by_role)} to={href("audit", { kind: "alert.fire" })} />
             ))}

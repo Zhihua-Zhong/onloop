@@ -1578,8 +1578,13 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "a task may close without evidence",
         "src/onloop/overlay/schema.py",
-        "  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),",
-        "  CHECK (resolution IS NULL OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),",
+        # the current table (schema 11): the line is followed by checks only it has
+        "  CHECK (resolution IS NULL OR (evidence IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),\n"
+        "  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),\n"
+        "  CHECK (answer IS NULL",
+        "  CHECK (resolution IS NULL OR (resolved_at IS NOT NULL AND resolved_by IS NOT NULL)),\n"
+        "  CHECK (resolution IS NULL OR resolution <> 'superseded' OR superseded_by IS NOT NULL),\n"
+        "  CHECK (answer IS NULL",
         ["tests/test_human_tasks.py::test_a_task_is_never_closed_without_a_resolution_and_evidence"],
     ),
     (
@@ -1592,8 +1597,11 @@ MUTATIONS: list[tuple[str, str, str, str, list[str]]] = [
     (
         "two open tasks for one ask are allowed",
         "src/onloop/overlay/schema.py",
-        "CREATE UNIQUE INDEX one_open_task_per_ask ON",
-        "CREATE INDEX one_open_task_per_ask ON",
+        # the current table (schema 11): its index is followed by the subject's, which only it has
+        "CREATE UNIQUE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' "
+        "AND ref IS NOT NULL AND author_role IS NOT NULL;\nCREATE UNIQUE INDEX one_open_decision_per_subject",
+        "CREATE INDEX one_open_task_per_ask ON human_tasks(author_role, owner, ref) WHERE stage <> 'resolved' "
+        "AND ref IS NOT NULL AND author_role IS NOT NULL;\nCREATE UNIQUE INDEX one_open_decision_per_subject",
         ["tests/test_human_tasks.py::test_one_open_task_per_ask_is_the_database_s"],
     ),
     (

@@ -31,6 +31,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     GET /api/home               Home (0.7.0): the week's three numbers against the week before, the decisions in their
                                 order, what is unusual, the lanes and the facts-only brief; reads 14 days at most
     GET /api/rules              Details · Rule alerts: the system's own rule alerts, counted
+    GET /api/decisions          Decisions (0.7.0): the open decisions in the one order, each with every ask it holds and
+                                its recorded options, and the person's answers of the last 14 days
     GET /api/now                the Now view: the constraint and its next move, what waits on the human, the stalls,
                                 and health (schedules, onloopd's heartbeat, the dead-man switch)
     GET /api/map                the map, one level per call: ?path= (zoom 0), <goal> (its stages), <goal>/<stage> (who holds what)
@@ -56,6 +58,8 @@ can read it (decision 0008), so what arrives here is evidence, never authority.
     POST /ui/tasks/resolve      the page's task writes (decision 0013), under the same rules as /ui/messages: mark a
     POST /ui/tasks/keep         task done or declined, keep a returned task with a reason, record a visit (it keys the
     POST /ui/visits             digest). Each is evidence from a local user, not verified, never an approval
+    POST /ui/tasks/withdraw     0.7.0: take back an answer before it reached the role that asked; set aside asks that
+    POST /ui/tasks/tidy         broke the format rule (no effect stated), each with that reason, under the same rules
     POST /v1/logs, /v1/metrics  Claude Code's own telemetry, OTLP/HTTP JSON (`otlp.py`, decision 0019): identity
                                 dropped on arrival; model requests, prompts and tool calls kept as `otel` events
     POST /sessions/opened, /ended  what `onloop open <role>` reports: the session and its step (`sessions_route.py`)
@@ -100,7 +104,13 @@ WRITE_PREFIXES = (
 )  # /v1/, /sessions/: 0019
 UI_WRITE = "/ui/messages"
 # the page's task writes (decision 0013), each evidence and none authority: -> the /tasks/ action they become
-UI_TASK_WRITES = {"/ui/tasks/resolve": "resolve", "/ui/tasks/keep": "keep", "/ui/visits": "visit"}
+UI_TASK_WRITES = {
+    "/ui/tasks/resolve": "resolve",
+    "/ui/tasks/keep": "keep",
+    "/ui/tasks/withdraw": "withdraw",
+    "/ui/tasks/tidy": "tidy",
+    "/ui/visits": "visit",
+}
 UI_COOKIE = "onloop_ui"
 UI_MAX_BODY = 64 * 1024
 
@@ -418,7 +428,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 self._send_json(400, {"error": "a task write is a JSON object"})
                 return
-            keep = {k: body[k] for k in ("id", "resolution", "note", "reason") if k in body}
+            keep = {k: body[k] for k in ("id", "resolution", "note", "reason", "answer", "ids") if k in body}
             try:
                 out = self.server.writer.post(
                     f"/tasks/{UI_TASK_WRITES[path]}", {**keep, "channel": "ui", "by": "human"}
@@ -527,6 +537,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 now = ev.now_ts()
                 frozen = self.server.writer is None and not self._written_elsewhere()
                 body = home.build(reader, now, (home.last_event(reader) or now) if frozen else None)
+            elif url.path == "/api/decisions":
+                from .. import decisions
+
+                body = decisions.view(reader, ev.now_ts())
             elif url.path == "/api/rules":
                 from .. import home
 

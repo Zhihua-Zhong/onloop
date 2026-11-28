@@ -1005,10 +1005,38 @@ def open_plan(args, environ: dict | None = None) -> tuple[list[str], dict[str, s
         shutil.which(claude) or claude,
         "--setting-sources",
         telemetry.SETTING_SOURCES,
+        "--settings",
+        str(open_hooks_path(state, args.role)),
         "--session-id",
         sid,
     ]
     return argv, env, str(pathlib.Path(args.cwd or os.getcwd()).resolve()), sid, step
+
+
+def open_hooks_path(state: pathlib.Path, role: str) -> pathlib.Path:
+    return state / "open" / f"hooks-{role}.json"
+
+
+def write_open_hooks(state: pathlib.Path, ledger: pathlib.Path, role: str) -> pathlib.Path:
+    """The hooks `onloop open` gives the person's session for this run only (`--settings`), the same three a carried
+    role gets (0.7.0): Stop, SessionStart and UserPromptSubmit post to onloopd, which tells the agent its open
+    decisions and the person's answers, and sends back an ask already open. No settings file of the person's changes."""
+    from .carrier.loop import hook_command
+
+    path = open_hooks_path(state, role)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hooks = {
+        name: [{"hooks": [{"type": "command", "command": hook_command(state, ledger, role, event)}]}]
+        for name, event in (
+            ("Stop", "stop"),
+            ("SessionStart", "session-start"),
+            ("UserPromptSubmit", "prompt-submit"),
+        )
+    }
+    text = json.dumps({"hooks": hooks}, indent=2, sort_keys=True) + "\n"
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8", newline="\n")
+    return path
 
 
 def cmd_open(args) -> int:
@@ -1035,6 +1063,7 @@ def cmd_open(args) -> int:
     if code != 200:
         _err(f"onloop: onloopd did not take the session's start, so nothing is opened: {out.get('error')}")
         return 2
+    write_open_hooks(state, _ledger_path(args), args.role)
     _say(f"onloop: opening {args.role}'s session {sid}" + (f" on {body['step']}" if step else ""))
     try:
         rc = procs.run_in_console(
@@ -1052,7 +1081,8 @@ def cmd_open(args) -> int:
 
 def _task_write(args, action: str, body: dict) -> tuple[int, dict]:
     """A task write (decision 0013): through the running onloopd with its token, or, when none runs, straight into the
-    ledger. Either way it is the same checks and the same event. (0, answer) or (2, error)."""
+    ledger. Either way it is the same checks and the same event. (0, answer), (3, error) when the write names a
+    decision that is already open (0.7.0), or (2, error)."""
     from . import tasks as tasks_mod
     from .overlay.ledger import Ledger, LedgerError
 
@@ -1061,12 +1091,12 @@ def _task_write(args, action: str, body: dict) -> tuple[int, dict]:
     if code == 200:
         return 0, out
     if code != 0:
-        return 2, out
+        return (3 if code == 409 else 2), out
     try:
         with Ledger(_ledger_path(args)) as led:
             return 0, tasks_mod.handle(led, action, body)
     except tasks_mod.Refused as e:
-        return 2, {"error": str(e)}
+        return (3 if e.status == 409 else 2), {"error": str(e)}
     except LedgerError as e:
         return 2, {"error": str(e)}
 
@@ -1114,14 +1144,46 @@ def cmd_ask(args) -> int:
         "days": args.days,
         "holds": args.holds,
         "default": args.default,
+        "options": args.options,
     }
     body = {"author_role": role, "ref": args.ref, "title": args.title, "ask": ask, "channel": "cli"}
     code, out = _task_write(args, "ask", body)
+    if code == 3:  # one decision, one ask (0.7.0): the open decision's id, and nothing asked again
+        _err(f"onloop: not asked again: {out.get('error')}")
+        return 3
     if code:
         _err(f"onloop: the ask was not taken: {out.get('error')}")
         return 2
     _say(out["id"])
     _say(f"end the turn with: outcome: blocked owner=human ref=task:{out['id']}")
+    return 0
+
+
+def cmd_decisions(args) -> int:
+    """A role's decisions with the person (0.7.0): the ones it asked, first or in a later ask, still open; and the
+    person's answers to it, with whether each has reached it. For scripts and for a role's own checks."""
+    from . import decisions as dec
+    from .overlay.ledger import Ledger, LedgerError
+
+    role = args.role or os.environ.get("ONLOOP_ROLE") or ""
+    if not role:
+        _err("onloop: name the role: --role, or $ONLOOP_ROLE")
+        return 2
+    try:
+        with Ledger(_ledger_path(args), readonly=True) as led:
+            body = dec.mine(led, role, led.now())
+    except LedgerError as e:
+        _err(f"onloop: {e}")
+        return 2
+    if args.json:
+        _say(json.dumps(body, indent=2, sort_keys=True))
+        return 0
+    _say(f"{role}: {len(body['open'])} open, {len(body['answered'])} answered")
+    for d in body["open"]:
+        _say(f"  open      {d['id']}  asked {d['asks']}x, {d['age']}: {d['title']}")
+    for d in body["answered"]:
+        reached = f"reached {role} {d['delivered_at']}" if d["delivered_at"] else "not yet seen"
+        _say(f"  answered  {d['id']}  {d['answer_text']} ({reached}): {d['title']}")
     return 0
 
 
@@ -1867,7 +1929,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--days", help="the days until the delay starts to cost (0 = now), or ?")
     sp.add_argument("--holds", help="what waits on it (needed with --cost-from or --days)")
     sp.add_argument("--default", help="what happens if nobody answers")
+    sp.add_argument(
+        "--options",
+        help='the answers the person can give, 1 to 4 separated by |: "Merge both|Merge one|Wait"',
+    )
     sp.add_argument("--ledger", help="the ledger file (default: $ONLOOP_LEDGER, else .onloop/ledger.db)")
+
+    sp = sub.add_parser(
+        "decisions",
+        help="a role's decisions with the person: open, and answered (0.7.0)",
+        description="a role's decisions with the person: the ones it asked that are still open, and the person's "
+        "answers to it, with whether each has reached it (read-only)",
+    )
+    sp.set_defaults(fn=cmd_decisions)
+    sp.add_argument("--mine", action="store_true", help="the asking role's own (the only view there is)")
+    sp.add_argument("--role", help="the role (default: $ONLOOP_ROLE)")
+    sp.add_argument("--json", action="store_true")
+    sp.add_argument(
+        "--ledger", help="the ledger file, read-only (default: $ONLOOP_LEDGER, else .onloop/ledger.db)"
+    )
 
     sp = sub.add_parser(
         "tasks",
@@ -1968,7 +2048,9 @@ def build_parser() -> argparse.ArgumentParser:
                 help="onloopd.yaml, what onloopd watches (default: onloopd.yaml next to the ledger, if there is one)",
             )
         if action == "hook":
-            sp.add_argument("--event", required=True, choices=("stop", "session-start", "notification"))
+            sp.add_argument(
+                "--event", required=True, choices=("stop", "session-start", "prompt-submit", "notification")
+            )
             sp.add_argument("--role", required=True, help="the role whose session this hook belongs to")
             sp.add_argument("--timeout", type=float, default=2.0, help="seconds before giving up (default 2)")
         if action == "stop":

@@ -37,7 +37,7 @@ for and what to do next.
 | Page | The question it answers | Reads |
 |---|---|---|
 | **Home** (`#/`, the first screen) | Is it going well, what needs me, what came out? | `GET /api/home` |
-| **Decisions** (`#/decisions`) | What must I decide, in what order? Not built yet: marked in the sidebar, not a link; the decisions are on Home | — |
+| **Decisions** (`#/decisions`) | What must I decide, in what order, and what did I answer? | `GET /api/decisions`; answers `POST /ui/tasks/resolve`, `/ui/tasks/withdraw` |
 | **Agents** (`#/agents`) | Who is working, idle, paused or stalled, on what, and what happens next? Shows 0.6's Team view until its 0.7.0 page lands, and says so | `/api/roles`, `/api/turns`, `/api/waits`, `/api/items`, `/api/alerts` |
 | **Timeline** (`#/timeline`) | Who did what, how long it took, what it cost in tokens, and what each step produced? Shows 0.6's Replay view until its 0.7.0 page lands, and says so | `GET /api/replay`, `GET /api/products` |
 | Details · **Map** (`#/details/map`, zoom 0) | Where is it jammed, and is it me? | `GET /api/map`, `GET /api/digest` |
@@ -74,9 +74,9 @@ the week before. On a frozen copy (a read-only server whose ledger nothing write
   days as a sparkline. With less than two weeks of data there is no week before, and the page says so instead of a
   change.
 - **Decisions:** the asks that say what they change, in the task list's one order, the first five shown and the rest
-  one click away, each folded to one line (what it changes, what waits on it, who asked, how long ago). Opened, it
-  shows its facts (what it changes, what waits on it, if nobody answers, the cost of delay, who asked, what it is about)
-  and Done or Decline, with eight seconds to undo. The asks that do not say what they change still wait on you: Home
+  one click away, each folded to one line (what it changes, what waits on it, who asked, how long ago, "asked N×").
+  Opened, it shows its facts and its answers: the options its ask recorded, else Done and Decline. The brief's one
+  button reads "Decide the first of N", never a cut sentence; "All decisions" opens Decisions. The asks that do not say what they change still wait on you: Home
   counts them and links to Details · Rule alerts, and never lists them.
 - **Unusual this week:** each role held to its own last 14 days: how long it goes quiet (the median of its days'
   longest gap between turns), its tokens in a day, and how long its asks wait. Three times its usual is unusual.
@@ -84,6 +84,23 @@ the week before. On a frozen copy (a read-only server whose ledger nothing write
 - **Who worked when:** the Timeline's lanes over 24 h, 48 h or 7 days: working time and time waiting on you per role,
   each turn's end a mark, each change merged a green flag, and the now line. The role names stay in their column while
   the picture scrolls; on a phone it opens at now.
+
+### Decisions
+
+Prototype F's split view (0.7.0 plan, sections 1 and 4; decision 0020): the list on the left, the decision on the
+right; on a phone the decision opens as a sheet.
+
+- **Open:** the decisions in the task list's one order, sortable by longest waiting or most asked, and filtered by
+  text. One subject, one decision: each row names every role that asked and "asked N×". The asks that say nothing of
+  what they change are counted with a link to Rule alerts.
+- **A decision:** what it changes, what waits on it, if nobody answers, the cost of delay, what it is about, and the
+  asks merged into it (who, when, and "nothing new" for a repeat). Its answers are the options its ask recorded; with
+  none, Done and Decline. No answer is generated before the smart layer.
+- **Answering** sends at once; a toast says when the asker sees it ("operator sees it at its next prompt") and offers
+  Undo for 9 s, held while the pointer is on it.
+- **Done:** the person's answers of the last 14 days, each with whether it has reached the role that asked. Until it
+  has, Withdraw opens the decision again; after, a change of mind is a new answer.
+- **The count** is Home's and the sidebar badge's.
 
 What 0.6's Now showed on the first screen and Home does not: the constraint in the system's words (Details · Map and
 Rule alerts), the log since the last visit, the asks with no effect stated, the turns that ended without a valid outcome
@@ -165,7 +182,7 @@ cursor stays there.
 ### Old links
 
 0.7.0 gave every view a new address. An old link opens the same view, and the address is rewritten in place (no new
-history entry), keeping the rest of the link: `#/now` becomes `#/`, `#/team` `#/agents`, `#/replay` `#/timeline`, and
+history entry), keeping the rest of the link: `#/now` and `#/tasks` become `#/decisions`, `#/team` `#/agents`, `#/replay` `#/timeline`, and
 `#/map/...`, `#/outcome`, `#/conversation`, `#/schedules` and `#/audit?...` become `#/details/...`.
 
 ### Retired: Flow and Activity

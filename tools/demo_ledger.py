@@ -558,6 +558,29 @@ def _asks(s: _Story) -> None:
         goal="demo/7",
         default="nothing merges",
         cost_given="cost_from",
+        options=["Approve", "Approve, import paused", "Wait for the review"],  # 0.7.0: the answers it offers
+    )
+    # 0.7.0, one decision, one ask: the reviewer asks about the same change two hours later; it joins the decision
+    s.step(
+        3 * HOUR,
+        lambda led: led.append(
+            {
+                "id": "demo-ask-reviewer-204",
+                "source": "cli",
+                "kind": "task.opened",
+                "subject_ref": "task:t-demo-rev204",
+                "actor": "reviewer",
+                "payload": {
+                    "id": "t-demo-rev204",
+                    "origin": "cli",
+                    "origin_ref": "demo-ask-reviewer-204",
+                    "author_role": "reviewer",
+                    "ref": "PR#204",
+                    "title": "The schema change waits on approval",
+                    "ask": {"effect": "approve the schema change, so the import can run on real data"},
+                },
+            }
+        ),
     )
     ask(
         26 * HOUR,
@@ -626,6 +649,7 @@ def _asks(s: _Story) -> None:
         goal="demo/8",
         effect="decide whether the export ships in this release, so the plan stops carrying both branches",
         holds="the release plan",
+        options=["Ship it in this release", "Hold it for the next"],
     )
     # what changed since the visit: one resolved by the person, one closed by its author without them
     done = ask(
@@ -635,6 +659,7 @@ def _asks(s: _Story) -> None:
         "Approve the dashboard copy",
         weight="skippable",
         effect="approve the dashboard copy, so the page can ship",
+        options=["Approve the copy", "Rewrite the headline"],
     )
     gone = ask(
         4 * DAY + HOUR,
@@ -648,7 +673,13 @@ def _asks(s: _Story) -> None:
         30 * HOUR,
         "task.resolved",
         f"task:{done}",
-        {"id": done, "resolution": "done", "evidence": "human:ui", "by": "human"},
+        {
+            "id": done,
+            "resolution": "done",
+            "evidence": "human:ui",
+            "by": "human",
+            "answer": "Approve the copy",
+        },
     )
     s.event(
         2 * DAY,

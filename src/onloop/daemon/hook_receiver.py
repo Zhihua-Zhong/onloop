@@ -1,7 +1,17 @@
-"""The hook receiver: Claude Code's Stop, SessionStart and Notification hooks, posted by `onloop daemon hook`.
+"""The hook receiver: Claude Code's Stop, SessionStart, UserPromptSubmit and Notification hooks, posted by
+`onloop daemon hook`.
 
-    POST /hooks/stop | /hooks/session-start | /hooks/notification
+    POST /hooks/stop | /hooks/session-start | /hooks/prompt-submit | /hooks/notification
     body: {"role": "<role name>", "payload": <the hook's JSON, as Claude Code passed it on stdin>}
+    answer: {"logged", "seq", "id", "hook_output"?}; `onloop daemon hook` prints `hook_output` for Claude Code
+
+**What the agent is told (0.7.0, one decision, one ask; the hook contract verified in the 0.7.0 spike).** At a
+SessionStart or a UserPromptSubmit, `hook_output` adds the role's context: the person's answers that have not reached
+it yet (the same event marks them delivered) and its decisions still open, so it does not ask again. At a Stop whose
+outcome line asks the person something already open with no new fact, or asks without saying what it changes,
+`hook_output` sends the turn back once (`decision: block`) with the reason; a Stop that already carries
+`stop_hook_active` never is. The ask is logged either way. A UserPromptSubmit keeps the prompt's length, never its
+text.
 
 Each becomes one ledger event (`hook.stop`, `hook.session_start`, `hook.notification`) with `source = "hook"`, the role
 as its subject, and the ledger's own time. A Stop is parsed for its outcome line (decision 0007) here, once: the event
@@ -35,7 +45,13 @@ def ev_now() -> str:
     return now_ts()
 
 
-EVENTS = {"stop": "hook.stop", "session-start": "hook.session_start", "notification": "hook.notification"}
+EVENTS = {
+    "stop": "hook.stop",
+    "session-start": "hook.session_start",
+    "prompt-submit": "hook.prompt_submit",
+    "notification": "hook.notification",
+}
+HOOK_NAMES = {"session-start": "SessionStart", "prompt-submit": "UserPromptSubmit"}
 BLOCKING_NOTIFICATIONS = ("permission_prompt", "elicitation_dialog")
 MESSAGE_CAP = 200
 _ROLE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
@@ -88,6 +104,10 @@ def event_for(name: str, body: dict[str, Any], now: str | None = None) -> dict[s
             out["line"] = got.line if got.line and got.line.startswith("outcome:") else None
     elif name == "session-start":
         out["start_source"] = _text(payload, "source", 40)
+    elif name == "prompt-submit":
+        prompt_text = payload.get("prompt")
+        out["prompt_id"] = prompt
+        out["prompt_chars"] = len(prompt_text) if isinstance(prompt_text, str) else None  # never the text
     else:
         out["notification_type"] = _text(payload, "notification_type", 60)
         out["message"] = _text(payload, "message", MESSAGE_CAP)
@@ -142,7 +162,28 @@ def ingest_spool(ledger: Ledger, state: Any) -> int:
 
 
 def handle(ledger: Ledger, rest: str, body: dict[str, Any]) -> dict[str, Any]:
-    """The `/hooks/` route."""
+    """The `/hooks/` route. Inside onloopd's writer lock: what the agent is told is read just before its event is
+    logged, so the answers named in its context are the ones that event marks delivered."""
+    from .. import decisions
+
     event = event_for(rest, body, ledger.now())
+    role = event["payload"]["role"]
+    hook_output: dict[str, Any] | None = None
+    try:
+        if rest == "stop":
+            reason = decisions.stop_feedback(ledger, event)
+            if reason:
+                hook_output = {"decision": "block", "reason": reason}
+        elif rest in HOOK_NAMES:
+            text = decisions.context(ledger, role, ledger.now())
+            if text:
+                hook_output = {
+                    "hookSpecificOutput": {"hookEventName": HOOK_NAMES[rest], "additionalContext": text}
+                }
+    except Exception:  # noqa: BLE001 - what the agent is told is advice; the hook's event is logged regardless
+        hook_output = None
     seq = ledger.append(event)  # one transaction, inside onloopd's writer lock
-    return {"logged": seq is not None, "seq": seq, "id": event["id"]}
+    out: dict[str, Any] = {"logged": seq is not None, "seq": seq, "id": event["id"]}
+    if hook_output and seq is not None:
+        out["hook_output"] = hook_output
+    return out

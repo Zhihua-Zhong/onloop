@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState, type ElementType, type ReactNode } from "react";
 import { Activity, Bot, CalendarClock, ChevronDown, ChevronRight, Eye, Home as HomeIcon, Inbox, Map as MapIcon, Menu as MenuIcon, MessagesSquare, Monitor, Moon, ScrollText, Sun, Target, TriangleAlert } from "lucide-react";
 import { streamLost, streamNews, useLive, type Live } from "@/lib/live";
-import { useQueryClient } from "@tanstack/react-query";
+import { homeApi } from "@/lib/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHeartbeat } from "@/lib/heartbeat";
 import { useNowMs } from "@/lib/clock";
 import { beatAtMs, dataAgeS, liveness, type LiveState } from "@/lib/tick";
@@ -17,6 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadio
 import { Toaster } from "@/components/ui/toast";
 import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
 import { HomeView } from "@/views/Home";
+import { DecisionsView } from "@/views/Decisions";
 import { RuleAlertsView } from "@/views/details/RuleAlerts";
 import { TeamView } from "@/views/Team";
 import { ReplayView } from "@/views/Replay";
@@ -178,7 +180,7 @@ function LiveBadge({ live }: { live: Live }) {
         </span>
       </Tooltip>
       {dataAge != null && (
-        <span data-testid="data-age" className="tabular-nums max-xl:sr-only">
+        <span data-testid="data-age" className="sr-only">
           data as of {duration(dataAge)} ago
         </span>
       )}
@@ -188,12 +190,12 @@ function LiveBadge({ live }: { live: Live }) {
 }
 
 function ReadOnly({ view }: { view: View }) {
-  const words = view === "conversation" ? "Read-only except messages" : view === "now" ? "Read-only except Done and Decline" : "Read-only";
+  const words = view === "conversation" ? "Read-only except messages" : view === "now" || view === "decisions" ? "Read-only except your answers" : "Read-only";
+  // the operator's explanation is the eye's tooltip, not words in the header (the onloop lead's step 2 review)
   return (
-    <Tooltip content="This page only reads, except the message box on Conversation and a task's Done or Decline. Each is a request from a local user, not verified, never an approval. Where you can act otherwise, it shows the command to copy.">
-      <span className="inline-flex items-center gap-1 rounded-sm text-xs text-muted" data-testid="read-only" tabIndex={0}>
+    <Tooltip content={`${words}. This page only reads, except a message to a role and your answer to a decision. Each is a request from a local user, not verified, never an approval. Where you can act otherwise, the page shows the command to copy.`}>
+      <span className="inline-flex items-center gap-1 rounded-sm text-xs text-muted" data-testid="read-only" tabIndex={0} aria-label={words}>
         <Eye className="h-3.5 w-3.5" aria-hidden />
-        <span className="max-lg:sr-only">{words}</span>
       </span>
     </Tooltip>
   );
@@ -202,10 +204,10 @@ function ReadOnly({ view }: { view: View }) {
 // ---- the sidebar --------------------------------------------------------------------------------------------------
 
 /** Each page of the shell: its label, its icon, and what it shows until its 0.7.0 page lands (null: its own page). */
-interface Page { key: string; label: string; icon: ElementType; view?: View; interim?: string }
+interface Page { key: string; label: string; icon: ElementType; view: View; interim?: string }
 const MAIN: Page[] = [
   { key: "home", label: "Home", icon: HomeIcon, view: "now" },
-  { key: "decisions", label: "Decisions", icon: Inbox },
+  { key: "decisions", label: "Decisions", icon: Inbox, view: "decisions" },
   { key: "agents", label: "Agents", icon: Bot, view: "team", interim: "Agents shows 0.6's Team view until the new Agents page lands." },
   { key: "timeline", label: "Timeline", icon: Activity, view: "replay", interim: "Timeline shows 0.6's Replay view until the new Timeline lands." },
 ];
@@ -216,6 +218,18 @@ function pageOf(view: View): { label: string; interim?: string; details: boolean
   const main = MAIN.find((p) => p.view === view);
   if (main) return { label: main.label, interim: main.interim, details: false };
   return { label: DETAIL_LABEL[view] ?? view, details: true };
+}
+
+// The sidebar's count is the Decisions page's count, the same one Home shows (tests/test_agreement.py, e2e)
+function DecisionsBadge() {
+  const q = useQuery({ queryKey: ["decisions"], queryFn: homeApi.decisions, refetchInterval: 60_000 });
+  const n = q.data?.count ?? 0;
+  if (!n) return null;
+  return (
+    <span className="ml-auto rounded-full bg-wait/15 px-1.5 text-xs font-medium text-state-human num" data-testid="decisions-badge" aria-label={`${n} open`}>
+      {n}
+    </span>
+  );
 }
 
 function NavItem({ to, label, icon: Icon, active, testid, onNav, children }: { to: string; label: string; icon: ElementType; active: boolean; testid: string; onNav?: () => void; children?: ReactNode }) {
@@ -249,24 +263,11 @@ function Sidebar({ view, onNav }: { view: View; onNav?: () => void }) {
         <span className="grid h-6 w-6 place-items-center rounded-md bg-fg text-[11px] font-bold text-bg" aria-hidden>ol</span>
         onloop
       </a>
-      {MAIN.map((p) =>
-        p.view ? (
-          <NavItem key={p.key} to={href(p.view)} label={p.label} icon={p.icon} active={view === p.view} testid={`nav-${p.key}`} onNav={onNav} />
-        ) : (
-          // not built yet: shown so the shape of 0.7.0 is visible, and marked; it is not a link
-          <Tooltip key={p.key} content="Decisions is built in the next step of 0.7.0. Until then, the decisions are on Home.">
-            <span
-              data-testid={`nav-${p.key}`}
-              aria-disabled="true"
-              className="flex h-8 cursor-default items-center gap-2.5 rounded-md px-2 text-sm text-muted/70 [&_svg]:size-4 [&_svg]:shrink-0"
-            >
-              <p.icon aria-hidden />
-              {p.label}
-              <Badge tone="soon" className="ml-auto">not built yet</Badge>
-            </span>
-          </Tooltip>
-        ),
-      )}
+      {MAIN.map((p) => (
+        <NavItem key={p.key} to={href(p.view)} label={p.label} icon={p.icon} active={view === p.view} testid={`nav-${p.key}`} onNav={onNav}>
+          {p.key === "decisions" && <DecisionsBadge />}
+        </NavItem>
+      ))}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -357,6 +358,7 @@ export default function App() {
             )}
             <main className={cn("min-h-0 flex-1", route.view === "conversation" || route.view === "map" ? "flex flex-col" : "overflow-y-auto")}>
               {route.view === "now" && <HomeView />}
+              {route.view === "decisions" && <DecisionsView />}
               {route.view === "rules" && <RuleAlertsView />}
               {route.view === "map" && (
                 <Suspense fallback={<div className="p-4"><Loading what="the map" /></div>}>

@@ -2,13 +2,14 @@
 // history and operations one click down under Details (`#/details/map`, `#/details/audit?kind=pr.merged`). A view is
 // still named by its 0.6.0 key inside the code, so the views link to each other with `href(view)` as before. Imports
 // nothing, so node's test runner reads it as is.
-export const VIEWS = ["now", "replay", "map", "outcome", "team", "conversation", "schedules", "audit", "rules"] as const;
+export const VIEWS = ["now", "decisions", "replay", "map", "outcome", "team", "conversation", "schedules", "audit", "rules"] as const;
 export type View = (typeof VIEWS)[number];
-export const VIEW_LABEL: Record<View, string> = { now: "Now", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
+export const VIEW_LABEL: Record<View, string> = { now: "Now", decisions: "Decisions", replay: "Replay", map: "Map", outcome: "Outcome", team: "Team", conversation: "Conversation", schedules: "Schedules", audit: "Audit", rules: "Rule alerts" };
 
 /** Each view's address, after `#/`. */
 export const ADDRESS: Record<View, string> = {
   now: "",
+  decisions: "decisions",
   team: "agents",
   replay: "timeline",
   map: "details/map",

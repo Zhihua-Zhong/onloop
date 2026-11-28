@@ -187,6 +187,13 @@ def test_rule_alerts_count_what_home_never_lists(demo_path):
         h = home.build(led, NOW)
     assert r["asks_missing"]["count"] == h["decisions"]["rule_asks"] > 0
     assert sum(r["asks_missing"]["by_role"].values()) == r["asks_missing"]["count"]
+    # the tidy offers only the asks with no effect: one that lacks `holds` says what it changes, and stays
+    with Ledger(demo_path, readonly=True) as led:
+        no_effect = {
+            t["id"]
+            for t in led.select("SELECT id FROM human_tasks WHERE stage <> 'resolved' AND effect IS NULL")
+        }
+    assert set(r["asks_missing"]["ids"]) == no_effect and 0 < len(no_effect) < r["asks_missing"]["count"]
     words = {a["words"] for a in r["alerts"]}
     assert "turns that ended without a valid outcome line" in words
     assert all(

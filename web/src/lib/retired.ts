@@ -1,13 +1,13 @@
 // Old links, and where what they showed lives now. Imports nothing, so node's test runner reads it as is.
 //
 // 0.6.0 retired Flow and Activity (decision 0019). 0.7.0's shell (plan, section 1) gives every view a new address: the
-// first screen is `#/`, Team is Agents, Replay is the Timeline, and the rest live under Details. Until 0.7.0's Home,
-// Decisions, Agents and Timeline pages land, the first three show 0.6.0's Now, Team and Replay; a later step points
-// `#/now` at Decisions and Replay's playback at Details.
+// first screen is Home (`#/`), 0.6.0's Now and its task list are Decisions, Team is Agents, Replay is the Timeline, and
+// the rest live under Details. Until 0.7.0's Agents and Timeline land, those show 0.6.0's Team and Replay.
 
 /** The old first segment of a link, and the address that shows it now (before its path and query). */
 export const RETIRED: Record<string, string> = {
-  now: "",
+  now: "decisions",
+  tasks: "decisions",
   team: "agents",
   replay: "timeline",
   activity: "timeline",

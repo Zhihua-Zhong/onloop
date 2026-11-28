@@ -54,12 +54,15 @@ test("Home answers what needs me, how it went and what came out, and lists no ru
   await expect(page.getByTestId("rule-asks")).toContainText("4 more asks do not say what they change");
   const text = await page.getByTestId("view-home").innerText();
   for (const word of ["An ask with no effect stated", "outcome line", "Constraint", "Since you", "Stalled", "merge-check holds"]) expect(text).not.toContain(word);
-  // the brief's button opens the first decision, folded until then, to its facts and its marks
+  // the brief's one button has a short label that is never cut, and opens the first decision to its facts and the
+  // answers its ask offered (no options recorded: Done and Decline)
+  await expect(page.getByTestId("decide-first")).toHaveText("Decide the first of 6");
   await expect(page.getByTestId("decision-facts")).toHaveCount(0);
   await page.getByTestId("decide-first").click();
   await expect(rows.first().getByTestId("decision-facts")).toContainText("If nobody answers");
   await expect(rows.first().getByTestId("decision-facts")).toContainText("nothing merges");
-  await expect(rows.first().getByTestId("mark-done")).toBeVisible();
+  await expect(rows.first().getByTestId("option")).toHaveText(["Approve", "Approve, import paused", "Wait for the review"]);
+  await expect(page.getByTestId("kpi-waited")).toContainText("summed");
   // the evidence: one lane per role, a flag per change merged this week
   await expect(page.getByTestId("lane-names")).toContainText("builder");
   await expect(page.getByTestId("lanes").getByTestId("flag")).toHaveCount(7);
@@ -184,7 +187,8 @@ test("an old link opens where its view lives now, and the address names it", asy
   for (const [old, key, now] of [
     ["/#/flow", "map", /#\/details\/map$/],
     ["/#/activity", "timeline", /#\/timeline(\?|$)/], // Replay adds its own speed to the address
-    ["/#/now", "home", /#\/$/],
+    ["/#/now", "decisions", /#\/decisions$/], // 0.6's Now and its task list are Decisions
+    ["/#/tasks", "decisions", /#\/decisions$/],
     ["/#/team", "agents", /#\/agents$/],
     ["/#/replay?hours=24", "timeline", /#\/timeline\?hours=24(&|$)/],
     ["/#/map/changes", "map", /#\/details\/map\/changes$/],
@@ -216,14 +220,13 @@ test("the theme menu switches, and the navigation reaches every view, Details on
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await chooseTheme(page, "dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  // F's order: Home, Decisions (not built yet: marked, and not a link), Agents, Timeline; then Details, folded
+  // F's order: Home, Decisions (with its count), Agents, Timeline; then Details, folded
   const order = await page.getByTestId("sidebar").locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => `${e.tagName}:${e.getAttribute("data-testid")}`));
-  expect(order.slice(0, 4)).toEqual(["A:nav-home", "SPAN:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
-  await expect(nav(page, "decisions")).toHaveAttribute("aria-disabled", "true");
-  await expect(nav(page, "decisions")).toContainText("not built yet");
+  expect(order.slice(0, 4)).toEqual(["A:nav-home", "A:nav-decisions", "A:nav-agents", "A:nav-timeline"]);
+  await expect(nav(page, "decisions").getByTestId("decisions-badge")).toHaveText("6");
   if (!phone) await expect(nav(page, "map")).toBeHidden(); // Details is folded on a main page
   const root: Record<string, string> = { home: "brief", timeline: "replay", map: "map-level", agents: "view-team" };
-  for (const v of ["timeline", "map", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
+  for (const v of ["decisions", "timeline", "map", "agents", "schedules", "audit", "outcome", "rules", "home"]) {
     await go(page, v, phone);
     await expect(page.getByTestId(root[v] ?? `view-${v}`).first()).toBeVisible();
     await expect(nav(page, v)).toHaveAttribute("aria-current", "page");

@@ -87,12 +87,14 @@ def beat(tmp_path, port=8790):
 def test_onloop_open_runs_with_project_and_local_settings_and_onloops_environment(tmp_path):
     secret = beat(tmp_path)
     argv, env, cwd, sid, step = cli.open_plan(args(tmp_path, step="pr:7"), {**ELSEWHERE, "CLAUDECODE": "1"})
-    assert argv[0].endswith("claude-test") and argv[1:4] == [
+    assert argv[0].endswith("claude-test") and argv[1:6] == [
         "--setting-sources",
         "project,local",
+        "--settings",  # 0.7.0: onloop's three hooks, for this run only
+        str(cli.open_hooks_path(tmp_path, "builder")),
         "--session-id",
     ]
-    assert argv[4] == sid and step == ("pr", "7") and cwd == str(tmp_path.resolve())
+    assert argv[6] == sid and step == ("pr", "7") and cwd == str(tmp_path.resolve())
     assert env["OTEL_EXPORTER_OTLP_HEADERS"] == f"Authorization=Bearer {secret}"
     assert env["OTEL_RESOURCE_ATTRIBUTES"] == "onloop.role=builder"
     assert "CLAUDECODE" not in env  # a session that starts it does not attach the child to its own machinery

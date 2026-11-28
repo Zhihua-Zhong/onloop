@@ -51,6 +51,7 @@ LAYERS = {
         "derive",
         "timeline",
         "home",
+        "decisions",
     },
     3: {"supervisor", "daemon", "carrier"},
     4: {"cli", "__main__"},
